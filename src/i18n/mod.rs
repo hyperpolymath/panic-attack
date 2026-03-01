@@ -34,5 +34,7 @@
 mod catalog;
 mod iso639;
 
-pub use catalog::{t, Lang};
+#[allow(unused_imports)]
+pub use catalog::{t, t_or_key, Lang};
+#[allow(unused_imports)]
 pub use iso639::{is_valid_iso639_1, language_name, native_name};

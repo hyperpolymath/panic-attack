@@ -187,3 +187,199 @@ fn parse_duration(raw: &str) -> Result<Duration> {
     };
     Ok(Duration::from_millis(millis.round() as u64))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_parse_duration_seconds() {
+        assert_eq!(parse_duration("5s").unwrap(), Duration::from_secs(5));
+        assert_eq!(parse_duration("10s").unwrap(), Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_parse_duration_milliseconds() {
+        assert_eq!(parse_duration("500ms").unwrap(), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_parse_duration_minutes() {
+        assert_eq!(parse_duration("2m").unwrap(), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn test_parse_duration_hours() {
+        assert_eq!(parse_duration("1h").unwrap(), Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn test_parse_duration_bare_number_defaults_to_seconds() {
+        assert_eq!(parse_duration("30").unwrap(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_parse_duration_empty_fails() {
+        assert!(parse_duration("").is_err());
+    }
+
+    #[test]
+    fn test_parse_duration_negative_fails() {
+        assert!(parse_duration("-5s").is_err());
+    }
+
+    #[test]
+    fn test_parse_axis() {
+        assert_eq!(parse_axis("cpu"), Some(AttackAxis::Cpu));
+        assert_eq!(parse_axis("memory"), Some(AttackAxis::Memory));
+        assert_eq!(parse_axis("disk"), Some(AttackAxis::Disk));
+        assert_eq!(parse_axis("network"), Some(AttackAxis::Network));
+        assert_eq!(parse_axis("concurrency"), Some(AttackAxis::Concurrency));
+        assert_eq!(parse_axis("time"), Some(AttackAxis::Time));
+        assert_eq!(parse_axis("CPU"), Some(AttackAxis::Cpu));
+        assert_eq!(parse_axis("bogus"), None);
+    }
+
+    #[test]
+    fn test_parse_intensity() {
+        assert_eq!(parse_intensity("light"), Some(IntensityLevel::Light));
+        assert_eq!(parse_intensity("medium"), Some(IntensityLevel::Medium));
+        assert_eq!(parse_intensity("heavy"), Some(IntensityLevel::Heavy));
+        assert_eq!(parse_intensity("extreme"), Some(IntensityLevel::Extreme));
+        assert_eq!(parse_intensity("HEAVY"), Some(IntensityLevel::Heavy));
+        assert_eq!(parse_intensity("invalid"), None);
+    }
+
+    #[test]
+    fn test_load_timeline_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("timeline.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "duration": "10s",
+                "tracks": [
+                    {
+                        "axis": "cpu",
+                        "events": [
+                            {"at": "0s", "for": "5s", "intensity": "light"}
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let plan = load_timeline_with_default(&path, None).unwrap();
+        assert_eq!(plan.duration, Duration::from_secs(10));
+        assert_eq!(plan.events.len(), 1);
+        assert_eq!(plan.events[0].axis, AttackAxis::Cpu);
+        assert_eq!(plan.events[0].intensity, IntensityLevel::Light);
+    }
+
+    #[test]
+    fn test_load_timeline_yaml() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("timeline.yaml");
+        std::fs::write(
+            &path,
+            "duration: '15s'\ntracks:\n  - axis: memory\n    events:\n      - at: '2s'\n        for: '8s'\n        intensity: heavy\n",
+        )
+        .unwrap();
+
+        let plan = load_timeline_with_default(&path, None).unwrap();
+        assert_eq!(plan.duration, Duration::from_secs(15));
+        assert_eq!(plan.events.len(), 1);
+        assert_eq!(plan.events[0].axis, AttackAxis::Memory);
+        assert_eq!(plan.events[0].intensity, IntensityLevel::Heavy);
+    }
+
+    #[test]
+    fn test_timeline_infers_duration_from_events() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("timeline.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "tracks": [
+                    {
+                        "axis": "cpu",
+                        "events": [
+                            {"at": "5s", "for": "10s"}
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let plan = load_timeline_with_default(&path, Some(IntensityLevel::Medium)).unwrap();
+        // 5s start + 10s duration = 15s total
+        assert_eq!(plan.duration, Duration::from_secs(15));
+    }
+
+    #[test]
+    fn test_timeline_multiple_tracks() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("timeline.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "duration": "20s",
+                "tracks": [
+                    {
+                        "axis": "cpu",
+                        "events": [
+                            {"id": "cpu-1", "at": "0s", "for": "5s"},
+                            {"id": "cpu-2", "at": "5s", "for": "5s"}
+                        ]
+                    },
+                    {
+                        "axis": "memory",
+                        "events": [
+                            {"id": "mem-1", "at": "3s", "for": "10s", "intensity": "extreme"}
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let plan = load_timeline_with_default(&path, Some(IntensityLevel::Medium)).unwrap();
+        assert_eq!(plan.events.len(), 3);
+        assert_eq!(plan.events[0].id, "cpu-1");
+        assert_eq!(plan.events[1].id, "cpu-2");
+        assert_eq!(plan.events[2].id, "mem-1");
+        assert_eq!(plan.events[2].intensity, IntensityLevel::Extreme);
+    }
+
+    #[test]
+    fn test_timeline_default_intensity() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("timeline.json");
+        std::fs::write(
+            &path,
+            r#"{"duration": "5s", "tracks": [{"axis": "cpu", "events": [{"at": "0s", "for": "5s"}]}]}"#,
+        )
+        .unwrap();
+
+        let plan = load_timeline_with_default(&path, Some(IntensityLevel::Heavy)).unwrap();
+        assert_eq!(plan.events[0].intensity, IntensityLevel::Heavy);
+    }
+
+    #[test]
+    fn test_timeline_auto_generated_ids() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("timeline.json");
+        std::fs::write(
+            &path,
+            r#"{"duration": "5s", "tracks": [{"axis": "disk", "events": [{"at": "0s", "for": "2s"}, {"at": "2s", "for": "3s"}]}]}"#,
+        )
+        .unwrap();
+
+        let plan = load_timeline_with_default(&path, None).unwrap();
+        assert_eq!(plan.events[0].id, "disk-1");
+        assert_eq!(plan.events[1].id, "disk-2");
+    }
+}

@@ -1,4 +1,8 @@
-# panic-attacker: Technical Design
+# panic-attack: Technical Design
+
+> **Note**: This document describes the original design from 2026-02-07. The tool has since
+> evolved significantly (47 languages, miniKanren engine, SARIF, attestation, panicbot integration).
+> See `.claude/CLAUDE.md` for current architecture and `ROADMAP.md` for current status.
 
 ## Motivation
 

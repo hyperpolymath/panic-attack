@@ -49,7 +49,21 @@
       (relationship "consumer")
       (integration "bots can trigger panic-attack scans via repository_dispatch")
       (url "https://github.com/hyperpolymath/gitbot-fleet")
-      (description "Repository automation bots (rhodibot, echidnabot, etc.)"))
+      (description "Repository automation bots (rhodibot, echidnabot, panicbot, etc.)"))
+
+    (project
+      (name "panicbot")
+      (relationship "direct-consumer")
+      (integration "invokes `panic-attack assail --output-format json`, translates WeakPoints to fleet Findings via PA001–PA020 rule mapping")
+      (url "https://github.com/hyperpolymath/gitbot-fleet")
+      (description "Tier-4 verifier bot in gitbot-fleet — static analysis auditing via panic-attack")
+      (interface
+        (protocol "subprocess")
+        (command "panic-attack assail <target> --output-format json")
+        (output-format "AssailReport JSON (flat or assault envelope)")
+        (category-mapping "WeakPointCategory → PA001–PA020 rule IDs")
+        (severity-mapping "PascalCase → lowercase → fleet severity levels")
+        (directives ".machine_readable/bot_directives/panicbot.scm")))
 
     (project
       (name "ambientops")
@@ -102,47 +116,29 @@
 
   (dependencies
     (runtime
-      (dependency
-        (name "encoding_rs")
-        (version "0.8")
-        (purpose "Latin-1 fallback for non-UTF-8 files"))
-      (dependency
-        (name "clap")
-        (version "4.5")
-        (purpose "CLI argument parsing"))
-      (dependency
-        (name "colored")
-        (version "2.1")
-        (purpose "Terminal output formatting"))
-      (dependency
-        (name "regex")
-        (version "1.10")
-        (purpose "Pattern matching in source code"))
-      (dependency
-        (name "serde")
-        (version "1.0")
-        (purpose "JSON serialization"))
-      (dependency
-        (name "anyhow")
-        (version "1.0")
-        (purpose "Error handling"))
-      (dependency
-        (name "chrono")
-        (version "0.4")
-        (purpose "Timestamp generation")))
+      (dependency (name "clap") (version "4.5") (purpose "CLI argument parsing"))
+      (dependency (name "serde") (version "1.0") (purpose "JSON/YAML serialization"))
+      (dependency (name "serde_json") (version "1.0") (purpose "JSON output"))
+      (dependency (name "serde_yaml") (version "0.9") (purpose "YAML output"))
+      (dependency (name "anyhow") (version "1.0") (purpose "Error handling"))
+      (dependency (name "regex") (version "1.10") (purpose "Pattern matching in source code"))
+      (dependency (name "colored") (version "2.1") (purpose "Terminal output formatting"))
+      (dependency (name "chrono") (version "0.4") (purpose "Timestamp generation"))
+      (dependency (name "encoding_rs") (version "0.8") (purpose "Latin-1 fallback for non-UTF-8 files"))
+      (dependency (name "rayon") (version "1.10") (purpose "Parallel batch scanning"))
+      (dependency (name "blake3") (version "1.5") (purpose "Source fingerprinting for incremental scans"))
+      (dependency (name "sha2") (version "0.10") (purpose "Attestation hashing"))
+      (dependency (name "hex") (version "0.4") (purpose "Hex encoding for attestation"))
+      (dependency (name "getrandom") (version "0.2") (purpose "Attestation nonce generation"))
+      (dependency (name "crossterm") (version "0.26") (purpose "TUI terminal control"))
+      (dependency (name "eframe") (version "0.27") (purpose "GUI viewer"))
+      (dependency (name "filetime") (version "0.2") (purpose "Abduct timestamp manipulation"))
+      (dependency (name "ed25519-dalek") (version "2.1") (purpose "Optional Ed25519 signing for attestation")))
 
     (development
-      (dependency
-        (name "tempfile")
-        (version "3.8")
-        (purpose "Temporary files in tests"))))
+      (dependency (name "tempfile") (version "3.8") (purpose "Temporary files in tests"))))
 
   (future-integrations
-    (integration
-      (name "sweep subcommand")
-      (status "planned-v2.1")
-      (description "Bulk scanning of directory-of-repos with aggregated results"))
-
     (integration
       (name "verisimdb API push")
       (status "planned-v2.1")
@@ -150,13 +146,13 @@
 
     (integration
       (name "hypatia pipeline")
-      (status "planned-v2.1")
-      (description "Feed kanren facts as Logtalk predicates to hypatia rule engine"))
+      (status "planned-v2.2")
+      (description "Feed kanren facts as Logtalk predicates to hypatia rule engine via PanLL"))
 
     (integration
-      (name "SARIF output")
+      (name "kanren context-facts")
       (status "planned-v2.2")
-      (description "SARIF output for GitHub Security tab and CodeQL integration"))
+      (description "~10 context rules for false positive suppression (8% -> 2-3%)"))
 
     (integration
       (name "crates.io")
@@ -182,7 +178,7 @@
 
   (metadata
     (created "2026-02-07")
-    (updated "2026-02-09")
-    (maintainer "Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>")
+    (updated "2026-03-01")
+    (maintainer "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>")
     (license "PMPL-1.0-or-later")
     (repository "https://github.com/hyperpolymath/panic-attacker")))

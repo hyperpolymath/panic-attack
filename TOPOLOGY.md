@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: PMPL-1.0-or-later -->
 <!-- TOPOLOGY.md — Project architecture map and completion dashboard -->
-<!-- Last updated: 2026-02-19 -->
+<!-- Last updated: 2026-03-01 -->
 
 # panic-attack — Project Topology
 
@@ -16,34 +16,31 @@
                         ┌─────────────────────────────────────────┐
                         │           PANIC-ATTACK CORE             │
                         │    (Orchestration, Reports, Wiring)     │
-                        └──────────┬───────────────────┬──────────┘
-                                   │                   │
-                                   ▼                   ▼
-                        ┌───────────────────────┐  ┌────────────────────────────────┐
-                        │ ANALYSIIS LAYER       │  │ ATTACK LAYER                   │
-                        │ - Assail (Static)     │  │ - Multi-Axis Stress (CPU, Mem) │
-                        │ - Language Patterns   │  │ - Ambush (Ambient Stressors)   │
-                        │ - Weak Point Scoring  │  │ - Amuck (Mutations)            │
-                        └──────────┬────────────┘  └──────────┬─────────────────────┘
-                                   │                          │
-                                   └────────────┬─────────────┘
-                                                ▼
-                        ┌─────────────────────────────────────────┐
-                        │           SIGNATURE ENGINE              │
-                        │    (Datalog-inspired bug detection)     │
-                        └───────────────────┬─────────────────────┘
-                                            │
-                                            ▼
-                        ┌─────────────────────────────────────────┐
-                        │           TARGET PROGRAM                │
-                        │      (Rust, C/C++, Go, Python, etc.)    │
-                        └─────────────────────────────────────────┘
-
-                        ┌─────────────────────────────────────────┐
-                        │          REPO INFRASTRUCTURE            │
-                        │  Justfile / Cargo   .machine_readable/  │
-                        │  VerisimDB Data     PanLL Integration   │
-                        └─────────────────────────────────────────┘
+                        └──────┬──────────┬──────────┬────────────┘
+                               │          │          │
+                               ▼          ▼          ▼
+              ┌─────────────────┐  ┌────────────┐  ┌──────────────────────┐
+              │ ANALYSIS LAYER  │  │ ATTACK     │  │ INFRASTRUCTURE       │
+              │ - Assail (47L)  │  │ LAYER      │  │ - Assemblyline       │
+              │ - kanren Logic  │  │ - 6-Axis   │  │ - Notify Pipeline    │
+              │ - Taint/XLang   │  │ - Ambush   │  │ - Attestation Chain  │
+              │ - Signatures    │  │ - Amuck    │  │ - i18n (10 langs)    │
+              │ - Patterns      │  │ - Abduct   │  │ - VerisimDB Storage  │
+              └────────┬────────┘  └─────┬──────┘  └──────────┬───────────┘
+                       │                 │                     │
+                       └────────┬────────┘                     │
+                                ▼                              ▼
+              ┌─────────────────────────────────┐  ┌──────────────────────┐
+              │       TARGET PROGRAM            │  │ FLEET INTEGRATION    │
+              │  (47 languages supported)       │  │ - Panicbot (PA001+) │
+              └─────────────────────────────────┘  │ - Hypatia / PanLL   │
+                                                   │ - Diagnostics       │
+              ┌─────────────────────────────────┐  └──────────────────────┘
+              │       REPORTING & OUTPUT         │
+              │  JSON / YAML / Nickel / SARIF    │
+              │  A2ML / PanLL / TUI / GUI        │
+              │  Diff / Adjudicate / Axial       │
+              └─────────────────────────────────┘
 ```
 
 ## Completion Dashboard
@@ -52,33 +49,51 @@
 COMPONENT                          STATUS              NOTES
 ─────────────────────────────────  ──────────────────  ─────────────────────────────────
 CORE CAPABILITIES
-  Assail Static Analysis            ██████████ 100%    5 languages supported
+  Assail Static Analysis            ██████████ 100%    47 languages, 20 categories
   Multi-Axis Stress Testing         ██████████ 100%    6 axes (CPU, Mem, Disk, etc)
+  miniKanren Logic Engine           ██████████ 100%    Taint, cross-lang, strategies
   Ambush / Amuck / Abduct           ██████████ 100%    Advanced workflows stable
-  Signature Detection Engine        ████████░░  80%    Datalog rules expanding
+  Signature Detection Engine        ██████████ 100%    miniKanren-based inference
 
 REPORTING & UI
-  JSON/YAML/Nickel Reports          ██████████ 100%    Audit-grade exports stable
+  JSON/YAML/Nickel/SARIF Reports    ██████████ 100%    All 4 formats working
   TUI / GUI Dashboard               ████████░░  80%    Report browsing verified
-  VerisimDB Diff Viewer             ██████████ 100%    Latest report comparison active
-  A2ML Bundle Import/Export         ██████████ 100%    Schema-versioned verified
+  Diff / Adjudicate / Axial         ██████████ 100%    Campaign tools stable
+  A2ML Bundle Import/Export         ██████████ 100%    Schema-versioned, attestation
+  PanLL Event-Chain Export          ██████████ 100%    DAW-style timeline export
+
+BATCH & PIPELINE
+  Assemblyline (rayon + BLAKE3)     ██████████ 100%    17.7x speedup, 141 repos/39.9s
+  Notification Pipeline             ██████████ 100%    Markdown, critical-only, issues
+  Cryptographic Attestation         ██████████ 100%    Intent → evidence → seal chain
+  i18n Support (10 languages)       ██████████ 100%    ISO 639-1, compile-time safe
+
+INTEGRATION
+  Panicbot (gitbot-fleet)           ██████████ 100%    PA001–PA020, JSON contract
+  Diagnostics (self-check)          ██████████ 100%    Version, fleet, attestation
+  VerisimDB Storage                 ██████░░░░  60%    File I/O works, API planned
+  Hypatia Pipeline                  ████░░░░░░  40%    Env var watcher, no kanren export
 
 REPO INFRASTRUCTURE
-  Justfile Automation               ██████████ 100%    Standard build/lint/test
-  .machine_readable/                ██████████ 100%    STATE tracking active
-  Test Suite (Unit/Integ)           ██████████ 100%    High coverage (306+ tests)
+  Justfile Automation               ██████████ 100%    build/test/readiness/lint/install
+  .machine_readable/                ██████████ 100%    STATE/ECOSYSTEM/META + directives
+  Test Suite                        ██████████ 100%    269 tests, 0 failures
+  Readiness Tests (CRG)             ██████████ 100%    18 tests: D(4) C(10) B(4)
 
 ─────────────────────────────────────────────────────────────────────────────
-OVERALL:                            █████████░  ~95%   v0.2.0 Stable Development
+OVERALL:                            █████████░  ~95%   v2.0.0 Stable
 ```
 
 ## Key Dependencies
 
 ```
-Assail (Static) ───► Attack Strategy ───► Target Binary ───► Crash Report
-     │                   │                   │                 │
-     ▼                   ▼                   ▼                 ▼
-Pattern Lib ──────► Multi-Axis ────────► Signature Engine ──► Verdict
+Assail (47L) ───► kanren Logic ───► Taint/XLang ───► Weak Points
+     │                │                                    │
+     ▼                ▼                                    ▼
+Assemblyline ──► Notify Pipeline ──► GitHub Issues    Panicbot (PA001–PA020)
+     │                │                                    │
+     ▼                ▼                                    ▼
+BLAKE3 Cache ──► VerisimDB Store ──► PanLL Export     Fleet FindingSet
 ```
 
 ## Update Protocol

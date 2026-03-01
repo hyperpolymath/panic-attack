@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
 
-//! Tests for the sweep subcommand (batch repo scanning)
+//! Tests for the assemblyline subcommand (batch repo scanning)
 
-use panic_attack::sweep::{self, SweepConfig};
+use panic_attack::assemblyline::{self, AssemblylineConfig};
 use std::fs;
 use tempfile::TempDir;
 
@@ -15,9 +15,9 @@ fn make_git_repo(parent: &std::path::Path, name: &str, content: Option<(&str, &s
 }
 
 #[test]
-fn test_sweep_empty_directory() {
+fn test_assemblyline_empty_directory() {
     let dir = TempDir::new().unwrap();
-    let config = SweepConfig {
+    let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
         output: None,
         findings_only: false,
@@ -25,14 +25,14 @@ fn test_sweep_empty_directory() {
         sarif: false,
     };
 
-    let report = sweep::run(&config).expect("sweep should succeed on empty dir");
+    let report = assemblyline::run(&config).expect("assemblyline should succeed on empty dir");
     assert_eq!(report.repos_scanned, 0);
     assert_eq!(report.total_weak_points, 0);
     assert!(report.results.is_empty());
 }
 
 #[test]
-fn test_sweep_discovers_git_repos_only() {
+fn test_assemblyline_discovers_git_repos_only() {
     let dir = TempDir::new().unwrap();
 
     // Create a git repo
@@ -45,7 +45,7 @@ fn test_sweep_discovers_git_repos_only() {
     // Create a plain file (should be ignored)
     fs::write(dir.path().join("stray-file.txt"), "hello").unwrap();
 
-    let config = SweepConfig {
+    let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
         output: None,
         findings_only: false,
@@ -53,7 +53,7 @@ fn test_sweep_discovers_git_repos_only() {
         sarif: false,
     };
 
-    let report = sweep::run(&config).expect("sweep should succeed");
+    let report = assemblyline::run(&config).expect("assemblyline should succeed");
     assert_eq!(
         report.repos_scanned, 1,
         "should only discover the git repo, not the plain directory"
@@ -61,7 +61,7 @@ fn test_sweep_discovers_git_repos_only() {
 }
 
 #[test]
-fn test_sweep_multiple_repos() {
+fn test_assemblyline_multiple_repos() {
     let dir = TempDir::new().unwrap();
 
     // Create two git repos with Rust source
@@ -81,7 +81,7 @@ fn main() {
         )),
     );
 
-    let config = SweepConfig {
+    let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
         output: None,
         findings_only: false,
@@ -89,7 +89,7 @@ fn main() {
         sarif: false,
     };
 
-    let report = sweep::run(&config).expect("sweep should succeed");
+    let report = assemblyline::run(&config).expect("assemblyline should succeed");
     assert_eq!(report.repos_scanned, 2);
 
     // Results should be sorted by weak point count descending
@@ -102,7 +102,7 @@ fn main() {
 }
 
 #[test]
-fn test_sweep_findings_only_filter() {
+fn test_assemblyline_findings_only_filter() {
     let dir = TempDir::new().unwrap();
 
     // A clean repo (no source files = no findings)
@@ -122,7 +122,7 @@ fn main() {
         )),
     );
 
-    let config = SweepConfig {
+    let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
         output: None,
         findings_only: true,
@@ -130,7 +130,7 @@ fn main() {
         sarif: false,
     };
 
-    let report = sweep::run(&config).expect("sweep should succeed");
+    let report = assemblyline::run(&config).expect("assemblyline should succeed");
     // All results should have findings
     for result in &report.results {
         assert!(
@@ -141,11 +141,11 @@ fn main() {
 }
 
 #[test]
-fn test_sweep_write_report() {
+fn test_assemblyline_write_report() {
     let dir = TempDir::new().unwrap();
     make_git_repo(dir.path(), "test-repo", Some(("main.rs", "fn main() {}")));
 
-    let config = SweepConfig {
+    let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
         output: None,
         findings_only: false,
@@ -153,10 +153,10 @@ fn test_sweep_write_report() {
         sarif: false,
     };
 
-    let report = sweep::run(&config).expect("sweep should succeed");
+    let report = assemblyline::run(&config).expect("assemblyline should succeed");
 
-    let output_path = dir.path().join("sweep-output.json");
-    sweep::write_report(&report, &output_path).expect("write_report should succeed");
+    let output_path = dir.path().join("assemblyline-output.json");
+    assemblyline::write_report(&report, &output_path).expect("write_report should succeed");
 
     // Verify the file exists and is valid JSON
     let content = fs::read_to_string(&output_path).expect("should read output file");
@@ -168,12 +168,12 @@ fn test_sweep_write_report() {
 }
 
 #[test]
-fn test_sweep_not_a_directory() {
+fn test_assemblyline_not_a_directory() {
     let dir = TempDir::new().unwrap();
     let file_path = dir.path().join("not-a-dir.txt");
     fs::write(&file_path, "hello").unwrap();
 
-    let config = SweepConfig {
+    let config = AssemblylineConfig {
         directory: file_path,
         output: None,
         findings_only: false,
@@ -181,9 +181,9 @@ fn test_sweep_not_a_directory() {
         sarif: false,
     };
 
-    let result = sweep::run(&config);
+    let result = assemblyline::run(&config);
     assert!(
         result.is_err(),
-        "sweep should error when given a file instead of directory"
+        "assemblyline should error when given a file instead of directory"
     );
 }

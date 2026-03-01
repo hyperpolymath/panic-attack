@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: PMPL-1.0-or-later
 
-# panic-attacker: Extended Vision
+# panic-attack: Extended Vision
+
+> **Note**: This document captures long-range design thinking from 2026-02-07. The near-term
+> items have been implemented. See `ROADMAP.md` for current priorities.
 
 ## Raw Design Thinking (2026-02-07)
 

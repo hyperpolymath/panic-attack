@@ -2,7 +2,7 @@
 
 //! PanLL export helpers.
 
-use crate::types::{AssaultReport, AttackAxis, Severity};
+use crate::types::{AssaultReport, AttackAxis, Severity, WeakPointCategory};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::fs;
@@ -108,6 +108,10 @@ fn export_report(report: &AssaultReport, report_path: Option<&Path>) -> PanllExp
         .filter(|wp| wp.severity == Severity::Critical)
         .count();
 
+    // Extract constraints from findings — critical weak points, taint paths,
+    // and cross-language boundary risks become Pane-L constraints in PanLL.
+    let constraints = extract_constraints(report);
+
     PanllExport {
         format: "panll.event-chain.v0".to_string(),
         generated_at: chrono::Utc::now().to_rfc3339(),
@@ -124,7 +128,7 @@ fn export_report(report: &AssaultReport, report_path: Option<&Path>) -> PanllExp
         },
         timeline,
         event_chain,
-        constraints: Vec::new(),
+        constraints,
     }
 }
 
@@ -138,6 +142,110 @@ pub fn write_export(
     fs::write(output, json)
         .with_context(|| format!("writing panll export {}", output.display()))?;
     Ok(())
+}
+
+/// Extract Pane-L constraints from the assault report.
+///
+/// Constraints represent invariants that PanLL's symbolic mass (Pane-L) should
+/// track and enforce. They come from:
+/// - Critical weak points (must-fix findings)
+/// - Taint matrix paths (source-to-sink data flows)
+/// - Failed attack axes (stress test failures)
+/// - Critical issues from overall assessment
+fn extract_constraints(report: &AssaultReport) -> Vec<PanllConstraint> {
+    let mut constraints = Vec::new();
+    let mut id_counter = 0usize;
+
+    // Constraint from each critical weak point
+    for wp in &report.assail_report.weak_points {
+        if wp.severity == Severity::Critical {
+            id_counter += 1;
+            let location = wp
+                .location
+                .as_deref()
+                .unwrap_or("unknown");
+            constraints.push(PanllConstraint {
+                id: format!("wp-crit-{}", id_counter),
+                description: format!(
+                    "[{}] {} at {}",
+                    category_label(wp.category),
+                    wp.description,
+                    location
+                ),
+            });
+        }
+    }
+
+    // Constraints from taint matrix — high-severity source-to-sink paths
+    for row in &report.assail_report.taint_matrix.rows {
+        if row.severity_value >= 7.0 {
+            id_counter += 1;
+            constraints.push(PanllConstraint {
+                id: format!("taint-{}", id_counter),
+                description: format!(
+                    "Taint flow: {:?} -> {:?} (severity {:.1}) across {} files",
+                    row.source_category,
+                    row.sink_axis,
+                    row.severity_value,
+                    row.files.len()
+                ),
+            });
+        }
+    }
+
+    // Constraints from failed attack axes
+    for result in &report.attack_results {
+        if !result.success && !result.skipped {
+            id_counter += 1;
+            let crash_count = result.crashes.len();
+            constraints.push(PanllConstraint {
+                id: format!("attack-fail-{}", id_counter),
+                description: format!(
+                    "Failed {} stress test: {} crashes, {} signatures detected",
+                    axis_label(result.axis),
+                    crash_count,
+                    result.signatures_detected.len()
+                ),
+            });
+        }
+    }
+
+    // Constraints from critical issues in overall assessment
+    for issue in &report.overall_assessment.critical_issues {
+        id_counter += 1;
+        constraints.push(PanllConstraint {
+            id: format!("critical-{}", id_counter),
+            description: issue.clone(),
+        });
+    }
+
+    constraints
+}
+
+/// Human-readable label for a weak point category
+fn category_label(cat: WeakPointCategory) -> &'static str {
+    match cat {
+        WeakPointCategory::UncheckedAllocation => "unchecked-alloc",
+        WeakPointCategory::UnboundedLoop => "unbounded-loop",
+        WeakPointCategory::BlockingIO => "blocking-io",
+        WeakPointCategory::UnsafeCode => "unsafe-code",
+        WeakPointCategory::PanicPath => "panic-path",
+        WeakPointCategory::RaceCondition => "race-condition",
+        WeakPointCategory::DeadlockPotential => "deadlock",
+        WeakPointCategory::ResourceLeak => "resource-leak",
+        WeakPointCategory::CommandInjection => "cmd-injection",
+        WeakPointCategory::UnsafeDeserialization => "unsafe-deser",
+        WeakPointCategory::DynamicCodeExecution => "dynamic-exec",
+        WeakPointCategory::UnsafeFFI => "unsafe-ffi",
+        WeakPointCategory::AtomExhaustion => "atom-exhaustion",
+        WeakPointCategory::InsecureProtocol => "insecure-proto",
+        WeakPointCategory::ExcessivePermissions => "excess-perms",
+        WeakPointCategory::PathTraversal => "path-traversal",
+        WeakPointCategory::HardcodedSecret => "hardcoded-secret",
+        WeakPointCategory::UncheckedError => "unchecked-error",
+        WeakPointCategory::InfiniteRecursion => "infinite-recursion",
+        WeakPointCategory::UnsafeTypeCoercion => "unsafe-coercion",
+    }
 }
 
 fn axis_label(axis: AttackAxis) -> String {

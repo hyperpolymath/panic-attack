@@ -106,6 +106,10 @@ pub struct ReportBundle {
     pub version: u32,
     pub exported_at: String,
     pub payload: ReportBundlePayload,
+    /// Optional attestation envelope from `--attest` mode.
+    /// When present, the report's integrity is cryptographically chained.
+    #[allow(dead_code)]
+    pub attestation: Option<crate::attestation::A2mlEnvelope>,
 }
 
 impl ReportBundle {
@@ -115,7 +119,15 @@ impl ReportBundle {
             version: REPORT_BUNDLE_VERSION,
             exported_at: chrono::Utc::now().to_rfc3339(),
             payload,
+            attestation: None,
         }
+    }
+
+    /// Attach an attestation envelope to this report bundle.
+    #[allow(dead_code)]
+    pub fn with_attestation(mut self, envelope: crate::attestation::A2mlEnvelope) -> Self {
+        self.attestation = Some(envelope);
+        self
     }
 
     pub fn kind(&self) -> ReportBundleKind {
@@ -405,6 +417,7 @@ fn parse_report_bundle(raw: &str) -> Result<ReportBundle> {
         version,
         exported_at,
         payload,
+        attestation: None,
     })
 }
 

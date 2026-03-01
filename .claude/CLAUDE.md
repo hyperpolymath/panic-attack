@@ -19,7 +19,7 @@ Static analysis and bug signature detection tool. Scans source code for weak poi
 
 ```
 src/
-├── main.rs              # CLI entry point (clap)
+├── main.rs              # CLI entry point (clap) — 20 subcommands
 ├── lib.rs               # Library API
 ├── types.rs             # Core types (AssailReport, WeakPoint, etc.)
 ├── assail/              # Static analysis engine
@@ -38,10 +38,29 @@ src/
 ├── signatures/          # Logic-based bug signature detection
 │   ├── engine.rs        # SignatureEngine (use-after-free, deadlock, etc.)
 │   └── rules.rs         # Detection rules
-└── report/
-    ├── mod.rs           # Report generation API
-    ├── generator.rs     # AssaultReport builder
-    └── formatter.rs     # Output formatting (text + JSON)
+├── report/              # Report generation and output
+│   ├── mod.rs           # Report generation API
+│   ├── generator.rs     # AssaultReport builder
+│   └── formatter.rs     # Output formatting (text + JSON)
+├── assemblyline.rs      # Batch scanning with rayon parallelism + BLAKE3
+├── notify.rs            # Designer notification pipeline (markdown + GitHub issues)
+├── attestation/         # Cryptographic attestation chain
+│   ├── mod.rs           # Three-phase chain: intent → evidence → seal
+│   ├── intent.rs        # Pre-execution commitment
+│   ├── evidence.rs      # Rolling hash accumulator
+│   ├── seal.rs          # Post-execution binding
+│   ├── chain.rs         # Chain builder orchestration
+│   └── envelope.rs      # A2ML envelope wrapper
+├── ambush/              # Ambient stressors + DAW-style timeline
+├── amuck/               # Mutation combinations
+├── abduct/              # Isolation + time-skew
+├── adjudicate/          # Campaign verdict aggregation
+├── axial/               # Reaction observation
+├── a2ml/                # AI manifest protocol
+├── panll/               # PanLL event-chain export
+├── storage/             # Filesystem + VerisimDB persistence
+├── i18n/                # Multi-language support (ISO 639-1, 10 languages)
+└── diagnostics.rs       # Self-check for Hypatia/gitbot-fleet
 ```
 
 ## Build & Test
@@ -79,23 +98,37 @@ The kanren module provides:
 
 ## Planned Features (Next Priorities)
 
-1. **`sweep` subcommand**: Scan entire directory of git repos in one go
-2. **verisimdb integration**: Push results as hexads to verisimdb API
-3. **hypatia pipeline**: Feed results through rule engine for pattern detection
-4. **SARIF output**: GitHub Security tab integration
-5. **RSR compliance**: Standard workflows, docs, shell completions
+1. **verisimdb API integration**: Push scan results as hexads directly
+2. **Incremental assemblyline**: BLAKE3 delta scanning (skip unchanged repos)
+3. **kanren context-facts**: ~10 rules for FP suppression (~8% -> ~2-3%)
+4. **hypatia pipeline**: Export kanren facts as Logtalk predicates via PanLL
+5. **Shell completions**: bash, zsh, fish, nushell
 
 ## Integration Points
 
-- **verisimdb**: Store scan results as hexads (document + semantic modalities)
-- **hypatia**: Neurosymbolic rule engine processes findings
-- **echidnabot**: Proof verification of scan claims
-- **sustainabot**: Ecological/economic code health metrics
+- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA020). Directives at `.machine_readable/bot_directives/panicbot.scm`
+- **verisimdb**: Store scan results as hexads (document + semantic modalities). File I/O works, API planned
+- **hypatia**: Neurosymbolic rule engine processes findings. Env var watcher in diagnostics
+- **panll**: Event-chain export for three-pane visualisation. Working via `panll` subcommand
+- **assemblyline**: Batch scanning of repo directories. Rayon parallelism, BLAKE3 fingerprinting
+- **notify**: Notification pipeline. Assemblyline -> markdown summaries -> GitHub issues
+- **attestation**: Cryptographic chain (intent/evidence/seal). Optional Ed25519 signing
+- **echidnabot**: Proof verification of scan claims (planned)
 - **hardware-crash-team**: Sibling tool (hardware diagnostics vs software analysis)
+
+## Readiness Tests (CRG)
+
+Machine-verifiable Component Readiness Grade tests in `tests/readiness.rs`:
+- **Grade D (Alpha)**: Component runs without crashing on valid input
+- **Grade C (Beta)**: Component produces correct output on representative input
+- **Grade B (RC)**: Component handles edge cases and multiple input types
+
+Run with `just readiness` or `just readiness-summary`.
 
 ## Code Style
 
 - SPDX headers on all files: `PMPL-1.0-or-later`
-- Author: Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>
+- Author: Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 - Use anyhow::Result for error handling
 - Serde derive on public types for JSON serialization
+- Zero compiler warnings policy (release + test builds)

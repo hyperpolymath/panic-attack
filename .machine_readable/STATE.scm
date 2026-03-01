@@ -7,8 +7,8 @@
   (metadata
     (version "1.0")
     (project "panic-attack")
-    (last-updated "2026-02-12T18:30:00Z")
-    (session-count 7))
+    (last-updated "2026-03-01T12:00:00Z")
+    (session-count 9))
 
   (project-context
     (name "panic-attack")
@@ -18,7 +18,7 @@
     (purpose "Multi-language static analysis with miniKanren-inspired logic engine for taint analysis, cross-language reasoning, and search strategies")
     (current-version "2.0.0")
     (next-milestone "v2.1.0")
-    (lines-of-code 7500))
+    (lines-of-code 9000))
 
   (naming
     (note "Renamed from panic-attacker on 2026-02-08")
@@ -73,7 +73,14 @@
       "Report views (summary, accordion, dashboard, matrix) + TUI viewer"
       "PanLL event-chain export for external timeline visualisation"
       "Ambush timeline scheduling (plan-only) for stressor sequencing"
-      "Optional verisimdb storage integration"))
+      "Optional verisimdb storage integration"
+      "SARIF output format for GitHub Security tab"
+      "Assemblyline batch scanning with rayon parallelism + BLAKE3 fingerprinting"
+      "Notification pipeline (markdown + critical-only filtering)"
+      "Panicbot integration (JSON contract verified, bot directives, diagnostics check)"
+      "Cryptographic attestation chain (intent → evidence → seal)"
+      "i18n support (ISO 639-1, 10 languages)"
+      "Machine-verifiable readiness tests (CRG D/C/B grades)"))
 
   (route-to-mvp
     (target "v2.1.0: Bulk scanning + verisimdb integration")
@@ -101,8 +108,9 @@
 
       (milestone
         (id "sarif-output")
-        (status "planned")
+        (status "completed")
         (priority "medium")
+        (completed-date "2026-03-01")
         (tasks
           "SARIF output for GitHub Security tab"
           "Integration with CodeQL workflow"))))
@@ -112,18 +120,55 @@
   (critical-next-actions
     (action
       (priority "1")
-      (description "Add sweep subcommand for bulk directory scanning")
+      (description "verisimdb API integration: push scan results as hexads directly")
       (estimated-effort "2-3 hours"))
     (action
       (priority "2")
-      (description "Add verisimdb integration for results storage")
+      (description "Incremental assemblyline: BLAKE3 delta scanning to skip unchanged repos")
       (estimated-effort "1-2 hours"))
     (action
       (priority "3")
-      (description "Export kanren facts as Logtalk for hypatia integration")
+      (description "kanren context-facts for FP suppression (~10 rules, 8% -> 2-3%)")
+      (estimated-effort "2-3 hours"))
+    (action
+      (priority "4")
+      (description "Export kanren facts as Logtalk predicates for hypatia via PanLL")
       (estimated-effort "1-2 hours")))
 
   (session-history
+    (session
+      (id "9")
+      (date "2026-03-01")
+      (duration "1h")
+      (focus "Panicbot integration")
+      (outcomes
+        "Added panicbot to AI.a2ml integration section"
+        "Created .machine_readable/bot_directives/panicbot.scm"
+        "Added panicbot health check to diagnostics.rs (JSON contract verification)"
+        "Added panicbot to ECOSYSTEM.scm with interface documentation"
+        "Added readiness tests: diagnostics output, JSON contract (PA001–PA020)"
+        "Updated STATE.scm with all session 8+9 capabilities"))
+
+    (session
+      (id "8")
+      (date "2026-03-01")
+      (duration "4h")
+      (focus "Assemblyline, notification pipeline, SARIF, attestation, i18n, readiness tests")
+      (outcomes
+        "Implemented SARIF output format"
+        "Added assemblyline batch scanning with rayon parallelism (17.7x speedup)"
+        "Added BLAKE3 fingerprinting for incremental scanning"
+        "Built notification pipeline (markdown + GitHub issues + critical-only)"
+        "Added cryptographic attestation chain (intent/evidence/seal)"
+        "Added i18n support (10 languages)"
+        "Fixed framework detection false positives (manifest-first approach)"
+        "Spot-checked FP rate: ~8% across 4 repos"
+        "Built machine-verifiable readiness test suite (16 tests, CRG D/C/B grades)"
+        "Added justfile with readiness/readiness-summary recipes"
+        "Fixed all compiler warnings (0 warnings in release + test builds)"
+        "Updated README.md and CLAUDE.md documentation"
+        "267 tests, 0 failures"))
+
     (session
       (id "7")
       (date "2026-02-12")

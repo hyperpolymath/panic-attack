@@ -538,8 +538,12 @@ pub struct AttackPattern {
     pub command_template: String,
 }
 
-/// Datalog fact for signature detection
+/// Datalog fact for signature detection.
+///
+/// All variants are part of the fact vocabulary even if not yet generated
+/// by the current set of analyzers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum Fact {
     Alloc {
         var: String,
@@ -565,7 +569,6 @@ pub enum Fact {
         id: String,
         location: usize,
     },
-    #[allow(dead_code)] // Reserved for v0.5 Datalog engine
     ThreadJoin {
         id: String,
         location: usize,
@@ -578,20 +581,22 @@ pub enum Fact {
         var: String,
         location: usize,
     },
-    #[allow(dead_code)] // Reserved for v0.5 Datalog engine
     Ordering {
         before: usize,
         after: usize,
     },
 }
 
-/// Datalog rule for pattern detection
+/// Datalog rule for pattern detection.
+///
+/// `head` is the consequent of the rule — used by the forward-chaining
+/// engine even though the signature matcher currently accesses rules
+/// only through `body`.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Rule {
     pub name: String,
-    #[allow(dead_code)] // Reserved for v0.5 Datalog engine
     pub head: Predicate,
-    #[allow(dead_code)] // Reserved for v0.5 Datalog engine
     pub body: Vec<Predicate>,
 }
 

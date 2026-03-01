@@ -1,76 +1,97 @@
 # Changelog
 
+## [2.0.0+] - 2026-03-01
+
+### Added
+- **SARIF output format**: `--output-format sarif` for GitHub Security tab integration
+- **Assemblyline batch scanning**: Scan entire directories of repos with `assemblyline` subcommand
+  - Rayon parallelism: 17.7x speedup (141 repos in 39.9s)
+  - BLAKE3 fingerprinting for incremental scanning (infrastructure ready)
+  - Sorted output: riskiest repos first
+- **Notification pipeline**: `notify` subcommand generates annotated finding summaries
+  - Markdown output with severity breakdown per repo
+  - `--critical-only` flag for filtering
+  - `--create-issues` for GitHub issue creation
+- **Cryptographic attestation chain**: Three-phase model (intent, evidence, seal)
+  - Pre-execution commitment hashing
+  - Rolling evidence accumulator
+  - Post-execution binding with optional Ed25519 signing (`--features signing`)
+  - A2ML envelope wrapper for attestation bundles
+- **i18n support**: ISO 639-1, 10 languages (en, fr, de, es, it, pt, ja, zh, ko, ar)
+  - Compile-time safe catalog with `t()` and `t_or_key()` lookups
+  - Doc-tested examples
+- **Panicbot integration**: JSON output contract verified for gitbot-fleet
+  - PA001-PA020 rule mapping for all 20 WeakPointCategory variants
+  - Bot directives at `.machine_readable/bot_directives/panicbot.scm`
+  - Diagnostics self-check for panicbot readiness
+- **Machine-verifiable readiness tests**: 18 tests across CRG grades D/C/B
+  - Grade D (Alpha): component runs without crashing
+  - Grade C (Beta): correct output on representative input
+  - Grade B (RC): edge cases and multi-language support
+- **Justfile**: build, test, readiness, readiness-summary, clean, install, dogfood, lint recipes
+- **Manifest-first framework detection**: Detects frameworks from Cargo.toml, mix.exs, package.json etc. instead of source scanning (eliminates false positives)
+
+### Fixed
+- **Framework detection false positives**: Self-referential matches eliminated by using dependency manifests as primary signal; Rust source scanning removed entirely
+- **All compiler warnings**: 0 warnings in both release and test builds
+- **Test count**: 269 tests (up from ~30), 0 failures
+
+### Changed
+- **Diagnostics**: Now checks panicbot integration readiness (JSON contract, directives)
+- **AI.a2ml**: Added panicbot, updated SARIF format, corrected metadata
+- **ECOSYSTEM.scm**: Added panicbot with full interface documentation
+- **STATE.scm**: Updated with all session 8/9 capabilities and outcomes
+
+## [2.0.0] - 2026-02-08
+
+### Added
+- **47-language support**: BEAM (Elixir, Erlang, Gleam), ML (ReScript, OCaml, SML), Lisp (Scheme, Racket), Functional (Haskell, PureScript), Proof (Idris, Lean, Agda), Logic (Prolog, Logtalk, Datalog), Systems (Zig, Ada, Odin, Nim, Pony, D), Config (Nickel, Nix), Scripting (Shell, Julia, Lua), plus 12 nextgen DSLs
+- **20 weak point categories**: UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, DynamicCodeExecution, UnsafeFFI, AtomExhaustion, InsecureProtocol, ExcessivePermissions, PathTraversal, HardcodedSecret, UncheckedError, InfiniteRecursion, UnsafeTypeCoercion, UncheckedAllocation, UnboundedLoop, BlockingIO, RaceCondition, DeadlockPotential, ResourceLeak
+- **miniKanren-inspired logic engine** (`src/kanren/`):
+  - Substitution-based unification
+  - Forward chaining: derives vulnerability facts from rules
+  - Backward queries: find files by vulnerability category
+  - Taint analysis: source-to-sink data flow tracking
+  - Cross-language vulnerability chain detection (FFI/NIF/Port/subprocess)
+  - Search strategy auto-selection (RiskWeighted, BoundaryFirst, LanguageFamily, BreadthFirst, DepthFirst)
+- **PanLL event-chain export**: DAW-style timeline export for visualisation
+- **Ambush timeline scheduling**: Stressor sequencing with timeline files
+- **Report views**: Summary, accordion, dashboard, matrix views + TUI viewer
+- **Nickel output format**
+
+### Changed
+- **Renamed**: xray -> assail, XRayReport -> AssailReport, src/xray/ -> src/assail/
+- **Renamed**: panic-attacker binary -> panic-attack
+
 ## [1.0.1] - 2026-02-07
 
 ### Fixed
 - **CI/CD workflows**: All GitHub Actions now passing
-  - Updated MSRV from 1.75.0 → 1.85.0 (required for Cargo.lock v4 format)
-  - Fixed invalid codeql-action SHA pins (using version tags for Scorecard compatibility)
-  - Fixed TruffleHog configuration (BASE/HEAD commit conflict)
+  - Updated MSRV from 1.75.0 to 1.85.0 (required for Cargo.lock v4 format)
+  - Fixed invalid codeql-action SHA pins
+  - Fixed TruffleHog configuration
   - Fixed EditorConfig indentation violations
-- **Code quality**:
-  - Resolved clippy warnings (manual_clamp, unwrap_or_default)
-  - Added `#[allow]` attributes for intentional vulnerabilities in examples
-  - Removed unused imports
-  - Applied rustfmt to all source files
+- **Code quality**: Resolved clippy warnings, removed unused imports
 
 ### Changed
 - **MSRV**: Updated from 1.75.0 to 1.85.0
-- **Workflows**: codeql-action now uses version tags instead of SHA pins
 
 ## [1.0.0] - 2026-02-07
 
 ### Added
-- **Production-ready infrastructure**:
-  - Complete RSR compliance (AI.a2ml manifest, 3 SCM files)
-  - 11 GitHub Actions workflows (CI, security, coverage, quality)
-  - Comprehensive documentation (SECURITY.md, CONTRIBUTING.md, LICENSE)
-  - Stable JSON schema (v1.0, documented, versioned)
-- **Testing**:
-  - 21 unit tests covering all analyzers
-  - 3 integration tests (Assail pipeline, vulnerable programs)
-  - 3 regression tests (echidna, eclexia, self-test baselines)
-  - Code coverage reporting with codecov
-- **Configuration**:
-  - Config file support (panic-attacker.toml)
-  - EditorConfig for consistent formatting
-  - MSRV policy (1.75.0, later updated to 1.85.0)
+- **Production-ready infrastructure**: RSR compliance, 11 workflows, docs
+- **Testing**: 21 unit + 3 integration + 3 regression tests
+- **Configuration**: Config file support, EditorConfig, MSRV policy
 
 ## [0.2.0] - 2026-02-07
 
 ### Fixed
-- **Weak points now per-file, not running totals**: v0.1 produced duplicate weak points with cumulative counts across all files. v0.2 analyzes each file independently, eliminating duplicates.
-  - Example: echidna went from 271 weak points (v0.1) → 15 weak points (v0.2)
-- **File locations always populated**: Weak points now include `location: Some("path/to/file.rs")` instead of `location: None`
-- **Descriptions include filenames**: e.g., "12 unwrap/expect calls in src/server.rs" instead of "219 unwrap/expect calls detected"
+- **Weak points now per-file**: Eliminates duplicates (echidna: 271 -> 15)
+- **File locations always populated**: No more `location: None`
 
 ### Added
-- **FileStatistics**: Per-file breakdown of all metrics (unsafe blocks, panics, unwraps, allocations, I/O, threading)
-- **Latin-1 fallback**: Non-UTF-8 source files are decoded with Windows-1252 before skipping
-- **Verbose mode**: `--verbose` flag prints per-file breakdown sorted by risk score (top 10)
-- **Pattern library wired**: AttackExecutor now uses PatternDetector to select language/framework-specific attacks
-- **RuleSet wired**: SignatureEngine dispatches on rule names from RuleSet
-- **Library interface**: `src/lib.rs` re-exports all modules for integration tests and external consumers
-- **Integration tests**: 3 new tests verify locations, no-duplicates, and per-file stats
-- **encoding_rs dependency**: For robust Latin-1 decoding
-
-### Changed
-- **Analyzer refactored**: Fresh `ProgramStatistics` per file, accumulated into global stats
-- **Attack executor**: Added `with_patterns()` constructor, logs strategy descriptions and applicable patterns
-- **Assault command**: Uses pattern-aware attack execution (`execute_attack_with_patterns`)
-- **Report formatter**: Prints per-file breakdown in assault reports
-
-### Removed
-- **Dead code warnings**: Suppressed with `#[allow(dead_code)]` on 4 items reserved for v0.5 Datalog engine
-- **Unused Context import**: Removed from `assail/analyzer.rs`
-- **Stale chrono import**: Removed duplicate from `attack/executor.rs` (already in Cargo.toml)
-
-### Verification
-- Zero compiler warnings
-- 7/7 tests pass (2 unit + 2 unit-via-main + 3 integration)
-- echidna: 271 → 15 weak points, all with file locations
-- eclexia: 7 weak points, all with file locations, 49 files analyzed
+- FileStatistics, Latin-1 fallback, verbose mode, pattern library, integration tests
 
 ## [0.1.0] - 2026-02-06
 
-Initial proof-of-concept release with Assail static analysis, multi-axis stress testing, and logic-based bug signature detection.
+Initial proof-of-concept: Assail static analysis, multi-axis stress testing, logic-based bug signature detection.

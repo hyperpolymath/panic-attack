@@ -161,34 +161,52 @@ function main() {
 
 #[test]
 fn test_framework_detection_webserver() {
+    // Framework detection for Rust relies on Cargo.toml, so we create a directory
+    // with both a source file and a manifest declaring the dependency.
     let dir = TempDir::new().unwrap();
-    let content = r#"
-use actix_web::{web, App, HttpServer};
+    let src_dir = dir.path().join("src");
+    fs::create_dir_all(&src_dir).unwrap();
+    fs::write(
+        src_dir.join("main.rs"),
+        "use actix_web::{web, App, HttpServer};\nfn main() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"test\"\n[dependencies]\nactix-web = \"4\"\n",
+    )
+    .unwrap();
+    let report = assail::analyze(dir.path()).expect("analysis should succeed");
 
-fn main() {
-    HttpServer::new(|| App::new()).bind("127.0.0.1:8080");
-}
-"#;
-    let file = create_test_file(&dir, "server.rs", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
-
-    assert!(report.frameworks.contains(&Framework::WebServer));
+    assert!(
+        report.frameworks.contains(&Framework::WebServer),
+        "expected WebServer from Cargo.toml actix-web dep, got {:?}",
+        report.frameworks
+    );
 }
 
 #[test]
 fn test_framework_detection_database() {
     let dir = TempDir::new().unwrap();
-    let content = r#"
-use diesel::prelude::*;
+    let src_dir = dir.path().join("src");
+    fs::create_dir_all(&src_dir).unwrap();
+    fs::write(
+        src_dir.join("main.rs"),
+        "use diesel::prelude::*;\nfn main() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"test\"\n[dependencies]\ndiesel = \"2\"\n",
+    )
+    .unwrap();
+    let report = assail::analyze(dir.path()).expect("analysis should succeed");
 
-fn main() {
-    let connection = PgConnection::establish("postgresql://localhost");
-}
-"#;
-    let file = create_test_file(&dir, "db.rs", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
-
-    assert!(report.frameworks.contains(&Framework::Database));
+    assert!(
+        report.frameworks.contains(&Framework::Database),
+        "expected Database from Cargo.toml diesel dep, got {:?}",
+        report.frameworks
+    );
 }
 
 #[test]

@@ -47,7 +47,27 @@ impl Analyzer {
         })
     }
 
+    /// Run analysis with an optional evidence accumulator for attestation.
+    ///
+    /// When `accumulator` is `Some`, each successfully read file and each
+    /// traversed directory are recorded into the accumulator for the
+    /// attestation chain. When `None`, this behaves identically to
+    /// [`analyze()`].
+    pub fn analyze_with_accumulator(
+        &self,
+        accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,
+    ) -> Result<AssailReport> {
+        self.analyze_inner(accumulator)
+    }
+
     pub fn analyze(&self) -> Result<AssailReport> {
+        self.analyze_inner(None)
+    }
+
+    fn analyze_inner(
+        &self,
+        mut accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,
+    ) -> Result<AssailReport> {
         // Global aggregates are intentionally maintained alongside per-file analysis
         // so output can support both campaign-level scoring and local triage.
         let mut global_stats = ProgramStatistics {
@@ -69,6 +89,19 @@ impl Analyzer {
         } else {
             self.target.parent().unwrap_or(Path::new(".")).to_path_buf()
         };
+
+        // Record traversed directories into the attestation accumulator
+        if let Some(ref mut acc) = accumulator {
+            let mut seen_dirs: HashSet<String> = HashSet::new();
+            for file in &files {
+                if let Some(parent) = file.parent() {
+                    let dir_str = parent.to_string_lossy().to_string();
+                    if seen_dirs.insert(dir_str.clone()) {
+                        acc.record_directory(&dir_str);
+                    }
+                }
+            }
+        }
 
         // Each source file is analyzed independently; this keeps weak-point attribution precise.
         for file in &files {
@@ -122,6 +155,12 @@ impl Analyzer {
 
             // Dispatch to language-specific analyzer
             let file_lang = Language::detect(file.to_str().unwrap_or(""));
+
+            // Record this file into the attestation accumulator (zero-cost when None)
+            if let Some(ref mut acc) = accumulator {
+                acc.record_file(&rel_path, &raw_bytes, &format!("{:?}", file_lang));
+            }
+
             match file_lang {
                 Language::Rust => {
                     self.analyze_rust(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
@@ -548,6 +587,39 @@ impl Analyzer {
             });
         }
 
+        // mem::transmute — type-punning bypasses Rust's type system entirely
+        if content.contains("transmute(") || content.contains("transmute::<") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::UnsafeCode,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!("mem::transmute usage in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory],
+            });
+        }
+
+        // mem::forget — deliberately leaks resources without running destructors
+        if content.contains("mem::forget(") || content.contains("forget(") && content.contains("use std::mem") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::ResourceLeak,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("mem::forget usage (resource leak) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory],
+            });
+        }
+
+        // Raw pointer casts — escape safe Rust's borrow checker guarantees
+        if content.contains("as *const ") || content.contains("as *mut ") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::UnsafeCode,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("Raw pointer cast in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
+            });
+        }
+
         Ok(())
     }
 
@@ -578,6 +650,50 @@ impl Analyzer {
             });
         }
 
+        // gets() — no bounds checking, classic buffer overflow vector
+        if content.contains("gets(") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::UnsafeCode,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!("gets() usage (unbounded buffer write) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory],
+            });
+        }
+
+        // system() — shell command injection via unvalidated input
+        if content.contains("system(") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::CommandInjection,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!("system() call (command injection risk) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
+            });
+        }
+
+        // sprintf() — no bounds checking, format string overflow
+        if content.contains("sprintf(") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::UnsafeCode,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("sprintf() usage (buffer overflow risk) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory],
+            });
+        }
+
+        // strcpy/strcat — classic unbounded string operations
+        if content.contains("strcpy(") || content.contains("strcat(") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::UnsafeCode,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("Unbounded string operation (strcpy/strcat) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory],
+            });
+        }
+
         Ok(())
     }
 
@@ -600,6 +716,28 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} goroutines spawned in {}", go_count, file_path),
                 recommended_attack: vec![AttackAxis::Concurrency, AttackAxis::Memory],
+            });
+        }
+
+        // unsafe.Pointer — bypasses Go's type safety and GC guarantees
+        if content.contains("unsafe.Pointer") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::UnsafeCode,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("unsafe.Pointer usage in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory],
+            });
+        }
+
+        // exec.Command — shell command execution, injection risk
+        if content.contains("exec.Command") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::CommandInjection,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("exec.Command usage (command injection risk) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
             });
         }
 
@@ -636,6 +774,41 @@ impl Analyzer {
             });
         }
 
+        // pickle.load / pickle.loads — arbitrary code execution via deserialization
+        if content.contains("pickle.load") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::UnsafeDeserialization,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!("pickle deserialization (arbitrary code execution) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
+            });
+        }
+
+        // os.system / os.popen / subprocess with shell=True — command injection
+        if content.contains("os.system(") || content.contains("os.popen(") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::CommandInjection,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!("Shell command execution (os.system/os.popen) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
+            });
+        }
+
+        // subprocess with shell=True
+        if content.contains("subprocess.call") || content.contains("subprocess.Popen") || content.contains("subprocess.run") {
+            if content.contains("shell=True") || content.contains("shell = True") {
+                weak_points.push(WeakPoint {
+                    category: WeakPointCategory::CommandInjection,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::High,
+                    description: format!("subprocess with shell=True in {}", file_path),
+                    recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
+                });
+            }
+        }
+
         Ok(())
     }
 
@@ -659,6 +832,28 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("eval() usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
+            });
+        }
+
+        // innerHTML / document.write — DOM-based XSS vectors
+        if content.contains("innerHTML") || content.contains("document.write(") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::DynamicCodeExecution,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("DOM manipulation (innerHTML/document.write) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory, AttackAxis::Network],
+            });
+        }
+
+        // dangerouslySetInnerHTML — React's explicit escape hatch for raw HTML injection
+        if content.contains("dangerouslySetInnerHTML") {
+            weak_points.push(WeakPoint {
+                category: WeakPointCategory::DynamicCodeExecution,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("dangerouslySetInnerHTML (XSS risk) in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory, AttackAxis::Network],
             });
         }
 
@@ -1996,95 +2191,272 @@ impl Analyzer {
     fn detect_frameworks(&self, files: &[PathBuf]) -> Result<Vec<Framework>> {
         let mut frameworks = HashSet::new();
 
-        // Framework detection is string-heuristic based by design: cheap and language-agnostic.
+        // Primary signal: dependency manifest files.  These are the most reliable
+        // because they declare actual dependencies, not just keyword mentions.
+        let target_dir = if self.target.is_dir() {
+            &self.target
+        } else {
+            self.target.parent().unwrap_or(Path::new("."))
+        };
+
+        // Cargo.toml (Rust)
+        let cargo_toml = target_dir.join("Cargo.toml");
+        if let Ok(content) = fs::read_to_string(&cargo_toml) {
+            if content.contains("tokio") {
+                frameworks.insert(Framework::Networking);
+            }
+            if content.contains("rayon") || content.contains("crossbeam") {
+                frameworks.insert(Framework::Concurrent);
+            }
+            if content.contains("actix-web") || content.contains("axum")
+                || content.contains("warp =") || content.contains("rocket =")
+            {
+                frameworks.insert(Framework::WebServer);
+            }
+            if content.contains("diesel") || content.contains("sqlx") {
+                frameworks.insert(Framework::Database);
+            }
+            if content.contains("rdkafka") {
+                frameworks.insert(Framework::MessageQueue);
+            }
+            if content.contains("redis =") || content.contains("[dependencies.redis]") {
+                frameworks.insert(Framework::Cache);
+            }
+            if content.contains("async-std") {
+                frameworks.insert(Framework::Networking);
+            }
+        }
+
+        // mix.exs (Elixir)
+        let mix_exs = target_dir.join("mix.exs");
+        if let Ok(content) = fs::read_to_string(&mix_exs) {
+            if content.contains(":phoenix") {
+                frameworks.insert(Framework::Phoenix);
+                frameworks.insert(Framework::WebServer);
+            }
+            if content.contains(":ecto") {
+                frameworks.insert(Framework::Ecto);
+                frameworks.insert(Framework::Database);
+            }
+            if content.contains(":cowboy") || content.contains(":bandit") {
+                frameworks.insert(Framework::Cowboy);
+                frameworks.insert(Framework::WebServer);
+            }
+            if content.contains(":broadway") || content.contains(":gen_stage") {
+                frameworks.insert(Framework::MessageQueue);
+            }
+            if content.contains(":cachex") || content.contains(":con_cache") {
+                frameworks.insert(Framework::Cache);
+            }
+        }
+
+        // rebar.config (Erlang)
+        let rebar_config = target_dir.join("rebar.config");
+        if let Ok(content) = fs::read_to_string(&rebar_config) {
+            if content.contains("cowboy") {
+                frameworks.insert(Framework::Cowboy);
+                frameworks.insert(Framework::WebServer);
+            }
+        }
+
+        // gleam.toml (Gleam)
+        let gleam_toml = target_dir.join("gleam.toml");
+        if let Ok(content) = fs::read_to_string(&gleam_toml) {
+            if content.contains("wisp") || content.contains("mist") {
+                frameworks.insert(Framework::WebServer);
+            }
+        }
+
+        // package.json (JS/TS/ReScript)
+        let pkg_json = target_dir.join("package.json");
+        if let Ok(content) = fs::read_to_string(&pkg_json) {
+            if content.contains("\"express\"") || content.contains("\"fastify\"")
+                || content.contains("\"koa\"")
+            {
+                frameworks.insert(Framework::WebServer);
+            }
+            if content.contains("\"mongodb\"") || content.contains("\"pg\"")
+                || content.contains("\"prisma\"")
+            {
+                frameworks.insert(Framework::Database);
+            }
+            if content.contains("\"kafkajs\"") || content.contains("\"amqplib\"") {
+                frameworks.insert(Framework::MessageQueue);
+            }
+            if content.contains("\"ioredis\"") || content.contains("\"redis\"") {
+                frameworks.insert(Framework::Cache);
+            }
+        }
+
+        // requirements.txt / pyproject.toml (Python)
+        for manifest in &["requirements.txt", "pyproject.toml", "setup.py"] {
+            let path = target_dir.join(manifest);
+            if let Ok(content) = fs::read_to_string(&path) {
+                if content.contains("flask") || content.contains("django")
+                    || content.contains("fastapi")
+                {
+                    frameworks.insert(Framework::WebServer);
+                }
+                if content.contains("sqlalchemy") || content.contains("psycopg")
+                    || content.contains("pymongo")
+                {
+                    frameworks.insert(Framework::Database);
+                }
+                if content.contains("celery") || content.contains("kafka") {
+                    frameworks.insert(Framework::MessageQueue);
+                }
+                if content.contains("redis") {
+                    frameworks.insert(Framework::Cache);
+                }
+            }
+        }
+
+        // Secondary signal: import/use statements in source files.
+        // Only used for languages whose manifests were not found above.
+        // Rust is excluded because Cargo.toml is always present and reliable;
+        // scanning .rs files for `use` lines produces false positives from
+        // string literals in tests and analyzer patterns.
         for file in files {
+            let file_lang = Language::detect(file.to_str().unwrap_or(""));
             let content = match fs::read_to_string(file) {
                 Ok(c) => c,
                 Err(_) => continue,
             };
 
-            // Web servers (original)
-            if content.contains("actix_web")
-                || content.contains("warp")
-                || content.contains("axum")
-                || content.contains("rocket")
-                || content.contains("express")
-                || content.contains("flask")
-                || content.contains("Plug.Router")
-                || content.contains("Bandit")
-            {
-                frameworks.insert(Framework::WebServer);
-            }
+            match file_lang {
+                // Rust: skip — Cargo.toml detection above is sufficient.
+                Language::Rust => {}
 
-            // Phoenix (Elixir web framework)
-            if content.contains("Phoenix.") || content.contains("use Phoenix") {
-                frameworks.insert(Framework::Phoenix);
-            }
+                Language::Elixir => {
+                    // In Elixir, `use GenServer` or `use Supervisor` at line start
+                    let has_elixir_use = |module: &str| -> bool {
+                        content.lines().any(|line| {
+                            let t = line.trim();
+                            t.starts_with(&format!("use {}", module))
+                                || t.starts_with(&format!("import {}", module))
+                                || t.starts_with(&format!("alias {}", module))
+                        })
+                    };
+                    if has_elixir_use("GenServer") || has_elixir_use("Supervisor")
+                        || has_elixir_use("Agent")
+                    {
+                        frameworks.insert(Framework::OTP);
+                    }
+                    if has_elixir_use("Phoenix") {
+                        frameworks.insert(Framework::Phoenix);
+                    }
+                    if has_elixir_use("Ecto") {
+                        frameworks.insert(Framework::Ecto);
+                    }
+                    if has_elixir_use("Broadway") || has_elixir_use("GenStage") {
+                        frameworks.insert(Framework::MessageQueue);
+                    }
+                    if has_elixir_use("Cachex") || has_elixir_use("ConCache") {
+                        frameworks.insert(Framework::Cache);
+                    }
+                    if has_elixir_use("Plug") || has_elixir_use("Bandit") {
+                        frameworks.insert(Framework::WebServer);
+                    }
+                    if has_elixir_use("Flow") {
+                        frameworks.insert(Framework::Concurrent);
+                    }
+                    if has_elixir_use("Mint") || has_elixir_use("Finch") {
+                        frameworks.insert(Framework::Networking);
+                    }
+                }
 
-            // Ecto (Elixir database)
-            if content.contains("Ecto.") || content.contains("use Ecto") {
-                frameworks.insert(Framework::Ecto);
-            }
+                Language::Erlang => {
+                    if content.contains("-behaviour(gen_server)")
+                        || content.contains("-behaviour(supervisor)")
+                    {
+                        frameworks.insert(Framework::OTP);
+                    }
+                }
 
-            // OTP (BEAM supervision trees)
-            if content.contains("GenServer")
-                || content.contains("Supervisor")
-                || content.contains("gen_server")
-                || content.contains("supervisor")
-            {
-                frameworks.insert(Framework::OTP);
-            }
+                Language::Go => {
+                    let has_go_import = |pkg: &str| -> bool {
+                        content.lines().any(|line| {
+                            let t = line.trim();
+                            t.contains(&format!("\"{}\"", pkg))
+                                || t.contains(&format!("\"{}\"", pkg))
+                        })
+                    };
+                    if has_go_import("net/http") || has_go_import("github.com/gin-gonic") {
+                        frameworks.insert(Framework::WebServer);
+                    }
+                    if has_go_import("database/sql") || has_go_import("github.com/jackc/pgx") {
+                        frameworks.insert(Framework::Database);
+                    }
+                }
 
-            // Cowboy (Erlang web server)
-            if content.contains("cowboy") || content.contains(":cowboy") {
-                frameworks.insert(Framework::Cowboy);
-            }
+                Language::Ruby => {
+                    let has_require = |gem: &str| -> bool {
+                        content.lines().any(|line| {
+                            let t = line.trim();
+                            t.starts_with(&format!("require '{}'", gem))
+                                || t.starts_with(&format!("require \"{}\"", gem))
+                        })
+                    };
+                    if has_require("rails") || has_require("sinatra") {
+                        frameworks.insert(Framework::WebServer);
+                    }
+                    if has_require("active_record") {
+                        frameworks.insert(Framework::Database);
+                    }
+                }
 
-            // Databases (original + expanded)
-            if content.contains("diesel")
-                || content.contains("sqlx")
-                || content.contains("mongodb")
-                || content.contains("postgres")
-                || content.contains("Ecto.Repo")
-                || content.contains("Mnesia")
-            {
-                frameworks.insert(Framework::Database);
-            }
+                Language::Python => {
+                    let has_import = |module: &str| -> bool {
+                        content.lines().any(|line| {
+                            let t = line.trim();
+                            t.starts_with(&format!("import {}", module))
+                                || t.starts_with(&format!("from {}", module))
+                        })
+                    };
+                    if has_import("flask") || has_import("django") || has_import("fastapi") {
+                        frameworks.insert(Framework::WebServer);
+                    }
+                    if has_import("sqlalchemy") || has_import("psycopg")
+                        || has_import("pymongo")
+                    {
+                        frameworks.insert(Framework::Database);
+                    }
+                    if has_import("celery") || has_import("kafka") {
+                        frameworks.insert(Framework::MessageQueue);
+                    }
+                    if has_import("redis") {
+                        frameworks.insert(Framework::Cache);
+                    }
+                }
 
-            // Message queues
-            if content.contains("kafka")
-                || content.contains("rabbitmq")
-                || content.contains("nats")
-                || content.contains("Broadway")
-            {
-                frameworks.insert(Framework::MessageQueue);
-            }
+                Language::JavaScript | Language::ReScript => {
+                    let has_js_import = |pkg: &str| -> bool {
+                        content.lines().any(|line| {
+                            let t = line.trim();
+                            t.contains(&format!("require('{}')", pkg))
+                                || t.contains(&format!("require(\"{}\")", pkg))
+                                || t.contains(&format!("from '{}'", pkg))
+                                || t.contains(&format!("from \"{}\"", pkg))
+                        })
+                    };
+                    if has_js_import("express") || has_js_import("fastify")
+                        || has_js_import("koa")
+                    {
+                        frameworks.insert(Framework::WebServer);
+                    }
+                    if has_js_import("mongodb") || has_js_import("pg") {
+                        frameworks.insert(Framework::Database);
+                    }
+                    if has_js_import("kafkajs") || has_js_import("amqplib") {
+                        frameworks.insert(Framework::MessageQueue);
+                    }
+                    if has_js_import("ioredis") || has_js_import("redis") {
+                        frameworks.insert(Framework::Cache);
+                    }
+                }
 
-            // Caching
-            if content.contains("redis")
-                || content.contains("memcached")
-                || content.contains("Cachex")
-                || content.contains("ConCache")
-            {
-                frameworks.insert(Framework::Cache);
-            }
-
-            // Networking
-            if content.contains("tokio")
-                || content.contains("async_std")
-                || content.contains("Mint")
-                || content.contains("Finch")
-            {
-                frameworks.insert(Framework::Networking);
-            }
-
-            // Concurrency
-            if content.contains("rayon")
-                || content.contains("crossbeam")
-                || content.contains("Flow")
-                || content.contains("GenStage")
-            {
-                frameworks.insert(Framework::Concurrent);
+                // Other languages: rely on manifest detection only.
+                _ => {}
             }
         }
 

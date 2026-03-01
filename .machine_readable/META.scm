@@ -136,7 +136,96 @@
         "Covers all languages in hyperpolymath ecosystem"
         "20 weak point categories (up from ~5)"
         "Per-file language detection with family-specific patterns"
-        "Cross-language analysis possible via kanren engine")))
+        "Cross-language analysis possible via kanren engine"))
+
+    (adr
+      (id "ADR-011")
+      (date "2026-03-01")
+      (status "accepted")
+      (title "Assemblyline batch scanning with rayon parallelism and BLAKE3 fingerprinting")
+      (context "Need to scan 100+ repos efficiently; sequential scanning too slow")
+      (decision "Use rayon for parallel repo scanning, BLAKE3 for source fingerprinting to enable incremental rescans")
+      (consequences
+        "17.7x speedup (141 repos in 39.9s vs ~705s sequential)"
+        "BLAKE3 fingerprint infrastructure for future delta scanning"
+        "Sorted output: riskiest repos first"
+        "JSON aggregate report with per-repo breakdowns"))
+
+    (adr
+      (id "ADR-012")
+      (date "2026-03-01")
+      (status "accepted")
+      (title "SARIF output format for standardised security reporting")
+      (context "GitHub Security tab requires SARIF for code scanning integration")
+      (decision "Implement SARIF 2.1.0 output via --output-format sarif")
+      (consequences
+        "GitHub Security tab integration via codeql-action/upload-sarif"
+        "Standard format consumed by multiple security tools"
+        "Rules deduplicated by WeakPointCategory"))
+
+    (adr
+      (id "ADR-013")
+      (date "2026-03-01")
+      (status "accepted")
+      (title "Cryptographic attestation chain (intent/evidence/seal)")
+      (context "Need to prove scans are genuine and untampered for trust chain")
+      (decision "Three-phase model: intent (pre-commit), evidence (rolling hash), seal (post-bind)")
+      (consequences
+        "Scans are cryptographically bound to inputs and outputs"
+        "Optional Ed25519 signing via --features signing"
+        "A2ML envelope wraps attestation for transport"
+        "Diagnostics checks signing health"))
+
+    (adr
+      (id "ADR-014")
+      (date "2026-03-01")
+      (status "accepted")
+      (title "i18n support using ISO 639-1 (10-language catalog)")
+      (context "Potential for non-English-speaking users; internationalisation should be built in early")
+      (decision "Compile-time safe catalog with t() and t_or_key() lookups, 10 languages")
+      (consequences
+        "All user-facing strings translatable"
+        "Doc-tested examples ensure catalog stays valid"
+        "ISO 639-1 validation for language codes"))
+
+    (adr
+      (id "ADR-015")
+      (date "2026-03-01")
+      (status "accepted")
+      (title "Notification pipeline (markdown-first, critical-only filtering)")
+      (context "Assemblyline produces aggregate reports; need human-readable summaries and actionable alerts")
+      (decision "notify subcommand generates markdown with severity breakdown, optional critical-only filter, optional GitHub issue creation")
+      (consequences
+        "Markdown output works in GitHub, email, Slack, etc."
+        "--critical-only reduces noise to actionable items only"
+        "GitHub issue creation automates remediation workflow"))
+
+    (adr
+      (id "ADR-016")
+      (date "2026-03-01")
+      (status "accepted")
+      (title "Manifest-first framework detection (fixes false positives)")
+      (context "Source-level substring matching caused self-referential false positives (analyzer detecting its own patterns)")
+      (decision "Primary detection from dependency manifests (Cargo.toml, mix.exs, package.json, etc.); Rust excluded from source scanning entirely")
+      (consequences
+        "Eliminates self-referential false positives"
+        "Cargo.toml detection is authoritative for Rust"
+        "Source scanning kept for BEAM, Go, Ruby, Python, JS only"
+        "~8% overall FP rate (down from higher)"))
+
+    (adr
+      (id "ADR-017")
+      (date "2026-03-01")
+      (status "accepted")
+      (title "Machine-verifiable readiness tests (CRG grades D/C/B)")
+      (context "Need automated evidence for Component Readiness Grading")
+      (decision "tests/readiness.rs with grade-prefixed test names; justfile recipes for summary output")
+      (consequences
+        "CRG grades derivable from test results"
+        "D (Alpha): component runs without crashing"
+        "C (Beta): correct output on representative input"
+        "B (RC): edge cases and multi-language support"
+        "18 tests across 3 grades, automated via just readiness-summary")))
 
   (development-practices
     (practice
@@ -150,7 +239,7 @@
       (description "All features must have tests")
       (rationale "Untested code is untrusted code")
       (target "80% code coverage")
-      (current "30 tests: 16 unit + 11 analyzer + 3 integration"))
+      (current "269 tests: unit, integration, analyzer, readiness (CRG D/C/B), SARIF, PanLL, report, assemblyline, pattern"))
 
     (practice
       (name "RSR compliance")
@@ -168,7 +257,7 @@
       (rationale "Predictable releases, clear breaking changes")
       (policy
         "1.x = stable foundation, naming finalised"
-        "2.x = major feature expansion (logic engine, 47 langs)"
+        "2.x = major feature expansion (logic engine, 47 langs, batch scanning, attestation)"
         "3.0 = public release (crates.io)"))
 
     (practice
@@ -184,7 +273,7 @@
       (name "Eat your own dogfood")
       (description "Run panic-attack on panic-attack itself")
       (rationale "Find bugs, validate thresholds, prove usefulness")
-      (status "active: self-scan shows 3 weak points")))
+      (status "active: self-scan shows 30 findings, ~8% false positive rate")))
 
   (design-rationale
     (rationale
@@ -215,9 +304,21 @@
       (benefit "Cross-language vulnerability detection via kanren engine"))
 
     (rationale
+      (aspect "Manifest-first framework detection")
+      (reasoning "Source-level substring matching causes self-referential false positives when the analyzer scans its own code")
+      (decision "Use dependency manifests (Cargo.toml, mix.exs, etc.) as primary signal; exclude Rust from source scanning")
+      (benefit "Eliminates FPs from string literals containing detection patterns"))
+
+    (rationale
+      (aspect "Cryptographic attestation")
+      (reasoning "Prove scans are genuine and untampered for CI/CD trust chains")
+      (components "intent.rs (pre-commit), evidence.rs (rolling hash), seal.rs (post-bind), chain.rs (orchestration), envelope.rs (A2ML wrapper)")
+      (benefit "Scans can be verified by echidnabot or other proof verifiers"))
+
+    (rationale
       (aspect "CLI + library")
       (reasoning "Useful standalone and as integration component")
-      (benefit "src/lib.rs enables testing, hypatia integration, verisimdb pipeline")))
+      (benefit "src/lib.rs enables testing, hypatia integration, verisimdb pipeline, panicbot subprocess invocation")))
 
   (cross-cutting-concerns
     (concern
@@ -227,13 +328,13 @@
 
     (concern
       (name "Performance")
-      (approach "Reasonable defaults, search strategy optimisation via kanren")
-      (current "Single-threaded file analysis with risk-weighted prioritisation")
-      (future "rayon for parallel assail analysis"))
+      (approach "Rayon parallelism for batch scanning, search strategy optimisation via kanren")
+      (current "Parallel assemblyline scanning (17.7x speedup); single-threaded per-file analysis with risk-weighted prioritisation")
+      (future "Incremental analysis via BLAKE3 delta fingerprinting"))
 
     (concern
       (name "Security")
-      (approach "cargo-audit in CI, SBOM generation, self-testing")
+      (approach "cargo-audit in CI, SBOM generation, self-testing, attestation chain")
       (policy "No unsafe code in panic-attack itself except when required for FFI"))
 
     (concern
@@ -246,10 +347,10 @@
       (name "Extensibility")
       (approach "Pattern library, kanren rule system, pluggable analyzers")
       (current "miniKanren rules for taint, cross-language, and strategy")
-      (future "User-definable rules, plugin system")))
+      (future "User-definable rules, plugin system, context-fact FP suppression")))
 
   (metadata
     (created "2026-02-07")
-    (updated "2026-02-08")
-    (maintainer "Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>")
+    (updated "2026-03-01")
+    (maintainer "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>")
     (license "PMPL-1.0-or-later")))

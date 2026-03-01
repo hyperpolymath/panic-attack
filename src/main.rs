@@ -12,6 +12,7 @@ mod adjudicate;
 mod ambush;
 mod amuck;
 mod assail;
+mod attestation;
 mod attack;
 mod axial;
 mod diagnostics;
@@ -21,6 +22,8 @@ mod panll;
 mod report;
 mod signatures;
 mod storage;
+mod assemblyline;
+mod notify;
 mod types;
 
 use crate::a2ml::{Manifest, ReportBundleKind};
@@ -39,7 +42,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use types::*;
 
@@ -98,6 +101,15 @@ enum Commands {
         /// Verbose output
         #[arg(short, long)]
         verbose: bool,
+
+        /// Enable attestation chain (writes .attestation.json sidecar)
+        #[arg(long, default_value_t = false)]
+        attest: bool,
+
+        /// Path to Ed25519 private key (32-byte seed) for signing the attestation.
+        /// Requires the `signing` feature.
+        #[arg(long, value_name = "PATH")]
+        signing_key: Option<PathBuf>,
     },
 
     /// Execute a single attack on a target program
@@ -499,11 +511,57 @@ enum Commands {
         command: Option<String>,
     },
 
+    /// Assemblyline: batch-scan a directory of repos (assail each, aggregate results)
+    Assemblyline {
+        /// Parent directory containing repos to scan
+        #[arg(value_name = "DIRECTORY")]
+        directory: PathBuf,
+
+        /// Output report to file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Only show repos with findings
+        #[arg(long)]
+        findings_only: bool,
+
+        /// Minimum number of findings to include a repo
+        #[arg(long, default_value = "0")]
+        min_findings: usize,
+    },
+
     /// Run panic-attack self-diagnostics for Hypatia/gitbot-fleet visibility
     Diagnostics {
         /// Alternate AI manifest file (default: AI.a2ml)
         #[arg(long, value_name = "PATH")]
         manifest: Option<PathBuf>,
+    },
+
+    /// Notify: generate annotated findings summary from an assemblyline report
+    Notify {
+        /// Assemblyline JSON report file
+        #[arg(value_name = "REPORT")]
+        report: PathBuf,
+
+        /// Output markdown file
+        #[arg(short, long, value_name = "OUT")]
+        output: Option<PathBuf>,
+
+        /// Only include repos with critical findings
+        #[arg(long)]
+        critical_only: bool,
+
+        /// Minimum findings to include a repo
+        #[arg(long, default_value = "1")]
+        min_findings: usize,
+
+        /// Create GitHub issues for repos with critical findings (requires gh CLI)
+        #[arg(long)]
+        create_issues: bool,
+
+        /// GitHub owner for issue creation
+        #[arg(long, default_value = "hyperpolymath")]
+        github_owner: String,
     },
 }
 
@@ -761,6 +819,8 @@ fn main() -> Result<()> {
             target,
             output,
             verbose,
+            attest,
+            signing_key,
         } => {
             qprintln!(
                 cli.quiet,
@@ -768,21 +828,65 @@ fn main() -> Result<()> {
                 target.display()
             );
 
-            let report = if verbose {
+            // Build CLI args for attestation recording
+            let cli_args: Vec<String> = std::env::args().collect();
+
+            // Optionally start attestation chain before scanning
+            let mut chain_builder = if attest {
+                qprintln!(cli.quiet, "Attestation enabled");
+                Some(attestation::AttestationChainBuilder::begin(&target, &cli_args)?)
+            } else {
+                None
+            };
+
+            let report = if let Some(ref mut builder) = chain_builder {
+                // Attested mode: use the analyzer with an evidence accumulator
+                let analyzer = if verbose {
+                    assail::analyzer::Analyzer::new_verbose(&target)?
+                } else {
+                    assail::analyzer::Analyzer::new(&target)?
+                };
+                analyzer.analyze_with_accumulator(Some(builder.accumulator()))?
+            } else if verbose {
                 assail::analyze_verbose(&target)?
             } else {
                 assail::analyze(&target)?
             };
 
-            if let Some(output_path) = output {
-                let json = serde_json::to_string_pretty(&report)?;
-                fs::write(&output_path, json)?;
+            let report_json = serde_json::to_string_pretty(&report)?;
+
+            if let Some(output_path) = &output {
+                fs::write(output_path, &report_json)?;
                 qprintln!(cli.quiet, "Report saved to: {}", output_path.display());
             } else if !cli.quiet {
                 println!("\nAssail Summary:");
                 println!("  Language: {:?}", report.language);
                 println!("  Weak points: {}", report.weak_points.len());
                 println!("  Recommended attacks: {:?}", report.recommended_attacks);
+            }
+
+            // Seal and write attestation sidecar
+            if let Some(builder) = chain_builder {
+                let envelope = builder.seal(
+                    report_json.as_bytes(),
+                    signing_key.as_deref(),
+                )?;
+                let attestation_json = serde_json::to_string_pretty(&envelope)?;
+
+                let sidecar_path = if let Some(out) = &output {
+                    let stem = out.file_stem().unwrap_or_default().to_string_lossy();
+                    let parent = out.parent().unwrap_or(Path::new("."));
+                    parent.join(format!("{}.attestation.json", stem))
+                } else {
+                    PathBuf::from("assail-report.attestation.json")
+                };
+
+                fs::write(&sidecar_path, attestation_json)?;
+                qprintln!(
+                    cli.quiet,
+                    "Attestation written to: {}",
+                    sidecar_path.display()
+                );
             }
         }
 
@@ -1399,6 +1503,33 @@ fn main() -> Result<()> {
             return Ok(());
         }
 
+        Commands::Assemblyline {
+            directory,
+            output,
+            findings_only,
+            min_findings,
+        } => {
+            let config = assemblyline::AssemblylineConfig {
+                directory: directory.clone(),
+                output: output.clone(),
+                findings_only,
+                min_findings,
+                sarif: cli.output_format == report::output::ReportOutputFormat::Sarif,
+            };
+
+            let report = assemblyline::run(&config)?;
+            assemblyline::print_summary(&report, cli.quiet);
+
+            if let Some(out_path) = output {
+                assemblyline::write_report(&report, &out_path)?;
+                if !cli.quiet {
+                    println!("Report written to {}", out_path.display());
+                }
+            }
+
+            return Ok(());
+        }
+
         Commands::Diagnostics {
             manifest: manifest_path,
         } => {
@@ -1409,6 +1540,42 @@ fn main() -> Result<()> {
                 manifest.clone()
             };
             diagnostics::run_self_diagnostics(&diag_manifest)?;
+            return Ok(());
+        }
+
+        Commands::Notify {
+            report: report_path,
+            output,
+            critical_only,
+            min_findings,
+            create_issues,
+            github_owner,
+        } => {
+            let content = fs::read_to_string(&report_path)
+                .with_context(|| format!("reading assemblyline report {}", report_path.display()))?;
+            let asmline_report: assemblyline::AssemblylineReport =
+                serde_json::from_str(&content)
+                    .with_context(|| "parsing assemblyline report JSON")?;
+
+            let config = notify::NotifyConfig {
+                create_issues,
+                min_findings,
+                critical_only,
+                github_owner: Some(github_owner),
+            };
+
+            let output_path = output.unwrap_or_else(|| PathBuf::from("reports/notification.md"));
+            notify::write_notification(&asmline_report, &config, &output_path)?;
+            qprintln!(cli.quiet, "Notification written to: {}", output_path.display());
+
+            if create_issues {
+                let created = notify::create_github_issues(&asmline_report, &config)?;
+                qprintln!(cli.quiet, "Created {} GitHub issues", created.len());
+                for url in &created {
+                    qprintln!(cli.quiet, "  {}", url);
+                }
+            }
+
             return Ok(());
         }
     }

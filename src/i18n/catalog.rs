@@ -37,6 +37,11 @@ pub enum Lang {
     Fr,
     De,
     Ja,
+    Pt,
+    Zh,
+    Ko,
+    It,
+    Ru,
 }
 
 impl Lang {
@@ -48,6 +53,11 @@ impl Lang {
             Lang::Fr => "fr",
             Lang::De => "de",
             Lang::Ja => "ja",
+            Lang::Pt => "pt",
+            Lang::Zh => "zh",
+            Lang::Ko => "ko",
+            Lang::It => "it",
+            Lang::Ru => "ru",
         }
     }
 
@@ -62,13 +72,22 @@ impl Lang {
             "fr" => Some(Lang::Fr),
             "de" => Some(Lang::De),
             "ja" => Some(Lang::Ja),
+            "pt" => Some(Lang::Pt),
+            "zh" => Some(Lang::Zh),
+            "ko" => Some(Lang::Ko),
+            "it" => Some(Lang::It),
+            "ru" => Some(Lang::Ru),
             _ => None,
         }
     }
 
     /// All supported languages, in display order.
+    #[allow(dead_code)]
     pub fn all() -> &'static [Lang] {
-        &[Lang::En, Lang::Es, Lang::Fr, Lang::De, Lang::Ja]
+        &[
+            Lang::En, Lang::Es, Lang::Fr, Lang::De, Lang::Ja,
+            Lang::Pt, Lang::Zh, Lang::Ko, Lang::It, Lang::Ru,
+        ]
     }
 
     /// Default aspell dictionary code for this language.
@@ -83,6 +102,11 @@ impl Lang {
             Lang::Fr => "fr",
             Lang::De => "de",
             Lang::Ja => "en", // aspell has no Japanese dictionary
+            Lang::Pt => "pt",
+            Lang::Zh => "en", // aspell has no Chinese dictionary
+            Lang::Ko => "en", // aspell has no Korean dictionary
+            Lang::It => "it",
+            Lang::Ru => "ru",
         }
     }
 }
@@ -137,6 +161,7 @@ pub fn t(lang: Lang, key: &str) -> &'static str {
 
 /// Non-static variant: returns the translation or the key itself if missing.
 /// Useful when you need to own the result.
+#[allow(dead_code)]
 pub fn t_or_key<'a>(lang: Lang, key: &'a str) -> &'a str {
     let result = t(lang, key);
     if result.is_empty() {
@@ -165,6 +190,11 @@ fn catalog_for(lang: Lang) -> &'static [(&'static str, &'static str)] {
         Lang::Fr => FR,
         Lang::De => DE,
         Lang::Ja => JA,
+        Lang::Pt => PT,
+        Lang::Zh => ZH,
+        Lang::Ko => KO,
+        Lang::It => IT,
+        Lang::Ru => RU,
     }
 }
 
@@ -432,6 +462,261 @@ const JA: &[(&str, &str)] = &[
     ("abduct.scope", "依存関係スコープ"),
 ];
 
+// ─── Portuguese ────────────────────────────────────────────────────
+
+const PT: &[(&str, &str)] = &[
+    ("axial.title", "Relatório Axial"),
+    ("axial.target", "Alvo"),
+    ("axial.created_at", "Criado em"),
+    ("axial.language", "Idioma"),
+    ("axial.observed_runs", "Execuções observadas"),
+    ("axial.observed_reports", "Relatórios observados"),
+    ("axial.signals", "Sinais"),
+    ("axial.recommendations", "Recomendações"),
+    ("axial.spelling", "Ortografia"),
+    ("axial.none", "nenhum"),
+    ("rec.crash", "priorizar triagem de falhas e coleta de rastreamentos"),
+    ("rec.panic", "auditar caminhos panic/fatal por suposições inseguras"),
+    ("rec.timeout", "revisar caminhos longos e adicionar watchdog"),
+    ("rec.none", "nenhum sinal crítico de reação observado"),
+    ("assault.title", "Relatório de Assalto"),
+    ("assault.robustness", "Pontuação de Robustez"),
+    ("assault.critical_issues", "Problemas Críticos"),
+    ("assault.recommendations", "Recomendações"),
+    ("assault.total_crashes", "Total de Falhas"),
+    ("assault.total_signatures", "Assinaturas de Bugs Detectadas"),
+    ("assail.title", "Relatório Assail"),
+    ("assail.weak_points", "Pontos Fracos"),
+    ("assail.statistics", "Estatísticas"),
+    ("assail.files_scanned", "Arquivos Analisados"),
+    ("assail.total_lines", "Linhas Totais"),
+    ("assail.languages_detected", "Linguagens Detectadas"),
+    ("common.severity", "Gravidade"),
+    ("common.location", "Localização"),
+    ("common.description", "Descrição"),
+    ("common.category", "Categoria"),
+    ("common.file", "Arquivo"),
+    ("common.summary", "Resumo"),
+    ("common.details", "Detalhes"),
+    ("common.unknown", "desconhecido"),
+    ("adjudicate.title", "Veredicto de Adjudicação"),
+    ("adjudicate.campaigns", "Campanhas Analisadas"),
+    ("adjudicate.verdict", "Veredicto Geral"),
+    ("ambush.title", "Relatório de Emboscada"),
+    ("ambush.timeline", "Eventos da Linha do Tempo"),
+    ("ambush.stressors", "Estressores Ativos"),
+    ("amuck.title", "Relatório de Mutação Amuck"),
+    ("amuck.mutations", "Mutações Aplicadas"),
+    ("amuck.survivors", "Mutações Sobreviventes"),
+    ("abduct.title", "Relatório de Isolamento Abduct"),
+    ("abduct.isolated_files", "Arquivos Isolados"),
+    ("abduct.scope", "Escopo de Dependências"),
+];
+
+// ─── Chinese (Simplified) ─────────────────────────────────────────
+
+const ZH: &[(&str, &str)] = &[
+    ("axial.title", "轴向报告"),
+    ("axial.target", "目标"),
+    ("axial.created_at", "创建时间"),
+    ("axial.language", "语言"),
+    ("axial.observed_runs", "观察到的运行"),
+    ("axial.observed_reports", "观察到的报告"),
+    ("axial.signals", "信号"),
+    ("axial.recommendations", "建议"),
+    ("axial.spelling", "拼写检查"),
+    ("axial.none", "无"),
+    ("rec.crash", "优先处理崩溃分类和堆栈跟踪收集"),
+    ("rec.panic", "审查panic/fatal路径中的不安全假设"),
+    ("rec.timeout", "审查长时间运行路径并添加看门狗"),
+    ("rec.none", "未观察到关键反应信号"),
+    ("assault.title", "突击报告"),
+    ("assault.robustness", "健壮性评分"),
+    ("assault.critical_issues", "关键问题"),
+    ("assault.recommendations", "建议"),
+    ("assault.total_crashes", "崩溃总数"),
+    ("assault.total_signatures", "检测到的缺陷签名"),
+    ("assail.title", "Assail报告"),
+    ("assail.weak_points", "薄弱点"),
+    ("assail.statistics", "统计"),
+    ("assail.files_scanned", "已扫描文件"),
+    ("assail.total_lines", "总行数"),
+    ("assail.languages_detected", "检测到的语言"),
+    ("common.severity", "严重程度"),
+    ("common.location", "位置"),
+    ("common.description", "描述"),
+    ("common.category", "类别"),
+    ("common.file", "文件"),
+    ("common.summary", "摘要"),
+    ("common.details", "详情"),
+    ("common.unknown", "未知"),
+    ("adjudicate.title", "裁决结果"),
+    ("adjudicate.campaigns", "已分析的战役"),
+    ("adjudicate.verdict", "总体裁决"),
+    ("ambush.title", "伏击报告"),
+    ("ambush.timeline", "时间线事件"),
+    ("ambush.stressors", "活动压力源"),
+    ("amuck.title", "Amuck变异报告"),
+    ("amuck.mutations", "已应用的变异"),
+    ("amuck.survivors", "存活的变异"),
+    ("abduct.title", "Abduct隔离报告"),
+    ("abduct.isolated_files", "已隔离文件"),
+    ("abduct.scope", "依赖范围"),
+];
+
+// ─── Korean ───────────────────────────────────────────────────────
+
+const KO: &[(&str, &str)] = &[
+    ("axial.title", "축 보고서"),
+    ("axial.target", "대상"),
+    ("axial.created_at", "생성일"),
+    ("axial.language", "언어"),
+    ("axial.observed_runs", "관찰된 실행"),
+    ("axial.observed_reports", "관찰된 보고서"),
+    ("axial.signals", "신호"),
+    ("axial.recommendations", "권장사항"),
+    ("axial.spelling", "맞춤법 검사"),
+    ("axial.none", "없음"),
+    ("rec.crash", "크래시 분류 및 백트레이스 수집 우선"),
+    ("rec.panic", "panic/fatal 경로의 안전하지 않은 가정 감사"),
+    ("rec.timeout", "장시간 실행 경로 검토 및 워치독 추가"),
+    ("rec.none", "관찰된 중요 반응 신호 없음"),
+    ("assault.title", "돌격 보고서"),
+    ("assault.robustness", "견고성 점수"),
+    ("assault.critical_issues", "치명적 문제"),
+    ("assault.recommendations", "권장사항"),
+    ("assault.total_crashes", "총 크래시"),
+    ("assault.total_signatures", "감지된 버그 시그니처"),
+    ("assail.title", "Assail 보고서"),
+    ("assail.weak_points", "취약점"),
+    ("assail.statistics", "통계"),
+    ("assail.files_scanned", "스캔된 파일"),
+    ("assail.total_lines", "총 라인 수"),
+    ("assail.languages_detected", "감지된 언어"),
+    ("common.severity", "심각도"),
+    ("common.location", "위치"),
+    ("common.description", "설명"),
+    ("common.category", "범주"),
+    ("common.file", "파일"),
+    ("common.summary", "요약"),
+    ("common.details", "상세"),
+    ("common.unknown", "알 수 없음"),
+    ("adjudicate.title", "판결 결과"),
+    ("adjudicate.campaigns", "분석된 캠페인"),
+    ("adjudicate.verdict", "종합 판결"),
+    ("ambush.title", "매복 보고서"),
+    ("ambush.timeline", "타임라인 이벤트"),
+    ("ambush.stressors", "활성 스트레서"),
+    ("amuck.title", "Amuck 돌연변이 보고서"),
+    ("amuck.mutations", "적용된 돌연변이"),
+    ("amuck.survivors", "생존한 돌연변이"),
+    ("abduct.title", "Abduct 격리 보고서"),
+    ("abduct.isolated_files", "격리된 파일"),
+    ("abduct.scope", "의존성 범위"),
+];
+
+// ─── Italian ──────────────────────────────────────────────────────
+
+const IT: &[(&str, &str)] = &[
+    ("axial.title", "Rapporto Assiale"),
+    ("axial.target", "Obiettivo"),
+    ("axial.created_at", "Creato il"),
+    ("axial.language", "Lingua"),
+    ("axial.observed_runs", "Esecuzioni osservate"),
+    ("axial.observed_reports", "Rapporti osservati"),
+    ("axial.signals", "Segnali"),
+    ("axial.recommendations", "Raccomandazioni"),
+    ("axial.spelling", "Ortografia"),
+    ("axial.none", "nessuno"),
+    ("rec.crash", "dare priorità al triage dei crash e alla raccolta dei backtrace"),
+    ("rec.panic", "verificare percorsi panic/fatal per ipotesi non sicure"),
+    ("rec.timeout", "esaminare percorsi a lunga esecuzione e aggiungere watchdog"),
+    ("rec.none", "nessun segnale critico di reazione osservato"),
+    ("assault.title", "Rapporto d'Assalto"),
+    ("assault.robustness", "Punteggio di Robustezza"),
+    ("assault.critical_issues", "Problemi Critici"),
+    ("assault.recommendations", "Raccomandazioni"),
+    ("assault.total_crashes", "Crash Totali"),
+    ("assault.total_signatures", "Firme di Bug Rilevate"),
+    ("assail.title", "Rapporto Assail"),
+    ("assail.weak_points", "Punti Deboli"),
+    ("assail.statistics", "Statistiche"),
+    ("assail.files_scanned", "File Analizzati"),
+    ("assail.total_lines", "Righe Totali"),
+    ("assail.languages_detected", "Linguaggi Rilevati"),
+    ("common.severity", "Gravità"),
+    ("common.location", "Posizione"),
+    ("common.description", "Descrizione"),
+    ("common.category", "Categoria"),
+    ("common.file", "File"),
+    ("common.summary", "Riepilogo"),
+    ("common.details", "Dettagli"),
+    ("common.unknown", "sconosciuto"),
+    ("adjudicate.title", "Verdetto di Aggiudicazione"),
+    ("adjudicate.campaigns", "Campagne Analizzate"),
+    ("adjudicate.verdict", "Verdetto Complessivo"),
+    ("ambush.title", "Rapporto di Imboscata"),
+    ("ambush.timeline", "Eventi della Cronologia"),
+    ("ambush.stressors", "Stressori Attivi"),
+    ("amuck.title", "Rapporto di Mutazione Amuck"),
+    ("amuck.mutations", "Mutazioni Applicate"),
+    ("amuck.survivors", "Mutazioni Sopravvissute"),
+    ("abduct.title", "Rapporto di Isolamento Abduct"),
+    ("abduct.isolated_files", "File Isolati"),
+    ("abduct.scope", "Ambito delle Dipendenze"),
+];
+
+// ─── Russian ──────────────────────────────────────────────────────
+
+const RU: &[(&str, &str)] = &[
+    ("axial.title", "Осевой отчёт"),
+    ("axial.target", "Цель"),
+    ("axial.created_at", "Создан"),
+    ("axial.language", "Язык"),
+    ("axial.observed_runs", "Наблюдаемые запуски"),
+    ("axial.observed_reports", "Наблюдаемые отчёты"),
+    ("axial.signals", "Сигналы"),
+    ("axial.recommendations", "Рекомендации"),
+    ("axial.spelling", "Правописание"),
+    ("axial.none", "нет"),
+    ("rec.crash", "приоритизировать сортировку аварий и сбор трассировок"),
+    ("rec.panic", "проверить пути panic/fatal на небезопасные допущения"),
+    ("rec.timeout", "проверить долгие пути исполнения и добавить сторожевой таймер"),
+    ("rec.none", "критических сигналов реакции не обнаружено"),
+    ("assault.title", "Отчёт о штурме"),
+    ("assault.robustness", "Оценка устойчивости"),
+    ("assault.critical_issues", "Критические проблемы"),
+    ("assault.recommendations", "Рекомендации"),
+    ("assault.total_crashes", "Всего аварий"),
+    ("assault.total_signatures", "Обнаруженные сигнатуры ошибок"),
+    ("assail.title", "Отчёт Assail"),
+    ("assail.weak_points", "Уязвимые точки"),
+    ("assail.statistics", "Статистика"),
+    ("assail.files_scanned", "Просканированные файлы"),
+    ("assail.total_lines", "Всего строк"),
+    ("assail.languages_detected", "Обнаруженные языки"),
+    ("common.severity", "Серьёзность"),
+    ("common.location", "Расположение"),
+    ("common.description", "Описание"),
+    ("common.category", "Категория"),
+    ("common.file", "Файл"),
+    ("common.summary", "Сводка"),
+    ("common.details", "Подробности"),
+    ("common.unknown", "неизвестно"),
+    ("adjudicate.title", "Вердикт вынесения решения"),
+    ("adjudicate.campaigns", "Проанализированные кампании"),
+    ("adjudicate.verdict", "Общий вердикт"),
+    ("ambush.title", "Отчёт о засаде"),
+    ("ambush.timeline", "События хронологии"),
+    ("ambush.stressors", "Активные стрессоры"),
+    ("amuck.title", "Отчёт о мутации Amuck"),
+    ("amuck.mutations", "Применённые мутации"),
+    ("amuck.survivors", "Выжившие мутации"),
+    ("abduct.title", "Отчёт об изоляции Abduct"),
+    ("abduct.isolated_files", "Изолированные файлы"),
+    ("abduct.scope", "Область зависимостей"),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,5 +775,10 @@ mod tests {
         assert_eq!(FR.len(), en_count, "FR catalog key count mismatch");
         assert_eq!(DE.len(), en_count, "DE catalog key count mismatch");
         assert_eq!(JA.len(), en_count, "JA catalog key count mismatch");
+        assert_eq!(PT.len(), en_count, "PT catalog key count mismatch");
+        assert_eq!(ZH.len(), en_count, "ZH catalog key count mismatch");
+        assert_eq!(KO.len(), en_count, "KO catalog key count mismatch");
+        assert_eq!(IT.len(), en_count, "IT catalog key count mismatch");
+        assert_eq!(RU.len(), en_count, "RU catalog key count mismatch");
     }
 }

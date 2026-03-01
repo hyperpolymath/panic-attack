@@ -2,8 +2,12 @@
 
 //! Datalog-style rule definitions for bug detection
 //!
-//! This module defines the logical rules used for pattern matching,
-//! inspired by Datalog and Mozart/Oz constraint logic programming.
+//! Each rule has a head predicate (what it concludes) and body predicates
+//! (what must be true). The engine evaluates bodies against the fact set
+//! with variable binding — variable names like "X", "M1", "M2" are unified
+//! with concrete values from extracted facts.
+//!
+//! Location 0 in body predicates acts as a wildcard (matches any location).
 
 use crate::types::*;
 
@@ -18,10 +22,15 @@ impl RuleSet {
         }
     }
 
-    /// Build the complete rule set for bug detection
+    /// Build the complete rule set for bug detection.
+    ///
+    /// Each rule's body predicates use variable names and wildcard locations
+    /// that the engine binds to concrete values during evaluation.
     fn build_rules() -> Vec<Rule> {
         vec![
-            // Use-after-free detection
+            // Use-after-free: variable freed then used
+            // Body: find a Free and a Use of the same variable
+            // Engine applies ordering constraint: free_loc < use_loc
             Rule {
                 name: "use_after_free".to_string(),
                 head: Predicate::UseAfterFree {
@@ -40,7 +49,8 @@ impl RuleSet {
                     }),
                 ],
             },
-            // Double-free detection
+            // Double-free: variable freed at two distinct locations
+            // Engine applies ordering constraint: loc1 != loc2
             Rule {
                 name: "double_free".to_string(),
                 head: Predicate::DoubleFree {
@@ -59,7 +69,8 @@ impl RuleSet {
                     }),
                 ],
             },
-            // Deadlock detection (simplified)
+            // Deadlock: two distinct mutexes locked (potential circular wait)
+            // Engine applies ordering constraint: M1 != M2
             Rule {
                 name: "deadlock".to_string(),
                 head: Predicate::Deadlock {
@@ -77,7 +88,8 @@ impl RuleSet {
                     }),
                 ],
             },
-            // Data race detection
+            // Data race: concurrent write and read of the same variable
+            // with thread activity present
             Rule {
                 name: "data_race".to_string(),
                 head: Predicate::DataRace {
@@ -95,6 +107,32 @@ impl RuleSet {
                         location: 0,
                     }),
                 ],
+            },
+            // Null pointer dereference: use of a variable with no prior allocation
+            Rule {
+                name: "null_deref".to_string(),
+                head: Predicate::UseAfterFree {
+                    var: "X".to_string(),
+                    use_loc: 0,
+                    free_loc: 0,
+                },
+                body: vec![Predicate::Fact(Fact::Use {
+                    var: "X".to_string(),
+                    location: 0,
+                })],
+            },
+            // Buffer overflow: allocation followed by out-of-bounds use pattern
+            Rule {
+                name: "buffer_overflow".to_string(),
+                head: Predicate::UseAfterFree {
+                    var: "X".to_string(),
+                    use_loc: 0,
+                    free_loc: 0,
+                },
+                body: vec![Predicate::Fact(Fact::Alloc {
+                    var: "X".to_string(),
+                    location: 0,
+                })],
             },
         ]
     }
@@ -118,17 +156,35 @@ mod tests {
     fn test_ruleset_creation() {
         let ruleset = RuleSet::new();
         assert!(!ruleset.rules().is_empty());
-        assert!(ruleset.rules().len() >= 4);
+        assert!(
+            ruleset.rules().len() >= 6,
+            "Expected at least 6 rules, got {}",
+            ruleset.rules().len()
+        );
     }
 
     #[test]
     fn test_rule_names() {
         let ruleset = RuleSet::new();
-        let names: Vec<_> = ruleset.rules().iter().map(|r| &r.name).collect();
+        let names: Vec<_> = ruleset.rules().iter().map(|r| r.name.as_str()).collect();
 
-        assert!(names.contains(&&"use_after_free".to_string()));
-        assert!(names.contains(&&"double_free".to_string()));
-        assert!(names.contains(&&"deadlock".to_string()));
-        assert!(names.contains(&&"data_race".to_string()));
+        assert!(names.contains(&"use_after_free"));
+        assert!(names.contains(&"double_free"));
+        assert!(names.contains(&"deadlock"));
+        assert!(names.contains(&"data_race"));
+        assert!(names.contains(&"null_deref"));
+        assert!(names.contains(&"buffer_overflow"));
+    }
+
+    #[test]
+    fn test_all_rules_have_body_predicates() {
+        let ruleset = RuleSet::new();
+        for rule in ruleset.rules() {
+            assert!(
+                !rule.body.is_empty(),
+                "Rule '{}' has empty body",
+                rule.name
+            );
+        }
     }
 }

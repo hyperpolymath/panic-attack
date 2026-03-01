@@ -14,6 +14,7 @@ pub enum ReportOutputFormat {
     Json,
     Yaml,
     Nickel,
+    Sarif,
 }
 
 impl ReportOutputFormat {
@@ -22,6 +23,7 @@ impl ReportOutputFormat {
             "json" => Some(ReportOutputFormat::Json),
             "yaml" | "yml" => Some(ReportOutputFormat::Yaml),
             "nickel" | "ncl" => Some(ReportOutputFormat::Nickel),
+            "sarif" => Some(ReportOutputFormat::Sarif),
             _ => None,
         }
     }
@@ -31,6 +33,7 @@ impl ReportOutputFormat {
             ReportOutputFormat::Json => "json",
             ReportOutputFormat::Yaml => "yaml",
             ReportOutputFormat::Nickel => "ncl",
+            ReportOutputFormat::Sarif => "sarif",
         }
     }
 
@@ -40,6 +43,11 @@ impl ReportOutputFormat {
             ReportOutputFormat::Yaml => Ok(serde_yaml::to_string(report)?),
             // Nickel output is a compact projection for config-centric consumers.
             ReportOutputFormat::Nickel => Ok(format_report_as_nickel(report)),
+            // SARIF output targets GitHub Security tab and other SARIF consumers.
+            // Uses the assail_report (static findings) since SARIF is for static analysis results.
+            ReportOutputFormat::Sarif => {
+                crate::report::sarif::to_sarif_json(&report.assail_report)
+            }
         }
     }
 }

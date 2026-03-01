@@ -1,10 +1,10 @@
-# Contributing to panic-attacker
+# Contributing to panic-attack
 
-Thank you for your interest in contributing to panic-attacker! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to panic-attack! This document provides guidelines and information for contributors.
 
 ## Code of Conduct
 
-This project follows the Contributor Covenant Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to jonathan.jewell@open.ac.uk.
+This project follows the Contributor Covenant Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to j.d.a.jewell@open.ac.uk.
 
 ## How to Contribute
 
@@ -16,7 +16,7 @@ Before creating bug reports, please check the existing issues to avoid duplicate
 - **Detailed description** of the problem
 - **Steps to reproduce** the behavior
 - **Expected behavior** vs actual behavior
-- **Environment** (OS, Rust version, panic-attacker version)
+- **Environment** (OS, Rust version, panic-attack version)
 - **Logs or error messages** if applicable
 
 ### Suggesting Enhancements
@@ -44,9 +44,10 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ### Prerequisites
 
-- Rust 1.75.0 or later
+- Rust 1.85.0 or later (MSRV)
 - Cargo
 - Git
+- just (optional, for task automation)
 
 ### Building
 
@@ -61,6 +62,12 @@ cargo build
 ```bash
 # Run all tests
 cargo test
+
+# Run readiness tests (machine-verifiable CRG grades)
+just readiness
+
+# Run readiness summary (pass/fail per grade)
+just readiness-summary
 
 # Run with verbose output
 cargo test -- --nocapture
@@ -99,6 +106,7 @@ cargo run -- assail ./examples/vulnerable_program.rs --verbose
 - Aim for 80% code coverage
 - Test edge cases and error conditions
 - Use descriptive test names: `test_<what>_<condition>_<expected_result>`
+- Readiness tests use CRG grade prefixes: `readiness_d_`, `readiness_c_`, `readiness_b_`
 
 ### Commit Messages
 
@@ -137,25 +145,48 @@ Closes #42
 ```
 panic-attacker/
 ├── src/
-│   ├── main.rs          # CLI entry point
-│   ├── lib.rs           # Library interface
-│   ├── types.rs         # Core type definitions
-│   ├── assail/            # Static analysis
-│   │   ├── analyzer.rs  # Language-specific analyzers
-│   │   └── patterns.rs  # Attack pattern library
-│   ├── attack/          # Attack execution
-│   │   ├── executor.rs  # Attack orchestration
-│   │   └── strategies.rs # Attack strategies
-│   ├── signatures/      # Bug detection
-│   │   ├── engine.rs    # Signature detection engine
-│   │   └── rules.rs     # Datalog-style rules
-│   └── report/          # Report generation
-│       ├── generator.rs # Report logic
-│       └── formatter.rs # Output formatting
-├── tests/               # Integration tests
-├── examples/            # Example programs
-├── .machine_readable/   # SCM checkpoint files
-└── .github/workflows/   # CI/CD workflows
+│   ├── main.rs              # CLI entry point (clap) — 20 subcommands
+│   ├── lib.rs               # Library API
+│   ├── types.rs             # Core types (47 languages, 20 categories)
+│   ├── assail/              # Static analysis engine
+│   │   ├── analyzer.rs      # 47-language analyzer with per-file detection
+│   │   └── patterns.rs      # Language-specific attack patterns
+│   ├── kanren/              # miniKanren-inspired logic engine
+│   │   ├── core.rs          # Unification, substitution, fact DB
+│   │   ├── taint.rs         # Source-to-sink taint analysis
+│   │   ├── crosslang.rs     # FFI boundary vulnerability chains
+│   │   └── strategy.rs      # Risk-weighted search prioritisation
+│   ├── attack/              # 6-axis stress testing
+│   │   ├── executor.rs      # Attack execution engine
+│   │   └── strategies.rs    # Per-axis attack strategies
+│   ├── signatures/          # Logic-based bug signature detection
+│   │   ├── engine.rs        # SignatureEngine (use-after-free, deadlock, etc.)
+│   │   └── rules.rs         # Detection rules
+│   ├── report/              # Report generation and output
+│   │   ├── generator.rs     # AssaultReport builder
+│   │   └── formatter.rs     # Output formatting (text, JSON, YAML, Nickel, SARIF)
+│   ├── assemblyline.rs      # Batch scanning with rayon parallelism + BLAKE3
+│   ├── notify.rs            # Notification pipeline (markdown + GitHub issues)
+│   ├── attestation/         # Cryptographic attestation chain
+│   │   ├── intent.rs        # Pre-execution commitment
+│   │   ├── evidence.rs      # Rolling hash accumulator
+│   │   ├── seal.rs          # Post-execution binding
+│   │   ├── chain.rs         # Chain builder orchestration
+│   │   └── envelope.rs      # A2ML envelope wrapper
+│   ├── ambush/              # Ambient stressors + DAW-style timeline
+│   ├── amuck/               # Mutation combinations
+│   ├── abduct/              # Isolation + time-skew
+│   ├── adjudicate/          # Campaign verdict aggregation
+│   ├── axial/               # Reaction observation
+│   ├── a2ml/                # AI manifest protocol
+│   ├── panll/               # PanLL event-chain export
+│   ├── storage/             # Filesystem + VerisimDB persistence
+│   ├── i18n/                # Multi-language support (ISO 639-1, 10 languages)
+│   └── diagnostics.rs       # Self-check (version, fleet, attestation, panicbot)
+├── tests/                   # Integration + readiness tests
+├── examples/                # Example programs
+├── .machine_readable/       # SCM checkpoint files + bot directives
+└── .github/workflows/       # CI/CD workflows
 ```
 
 ## RSR Compliance
@@ -167,7 +198,7 @@ This project follows RSR (Reproducible Software Repositories) standards:
 1. **SCM files in .machine_readable/ only** - Never put STATE.scm, ECOSYSTEM.scm, or META.scm in the repository root
 2. **AI manifest required** - AI.a2ml must be present and up-to-date
 3. **License consistency** - All files must use PMPL-1.0-or-later (SPDX header)
-4. **Author attribution** - Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>
+4. **Author attribution** - Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 ### Updating Checkpoint Files
 
@@ -178,24 +209,25 @@ When making significant changes, update:
 
 ## Release Process
 
-1. Update version in `Cargo.toml` and `src/main.rs`
+1. Update version in `Cargo.toml`
 2. Update `CHANGELOG.md` with changes since last release
 3. Update `.machine_readable/STATE.scm` with new version
-4. Run full test suite
-5. Create git tag: `git tag -a v0.x.0 -m "Release v0.x.0"`
-6. Push tag: `git push origin v0.x.0`
-7. GitHub Actions will create the release
+4. Run full test suite: `cargo test`
+5. Run readiness tests: `just readiness-summary`
+6. Create git tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+7. Push tag: `git push origin vX.Y.Z`
+8. GitHub Actions will create the release
 
 ## Getting Help
 
 - **Documentation**: See README.md and DESIGN.md
 - **Issues**: Check existing issues or create a new one
-- **Email**: jonathan.jewell@open.ac.uk
+- **Email**: j.d.a.jewell@open.ac.uk
 - **Roadmap**: See ROADMAP.md for future plans
 
 ## License
 
-By contributing to panic-attacker, you agree that your contributions will be licensed under the PMPL-1.0-or-later license. See the LICENSE file for details.
+By contributing to panic-attack, you agree that your contributions will be licensed under the PMPL-1.0-or-later license. See the LICENSE file for details.
 
 ## Recognition
 
@@ -204,4 +236,4 @@ Contributors will be acknowledged in:
 - GitHub contributors page
 - Release notes
 
-Thank you for contributing to panic-attacker!
+Thank you for contributing to panic-attack!

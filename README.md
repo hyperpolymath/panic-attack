@@ -1,5 +1,7 @@
 # panic-attack
 
+<!-- SPDX-License-Identifier: PMPL-1.0-or-later -->
+
 [![CI](https://github.com/hyperpolymath/panic-attacker/workflows/Rust%20CI/badge.svg)](https://github.com/hyperpolymath/panic-attacker/actions/workflows/rust-ci.yml)
 [![Security Audit](https://github.com/hyperpolymath/panic-attacker/workflows/Security%20Audit/badge.svg)](https://github.com/hyperpolymath/panic-attacker/actions/workflows/cargo-audit.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/hyperpolymath/panic-attacker/badge)](https://securityscorecards.dev/viewer/?uri=github.com/hyperpolymath/panic-attacker)
@@ -7,588 +9,322 @@
 [![License: PMPL](https://img.shields.io/badge/License-PMPL--1.0--or--later-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85.0-blue)](Cargo.toml)
 
-Universal stress testing and logic-based bug signature detection tool.
+Stress testing and bug signature detection for source code and binaries.
+47 languages. 6 attack axes. Logic-based inference.
 
-## Overview
+---
 
-`panic-attack` is a comprehensive program testing tool that combines:
+## Tier 1: Regular Use
 
-1. **Assail Static Analysis**: Pre-analyzes programs to identify weak points across 5 languages. This is done via the `assail` subcommand.
-2. **Multi-Axis Stress Testing**: Attacks programs across 6 different dimensions. This is done via the `attack` subcommand. The `assault` subcommand combines both **Assail Static Analysis** and **Multi-Axis Stress Testing** into a single, comprehensive test.
-3. **Logic-Based Bug Detection**: Uses Datalog-inspired rules to detect bug signatures.
+**panic-attack is a CLI tool.** Point it at a file or directory and it tells you what's dangerous.
 
-## Features
-
-### ✨ What's New in v0.2
-
-- **Zero duplicate weak points**: Per-file analysis eliminates running totals (271→15 on echidna)
-- **All locations populated**: Every weak point includes file path (never `null`)
-- **Per-file breakdown**: Verbose mode shows top 10 files by risk score
-- **Latin-1 fallback**: Handles non-UTF-8 source files gracefully
-- **Pattern library wired**: Language/framework-specific attack selection
-- **Zero compiler warnings**: Clean builds, quality code
-
-### Assail Analysis
-
-Static analysis that detects:
-- ✅ Language and framework identification (Rust, C/C++, Go, Python, generic)
-- ✅ Unsafe code patterns
-- ✅ Panic sites and unwrap calls
-- ✅ Memory allocation patterns
-- ✅ I/O operations
-- ✅ Concurrency constructs
-- ✅ Weak points with severity levels (Critical, High, Medium, Low)
-- ✅ Per-file statistics and risk scoring
-
-### Attack Axes
-
-Six different stress testing dimensions:
-
-1. **CPU**: High computational load
-2. **Memory**: Large allocations, memory exhaustion
-3. **Disk**: Heavy I/O operations
-4. **Network**: Connection flooding
-5. **Concurrency**: Thread/task storms
-6. **Time**: Extended duration testing
-
-### Bug Signature Detection
-
-Logic programming-based detection (inspired by Mozart/Oz and Datalog) for:
-
-- Use-after-free
-- Double-free
-- Memory leaks
-- Deadlocks
-- Data races
-- Buffer overflows
-- Integer overflows
-- Null pointer dereferences
-- Unhandled errors
-
-## Installation
-
-### From Source
+### Install
 
 ```bash
-git clone https://github.com/hyperpolymath/panic-attacker.git
-cd panic-attack
-cargo build --release
 cargo install --path .
+# or
+cargo build --release && cp target/release/panic-attack ~/.local/bin/
 ```
 
-### Requirements
-
-- Rust 1.85.0 or later
-- Cargo
-
-## Quick Start
+### Scan a file
 
 ```bash
-# Analyze a program (static analysis of source code)
-panic-attack assail ./target/release/my-program --verbose
-
-# Full assault (combines static analysis with multi-axis stress testing on a binary)
-panic-attack assault ./target/release/my-program
-
-# Ambush: run program under ambient stressors
-# Note: The `ambush` subcommand may not be available in all installed versions of panic-attack.
-panic-attack ambush ./target/release/my-program
-
-# Amuck: mutate a file with dangerous combinations and save a report
-panic-attack amuck ./src/main.rs --preset dangerous
-
-# Abduct: isolate and lock a target with controlled time skew
-panic-attack abduct ./src/main.rs --scope direct --mtime-offset-days 21
-
-# Adjudicate: compile multiple reports into a campaign verdict
-panic-attack adjudicate reports/run-a.json reports/run-b.json
-
-# Audience: observe reactions from tool execution and report artifacts
-panic-attack audience ./src/main.rs --report reports/amuck-run.json
-
-# Single attack (dynamic stress test on a binary)
-panic-attack attack ./target/release/my-program --axis memory --intensity heavy
+panic-attack assail ./src/main.rs
 ```
 
-## Usage
-
-### Assail Analysis
-
-Analyze a program to identify weak points:
+### Scan a project
 
 ```bash
-# Basic analysis
-panic-attack assail ./target/release/my-program
-
-# Verbose with per-file breakdown
 panic-attack assail /path/to/project --verbose
-
-# Save report to JSON
-panic-attack assail ./my-program --output assail-report.json
 ```
 
-**Example output:**
-
-```
-Assail Analysis Complete
-  Language: Rust
-  Frameworks: [WebServer, Database]
-  Weak Points: 15
-  Recommended Attacks: [Memory, Disk, Concurrency, Cpu]
-
-  Per-file Breakdown (top 10 by risk):
-    1. src/server.rs (risk: 38, unsafe: 3, panics: 11, unwraps: 16)
-    2. src/database.rs (risk: 33, unsafe: 0, panics: 10, unwraps: 13)
-    3. src/ffi.rs (risk: 27, unsafe: 7, panics: 0, unwraps: 4)
-```
-
-### Single Attack
-
-Execute a single attack on a specific axis:
+### Save a report
 
 ```bash
-# CPU stress test
-panic-attack attack ./my-program --axis cpu --intensity medium --duration 60
+panic-attack assail ./my-project --output report.json
+panic-attack assail ./my-project --output report.sarif --output-format sarif
+```
 
-# Memory exhaustion
+### What it detects
+
+Static analysis across **47 languages** (Rust, C/C++, Go, Python, JavaScript, Elixir, Erlang, Gleam, ReScript, OCaml, Haskell, Idris, Lean, Agda, Zig, Ada, Julia, Shell, and 29 more) covering **20 weak point categories**:
+
+- Unsafe code, raw pointer casts, transmute
+- Panic paths, unwrap/expect density
+- Command injection (`system()`, `exec.Command`, `os.system`)
+- Unsafe deserialization (`pickle.load`, `JSON.parseExn`)
+- DOM injection (`innerHTML`, `dangerouslySetInnerHTML`)
+- Hardcoded secrets, path traversal, insecure protocols
+- FFI boundary risks, atom exhaustion (BEAM)
+- Resource leaks, deadlock potential, race conditions
+
+Every weak point includes the file path, severity (Critical/High/Medium/Low), and recommended attack axis.
+
+### Stress test a binary
+
+```bash
+# Single axis
 panic-attack attack ./my-program --axis memory --intensity heavy --duration 30
 
-# Concurrency storm
-panic-attack attack ./my-program --axis concurrency --intensity extreme --duration 120
+# Full assault (static analysis + all 6 axes)
+panic-attack assault ./my-program --output assault-report.json
+
+# Run binary under ambient stress (doesn't need special flags)
+panic-attack ambush ./my-program --axes cpu,memory
 ```
 
-### Full Assault
+**6 attack axes:** CPU, Memory, Disk, Network, Concurrency, Time.
 
-Run assail analysis followed by multi-axis attacks:
+### Mutation testing
 
 ```bash
-# Full assault with all axes
-panic-attack assault ./my-program
-
-# Custom axes only
-panic-attack assault ./my-program --axes cpu,memory,concurrency
-
-# With output report
-panic-attack assault ./my-program --output assault-report.json --intensity heavy
-
-# Analyze source separately from the target binary
-panic-attack assault --source /path/to/source ./target/release/my-program
+# Mutate a file with dangerous combinations, run checker on each variant
+panic-attack amuck ./src/main.rs --preset dangerous --exec-program rustc --exec-arg {file}
 ```
 
-### Ambush (Ambient Stressors)
-
-Run the target program while the system is stressed on selected axes. This works even when the
-target does not accept attack flags (use profiles/args to pass normal program flags if needed).
+### Isolate and time-skew
 
 ```bash
-# Ambush with all axes (default)
-panic-attack ambush ./my-program
-
-# Limit axes
-panic-attack ambush ./my-program --axes cpu,memory,concurrency
-
-# Pass args to the target program
-panic-attack ambush ./my-program --arg --config --arg cfg.toml
-
-# Include assail source separate from binary
-panic-attack ambush --source /path/to/source ./target/release/my-program
-
-# DAW-style timeline (JSON/YAML)
-panic-attack ambush ./my-program --timeline timeline.yaml
-```
-
-Timeline format draft: `docs/ambush-timeline.md`.
-
-### Amuck (Mutation Combinations)
-
-Run mutation combinations against a target file. `amuck` never edits the original file in place; it writes variants under `runtime/amuck/` by default and emits a JSON report.
-
-```bash
-# Built-in dangerous presets
-panic-attack amuck ./src/main.rs --preset dangerous
-
-# Restrict number of combinations and custom output directory
-panic-attack amuck ./src/main.rs --max-combinations 6 --output-dir ./tmp/amuck
-
-# Execute a checker command for each mutation (inject mutated file at {file})
-panic-attack amuck ./src/main.rs \
-  --exec-program rustc \
-  --exec-arg {file}
-
-# User-defined combinations
-panic-attack amuck ./src/main.rs --spec ./profiles/amuck-spec.json
-```
-
-Spec file format (`json` or `yaml`) example:
-
-```json
-{
-  "combos": [
-    {
-      "name": "flip-check",
-      "operations": [
-        { "op": "replace_first", "from": "==", "to": "!=" },
-        { "op": "append_text", "text": "\n/* amuck */\n" }
-      ]
-    }
-  ]
-}
-```
-
-### Abduct (Isolation + Time Skew)
-
-`abduct` creates an isolated workspace copy of a target file, optionally includes related files,
-applies readonly lock-down, and can shift file modification times to simulate delayed-trigger
-conditions. This is defensive analysis support and does not attempt sandbox anti-detection.
-
-```bash
-# Copy target + direct dependency neighborhood, lock files, and age mtimes by 3 weeks
+# Copy target + dependencies, lock read-only, age timestamps by 3 weeks
 panic-attack abduct ./src/main.rs --scope direct --mtime-offset-days 21
-
-# Same-directory isolation without locking
-panic-attack abduct ./src/main.rs --scope directory --no-lock
-
-# Run a checker command inside abduct workflow
-panic-attack abduct ./src/main.rs \
-  --exec-program rustc \
-  --exec-arg {file} \
-  --exec-timeout 30
-
-# Time metadata for downstream harnesses
-panic-attack abduct ./src/main.rs --time-mode slow --time-scale 0.05
 ```
 
-### Adjudicate (Campaign Verdict)
-
-Aggregate multiple run artifacts (`assault`, `amuck`, `abduct`) into a campaign-level verdict using miniKanren-style rule inference.
+### Review results
 
 ```bash
-# Build an expert-style campaign verdict from mixed report types
-panic-attack adjudicate reports/assault-a.json reports/amuck-a.json reports/abduct-a.json
-
-# Save adjudication to a specific path
-panic-attack adjudicate reports/*.json --output reports/campaign-adjudication.json
-```
-
-### Audience (Reaction Observer)
-
-Observe how a target responds when another tool/program runs against it, and/or listen to existing report artifacts for reaction signals.
-
-```bash
-# Observe one tool command repeatedly
-panic-attack audience ./src/main.rs \
-  --exec-program panic-attack \
-  --exec-arg amuck \
-  --exec-arg {target} \
-  --repeat 3
-
-# Observe report artifacts without executing a command
-panic-attack audience ./src/main.rs \
-  --report reports/amuck-a.json \
-  --report reports/abduct-a.json
-
-# Focus on excerpts and pattern search
-panic-attack audience ./src/main.rs \
-  --report reports/amuck-a.json \
-  --head 30 --tail 30 \
-  --grep "panic" \
-  --agrep "segmntation" --agrep-distance 2
-
-# Enable aspell and localized markdown output
-panic-attack audience ./src/main.rs \
-  --report reports/amuck-a.json \
-  --aspell --aspell-lang en \
-  --lang fr \
-  --markdown-output reports/audience-fr.md
-
-# Optional pandoc conversion from markdown
-panic-attack audience ./src/main.rs \
-  --report reports/amuck-a.json \
-  --pandoc-to html \
-  --pandoc-output reports/audience.html
-```
-
-### Attack Profiles & Probe Mode
-
-Assaults can pass custom arguments to targets via a profile file (JSON/YAML) or CLI flags:
-
-```bash
-# Use a profile file
-panic-attack assault ./my-program --profile profiles/attack-profile.example.json
-
-# Pass common args to every axis
-panic-attack assault ./my-program --arg --config --arg cfg.toml
-
-# Axis-specific args (format: AXIS=ARG)
-panic-attack assault ./my-program --axis-arg cpu=--iterations --axis-arg cpu=5000
-
-# Probe modes: auto (default), always, never
-panic-attack assault ./my-program --probe always
-```
-
-Sample profiles live in `profiles/` and are documented in `docs/attack-profiles.md`.
-
-### Analyze Crash Reports
-
-Detect bug signatures from existing crash reports:
-
-```bash
-panic-attack analyze crash-report.json
-```
-
-### Report Views, Storage, and TUI
-
-Control the experience of generated assault reports with a set of flags:
-- `--report-view` chooses between `summary`, `accordion`, `dashboard`, or the `matrix` pivot display.
-- Add `--expand-sections` to open accordions automatically or `--pivot` to append the taint matrix to any printout.
-- Use `--store <dir>` to persist JSON/YAML/Nickel exports to disk plus the `verisimdb-data/` cache when configured via the manifest.
-- Drop `--quiet` to suppress chatter, `--parallel` to run attack phases concurrently, and `--output <file>` with `--output-format` (json|yaml|nickel) to save a single report.
-- Browse saved reports with `panic-attack report path/to/report.json`, launch the terminal UI with `panic-attack tui path/to/report.json`, or start the GUI with `panic-attack gui path/to/report.json`.
-
-### VerisimDB Diff Viewer
-
-Compare two reports (JSON/YAML) or use the latest two stored in `verisimdb-data/verisimdb`:
-
-```bash
-# Use explicit paths
-panic-attack diff base-report.json compare-report.json
-
-# Use latest two stored reports
-panic-attack diff
-```
-
-### AI Manifest & Nickel
-
-The repository’s `AI.a2ml` manifest now exposes a `(reports ...)` block that dictates the default `formats` (`json`, `nickel`, `yaml`) and `storage-targets` (`filesystem`, `verisimdb`). Run `panic-attack manifest` (or `panic-attack manifest --output manifest.ncl`) to render that manifest as Nickel for downstream configuration and tooling.
-
-### A2ML Report Bundle Import/Export
-
-Convert report artifacts to/from a schema-versioned A2ML report document:
-
-```bash
-# Export assail, attack, or ambush reports into A2ML
-panic-attack a2ml-export --kind assail reports/assail.json --output reports/assail.a2ml
-panic-attack a2ml-export --kind attack reports/attack-results.json --output reports/attack.a2ml
-panic-attack a2ml-export --kind ambush reports/ambush.json --output reports/ambush.a2ml
-
-# Export other report families too
-panic-attack a2ml-export --kind amuck reports/amuck.json --output reports/amuck.a2ml
-panic-attack a2ml-export --kind abduct reports/abduct.json --output reports/abduct.a2ml
-panic-attack a2ml-export --kind adjudicate reports/adjudicate.json --output reports/adjudicate.a2ml
-panic-attack a2ml-export --kind audience reports/audience.json --output reports/audience.a2ml
-
-# Import back to JSON (optional kind assertion)
-panic-attack a2ml-import reports/ambush.a2ml --output reports/ambush.roundtrip.json --kind ambush
-```
-
-### PanLL Export
-
-Export an assault report to a PanLL event-chain model:
-
-```bash
-panic-attack panll reports/assault-report.json --output panll-event-chain.json
-```
-
-See `docs/panll-export.md` for the current export shape.
-
-## Help & Diagnostics
-
-Use `panic-attack help` to print the classic man-style overview that mirrors `man/panic-attack.1` (the bundled man page is installed under `/usr/local/share/man/man1/` inside the verified container) or specify a subcommand to get focused guidance (e.g., `panic-attack help ambush`).  
-
-```bash
-# Focused help for mutation and isolation workflows
-panic-attack help amuck
-panic-attack help abduct
-panic-attack help adjudicate
-panic-attack help audience
-```
-
-Run `panic-attack diagnostics` before publishing a bundle so Hypatia and gitbot-fleet can see whether the AI manifest, reports directories, timeline docs, and watcher endpoints are in place. The command sets `HYPATIA_API_KEY` and `GITBOT_FLEET_ENDPOINT` as environmental hooks and exits non-zero if any check fails, making it safe to gate container builds on its success.
-
-Both commands are wired into the PanLL security menu (help for command hints, diagnostics to confirm Hypatia/gitbot coverage) so the UX layer can surface readiness signals in one place.
-
-## Code Annotation Map
-
-For architecture-level annotations across the codebase, see `docs/codebase-annotations.md`.
-For release validation/staging guidance in a dirty worktree, see `docs/release-prep.md`.
-
-## Example Output
-
-```
-=== PANIC-ATTACK ASSAULT REPORT ===
-
-ASSAIL ANALYSIS
-  Program: ./target/release/my-server
-  Language: Rust
-  Frameworks: [WebServer, Database]
-
-  Statistics:
-    Total lines: 15234
-    Unsafe blocks: 3
-    Panic sites: 12
-    Unwrap calls: 47
-
-  Weak Points Detected: 2
-    1. [High] UnsafeCode - 3 unsafe blocks in src/ffi.rs
-    2. [Medium] PanicPath - 47 unwrap/expect calls in src/server.rs
-
-ATTACK RESULTS
-  Cpu attack: PASSED (exit code: 0, duration: 60.23s)
-  Memory attack: FAILED (exit code: 137, duration: 15.45s)
-    Crashes: 1
-      1. Signal: SIGKILL
-  Concurrency attack: FAILED (exit code: 134, duration: 30.12s)
-    Crashes: 2
-
-BUG SIGNATURES DETECTED
-  Total: 3
-  - Deadlock (confidence: 0.91)
-  - DataRace (confidence: 0.75)
-  - MemoryLeak (confidence: 0.82)
-
-OVERALL ASSESSMENT
-  Robustness Score: 43.5/100
-
-  Critical Issues:
-    - Program crashed under Memory attack
-    - High-confidence Deadlock detected
-
-  Recommendations:
-    - Add comprehensive error handling
-    - Replace unwrap() calls with proper error handling
-    - Review lock ordering to prevent deadlocks
-```
-
-## Architecture
-
-### Core Components
-
-```
-panic-attack/
-├── src/
-│   ├── main.rs           # CLI interface
-│   ├── lib.rs            # Library interface
-│   ├── types.rs          # Core type definitions
-│   ├── assail/           # Static analysis
-│   │   ├── analyzer.rs   # Language-specific analyzers
-│   │   └── patterns.rs   # Attack pattern library
-│   ├── attack/           # Attack orchestration
-│   │   ├── executor.rs   # Attack execution
-│   │   └── strategies.rs # Attack strategies
-│   ├── signatures/       # Logic-based detection
-│   │   ├── engine.rs     # Signature detection engine
-│   │   └── rules.rs      # Datalog-style rules
-│   └── report/           # Report generation
-│       ├── generator.rs  # Report logic
-│       └── formatter.rs  # Output formatting
-├── tests/                # Integration tests
-├── examples/             # Example programs
-└── .machine_readable/    # RSR checkpoint files
-```
-
-### Logic Programming Approach
-
-The signature detection engine uses a Datalog-inspired approach:
-
-**Facts** (extracted from crash reports):
-```
-Alloc(var, location)
-Free(var, location)
-Use(var, location)
-Lock(mutex, location)
-```
-
-**Rules** (inference patterns):
-```prolog
-UseAfterFree(var, use_loc, free_loc) :-
-    Free(var, free_loc),
-    Use(var, use_loc),
-    Ordering(free_loc, use_loc)
-
-DoubleFree(var, loc1, loc2) :-
-    Free(var, loc1),
-    Free(var, loc2),
-    loc1 != loc2
-```
-
-## Supported Languages
-
-Currently supports analysis for:
-
-- **Rust** (full support)
-- **C/C++** (full support)
-- **Go** (full support)
-- **Python** (full support)
-- **Generic** (basic heuristics for other languages)
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for detailed development plans.
-
-**Current focus (v1.0):**
-- ✅ RSR compliance (AI manifests, workflows, SCM files)
-- ✅ Comprehensive test coverage
-- 🚧 CI/CD integration
-- 🚧 Documentation polish
-- 🚧 Production hardening
-
-**Future milestones:**
-- v1.x: Constraint sets (YAML stress profiles)
-- v2.0: Real Datalog engine (Crepe/Datafrog)
-- v2.x: Multi-program testing
-- v3.0: Language expansion and performance optimization
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
-
-Key points:
-- Follow RSR standards
-- Zero warnings policy
-- 80% test coverage target
-- Comprehensive documentation
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for vulnerability reporting.
-
-## License
-
-Licensed under the [Palimpsest Meta-Public License v1.0 or later](LICENSE).
-
-SPDX-License-Identifier: PMPL-1.0-or-later
-
-## Author
-
-**Jonathan D.A. Jewell** <jonathan.jewell@open.ac.uk>
-
-## Related Projects
-
-- [hypatia](https://github.com/hyperpolymath/hypatia) - Neurosymbolic CI/CD intelligence
-- [git-seo](https://github.com/hyperpolymath/git-seo) - Git repository analysis
-- [gitbot-fleet](https://github.com/hyperpolymath/gitbot-fleet) - Repository automation bots
-- [echidna](https://github.com/hyperpolymath/echidna) - Automated theorem proving
-- [eclexia](https://github.com/hyperpolymath/eclexia) - Resource-aware adaptive programming
-
-## Citation
-
-If you use panic-attack in your research, please cite:
-
-```bibtex
-@software{panic_attack,
-  author = {Jewell, Jonathan D.A.},
-  title = {panic-attack: Universal Stress Testing and Logic-Based Bug Detection},
-  year = {2026},
-  url = {https://github.com/hyperpolymath/panic-attacker},
-  version = {0.2.0}
-}
+panic-attack report assault-report.json                   # Terminal summary
+panic-attack report assault-report.json --report-view dashboard  # Dashboard view
+panic-attack tui assault-report.json                       # Interactive TUI
+panic-attack gui assault-report.json                       # GUI (egui)
+panic-attack diff report-a.json report-b.json             # Compare two runs
 ```
 
 ---
 
-**Status**: Active development | **Version**: 0.2.0 | **MSRV**: 1.85.0
+## Tier 2: Workflow Integration
 
+**panic-attack in CI/CD pipelines, batch scanning, and automated reporting.**
+
+### SARIF output for GitHub Security tab
+
+```bash
+panic-attack assail ./my-project --output-format sarif --output results.sarif
+```
+
+Upload `results.sarif` to GitHub Code Scanning via the `github/codeql-action/upload-sarif` action.
+
+### Assemblyline: batch-scan a directory of repos
+
+```bash
+# Scan all git repos in a directory
+panic-attack assemblyline /path/to/repos/
+
+# Only show repos with findings
+panic-attack assemblyline /path/to/repos/ --findings-only
+
+# Save aggregate report
+panic-attack assemblyline /path/to/repos/ --output sweep-report.json --min-findings 3
+```
+
+Output is a sorted table (riskiest repos first) plus optional JSON with per-repo breakdowns.
+
+### Campaign verdicts
+
+Aggregate results from multiple tool runs into a single expert-system verdict:
+
+```bash
+panic-attack adjudicate reports/assault-a.json reports/amuck-a.json reports/abduct-a.json \
+  --output campaign-verdict.json
+```
+
+### Observe tool reactions
+
+Watch how programs behave under stress and search output for patterns:
+
+```bash
+panic-attack axial ./src/main.rs --report reports/amuck-a.json --grep "panic" --head 30
+```
+
+### Notification pipeline
+
+```bash
+# Generate annotated markdown summary of assemblyline findings
+panic-attack notify sweep-report.json --output findings.md
+
+# Only include repos with critical findings
+panic-attack notify sweep-report.json --output findings.md --critical-only
+
+# Create GitHub issues for repos with critical findings
+panic-attack notify sweep-report.json --output findings.md --create-issues --github-owner hyperpolymath
+```
+
+### A2ML and PanLL export
+
+```bash
+# Export to AI manifest bundle
+panic-attack a2ml-export --kind assail report.json --output report.a2ml
+
+# Export to PanLL event-chain model
+panic-attack panll assault-report.json --output event-chain.json
+```
+
+### Output formats
+
+`--output-format` accepts: `json` (default), `yaml`, `nickel`, `sarif`.
+
+### Diagnostics
+
+```bash
+# Verify Hypatia/gitbot-fleet/panicbot readiness
+panic-attack diagnostics
+```
+
+### Readiness tests (CRG grades)
+
+```bash
+# Run machine-verifiable Component Readiness Grade tests
+just readiness
+
+# Summary: pass/fail count per grade
+just readiness-summary
+```
+
+Grade D = runs without crashing, C = correct output, B = edge cases handled.
+
+---
+
+## Tier 3: At Scale
+
+**Large-scale scanning, distributed analysis, and ecosystem integration. These are optional layers — panic-attack works perfectly without them.**
+
+### VerisimDB persistence
+
+Store scan results for trending, diffing, and cross-project analysis:
+
+```bash
+# Auto-store via manifest configuration
+panic-attack assault ./my-program --store ./verisimdb-data/
+
+# Diff the latest two stored reports
+panic-attack diff
+```
+
+Storage modes (filesystem, verisimdb) are configured in `AI.a2ml`.
+
+### Assemblyline at scale
+
+For 500+ repos, `assemblyline` parallelises across all available cores:
+
+- **Rayon parallelism**: 17.7x speedup (141 repos in 39.9s vs ~705s sequential)
+- **BLAKE3 fingerprinting**: Hash source files, skip unchanged repos on re-scan
+- **Incremental checkpointing**: Resume interrupted sweeps (planned)
+- **Delta reporting**: "What's new/fixed since last run" (planned)
+
+### Chapel metalayer (planned)
+
+A parallel orchestration layer for cross-repo analysis:
+
+- Parallel assail across thousands of repos via Chapel `coforall`
+- Cross-repo taint analysis (FFI chains spanning multiple projects)
+- Distributed kanren reasoning across the entire codebase
+- Load-balanced campaign execution
+
+See `docs/` for design documents. Chapel is strictly optional — the core tool never depends on it.
+
+### PanLL visualisation
+
+For interactive visualisation, dashboarding, and extended analysis, use panic-attack as part of [PanLL](https://github.com/hyperpolymath/panll) — the three-pane mission control that can ingest panic-attack reports as event-chain models. Export with `panic-attack panll report.json` and load the result into PanLL's Pane-W for visual triage.
+
+### Integration points
+
+| System | Integration | Status |
+|--------|-------------|--------|
+| **Hypatia** | Feed kanren facts as Logtalk predicates | Planned |
+| **gitbot-fleet** | Trigger scans via repository_dispatch | Hooks wired |
+| **VerisimDB** | Store results as hexads | File I/O works, API planned |
+| **PanLL** | Export event-chain models | Working |
+| **GitHub Security** | SARIF upload | Working |
+
+---
 
 ## Architecture
 
-See [TOPOLOGY.md](TOPOLOGY.md) for a visual architecture map and completion dashboard.
+```
+src/
+├── main.rs              # CLI (clap) — 20 subcommands
+├── lib.rs               # Library API
+├── types.rs             # Core types (47 languages, 20 categories)
+├── assail/              # Static analysis engine
+│   ├── analyzer.rs      # Per-file language detection + pattern matching
+│   └── patterns.rs      # Language-specific attack pattern library
+├── kanren/              # miniKanren logic engine
+│   ├── core.rs          # Unification, substitution, fact DB
+│   ├── taint.rs         # Source-to-sink taint analysis
+│   ├── crosslang.rs     # FFI boundary vulnerability chains
+│   └── strategy.rs      # Risk-weighted search prioritisation
+├── attack/              # 6-axis stress testing
+├── signatures/          # Bug signature detection (use-after-free, deadlock, etc.)
+├── report/              # Output (JSON, YAML, Nickel, SARIF, TUI, GUI)
+├── assemblyline.rs      # Batch scanning with rayon + BLAKE3
+├── notify.rs            # Designer notification pipeline
+├── ambush/              # Ambient stressors + DAW timeline
+├── amuck/               # Mutation combinations
+├── abduct/              # Isolation + time-skew
+├── adjudicate/          # Campaign verdict aggregation
+├── axial/               # Reaction observation
+├── a2ml/                # AI manifest protocol
+├── attestation/         # Cryptographic attestation chain
+├── panll/               # PanLL event-chain export
+├── storage/             # Filesystem + VerisimDB persistence
+├── i18n/                # Multi-language support (ISO 639-1)
+└── diagnostics.rs       # Self-check for Hypatia/gitbot-fleet
+```
+
+## All subcommands
+
+| Command | What it does |
+|---------|-------------|
+| `assail` | Static analysis on a file or directory |
+| `attack` | Single-axis stress test on a binary |
+| `assault` | Combined assail + multi-axis attacks |
+| `ambush` | Run binary under ambient stressors |
+| `amuck` | Mutation testing with preset/custom combinations |
+| `abduct` | Isolate file + dependencies with time-skew |
+| `adjudicate` | Aggregate multiple reports into campaign verdict |
+| `axial` | Observe target reactions from tool outputs |
+| `assemblyline` | Batch-scan a directory of repos |
+| `analyze` | Detect bug signatures from crash reports |
+| `report` | Render a saved report (summary/dashboard/matrix) |
+| `tui` | Interactive terminal UI for reports |
+| `gui` | GUI viewer for reports (egui) |
+| `diff` | Compare two reports |
+| `manifest` | Render AI manifest as Nickel |
+| `a2ml-export` | Convert report to A2ML bundle |
+| `a2ml-import` | Convert A2ML bundle to JSON |
+| `panll` | Export as PanLL event-chain model |
+| `notify` | Generate annotated finding summaries + GitHub issues |
+| `diagnostics` | Self-check for CI/CD visibility |
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full development plan and [TOPOLOGY.md](TOPOLOGY.md) for the architecture diagram.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Security
+
+See [SECURITY.md](SECURITY.md).
+
+## License
+
+[Palimpsest Meta-Public License v1.0 or later](LICENSE) (SPDX: `PMPL-1.0-or-later`)
+
+## Author
+
+**Jonathan D.A. Jewell** <j.d.a.jewell@open.ac.uk>
+
+---
+
+**Version**: 2.0.0 | **MSRV**: 1.85.0 | **Languages**: 47 | **Attack Axes**: 6

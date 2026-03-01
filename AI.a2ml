@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: PMPL-1.0-or-later
-# AI Manifest for panic-attacker
+# AI Manifest for panic-attack
 # Version: 1.0
 # Format: A2ML (AI Agent Manifest Language)
 
 (manifest
   (version "1.0")
-  (project "panic-attacker")
+  (project "panic-attack")
   (description "Universal stress testing and logic-based bug signature detection")
 
   (canonical-locations
@@ -62,7 +62,7 @@
     (build-system "cargo")
     (package-manager "cargo")
     (language "rust")
-    (msrv "1.75.0")
+    (msrv "1.85.0")
     (edition "2021"))
 
   (lifecycle
@@ -90,7 +90,7 @@
     (coverage "cargo tarpaulin --out Xml"))
 
   (reports
-    (formats "json" "nickel" "yaml")
+    (formats "json" "nickel" "yaml" "sarif")
     (storage-targets "filesystem" "verisimdb"))
 
   (quality-standards
@@ -107,12 +107,13 @@
 
   (integration
     (hypatia "neurosymbolic CI/CD intelligence")
-    (gitbot-fleet "rhodibot, echidnabot, sustainabot")
-    (git-seo "repository analysis"))
+    (gitbot-fleet "rhodibot, echidnabot, sustainabot, panicbot")
+    (panicbot "gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to fleet Findings (PA001–PA020)")
+    (panll "event-chain visualisation and mission control"))
 
   (metadata
     (created "2026-02-07")
-    (updated "2026-02-07")
-    (version-current "0.2.0")
-    (version-next "1.0.0")
+    (updated "2026-03-01")
+    (version-current "2.0.0")
+    (version-next "2.1.0")
     (status "active-development")))

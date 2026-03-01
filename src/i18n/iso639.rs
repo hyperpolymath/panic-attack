@@ -20,6 +20,7 @@
 /// assert!(panic_attack::i18n::is_valid_iso639_1("ja"));
 /// assert!(!panic_attack::i18n::is_valid_iso639_1("xx"));
 /// ```
+#[allow(dead_code)]
 pub fn is_valid_iso639_1(code: &str) -> bool {
     matches!(
         code,
@@ -57,6 +58,7 @@ pub fn is_valid_iso639_1(code: &str) -> bool {
 /// Returns `None` for unrecognised codes. Only includes the languages
 /// that panic-attack has active translation catalogs for, plus a handful
 /// of common codes for display purposes.
+#[allow(dead_code)]
 pub fn language_name(code: &str) -> Option<&'static str> {
     match code {
         "en" => Some("English"),
@@ -96,6 +98,7 @@ pub fn language_name(code: &str) -> Option<&'static str> {
 ///
 /// Used in language selection UIs where users should see their language
 /// written in its own script.
+#[allow(dead_code)]
 pub fn native_name(code: &str) -> Option<&'static str> {
     match code {
         "en" => Some("English"),
