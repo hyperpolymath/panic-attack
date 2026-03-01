@@ -539,6 +539,7 @@ dependencies = [
  "cfg-if",
  "constant_time_eq",
  "cpufeatures",
+ "memmap2",
 ]
 
 [[package]]

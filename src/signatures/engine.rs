@@ -141,8 +141,8 @@ impl SignatureEngine {
     /// A variable name (uppercase string like "X") unifies with any string value.
     /// Location 0 in a pattern acts as a wildcard matching any location.
     fn unify_fact(&self, pattern: &Fact, fact: &Fact, bindings: &Bindings) -> Option<Bindings> {
-        let mut new_bindings = bindings.clone();
-
+        // Clone bindings only after confirming variant match to avoid
+        // wasted allocations on the common mismatch path.
         match (pattern, fact) {
             (
                 Fact::Alloc {
@@ -194,6 +194,7 @@ impl SignatureEngine {
                     location: floc,
                 },
             ) => {
+                let mut new_bindings = bindings.clone();
                 self.bind_var(pvar, &BoundValue::Str(fvar.clone()), &mut new_bindings)?;
                 self.bind_loc(*ploc, *floc, pvar, &mut new_bindings)?;
                 Some(new_bindings)
@@ -218,6 +219,7 @@ impl SignatureEngine {
                     location: floc,
                 },
             ) => {
+                let mut new_bindings = bindings.clone();
                 self.bind_var(pmut, &BoundValue::Str(fmut.clone()), &mut new_bindings)?;
                 self.bind_loc(*ploc, *floc, pmut, &mut new_bindings)?;
                 Some(new_bindings)
@@ -242,6 +244,7 @@ impl SignatureEngine {
                     location: floc,
                 },
             ) => {
+                let mut new_bindings = bindings.clone();
                 self.bind_var(pid, &BoundValue::Str(fid.clone()), &mut new_bindings)?;
                 self.bind_loc(*ploc, *floc, pid, &mut new_bindings)?;
                 Some(new_bindings)
@@ -256,11 +259,12 @@ impl SignatureEngine {
                     after: fa,
                 },
             ) => {
+                let mut new_bindings = bindings.clone();
                 self.bind_loc(*pb, *fb, "before", &mut new_bindings)?;
                 self.bind_loc(*pa, *fa, "after", &mut new_bindings)?;
                 Some(new_bindings)
             }
-            _ => None, // Variant mismatch — pattern doesn't match this fact
+            _ => None, // Variant mismatch — no clone wasted
         }
     }
 
@@ -490,14 +494,14 @@ impl SignatureEngine {
         }
 
         // Signal-based facts
-        if crash.signal == Some("SIGSEGV".to_string()) {
+        if crash.signal.as_deref() == Some("SIGSEGV") {
             facts.insert(Fact::Use {
                 var: "null_ptr".to_string(),
                 location: 0,
             });
         }
 
-        if crash.signal == Some("SIGABRT".to_string()) {
+        if crash.signal.as_deref() == Some("SIGABRT") {
             facts.insert(Fact::Free {
                 var: "abort_var".to_string(),
                 location: 0,
@@ -568,7 +572,7 @@ impl SignatureEngine {
         }
 
         // Null pointer dereference — SIGSEGV or explicit mention
-        if crash.signal == Some("SIGSEGV".to_string())
+        if crash.signal.as_deref() == Some("SIGSEGV")
             || stderr.contains("null pointer")
             || stderr.contains("nullptr")
             || stderr.contains("nil pointer")

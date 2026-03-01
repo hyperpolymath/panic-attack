@@ -16,7 +16,6 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Configuration for an assemblyline run.
@@ -173,18 +172,10 @@ fn collect_source_hashes(
     Ok(())
 }
 
-/// Hash a single file with BLAKE3
+/// Hash a single file with BLAKE3 using memory-mapped I/O for performance
 fn hash_file(path: &Path) -> Result<blake3::Hash> {
-    let mut file = fs::File::open(path)?;
     let mut hasher = blake3::Hasher::new();
-    let mut buf = [0u8; 16384];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
+    hasher.update_mmap(path)?;
     Ok(hasher.finalize())
 }
 

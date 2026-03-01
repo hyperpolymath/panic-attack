@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+
 use crate::a2ml::Manifest;
 use anyhow::{anyhow, Context, Result};
 use std::env;

@@ -13,6 +13,17 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// Pre-compiled regexes for hot-path pattern matching.
+/// Using OnceLock avoids recompiling on every file analyzed.
+static RE_UNCHECKED_MALLOC: OnceLock<Regex> = OnceLock::new();
+static RE_ELIXIR_APPLY: OnceLock<Regex> = OnceLock::new();
+static RE_PONY_FFI: OnceLock<Regex> = OnceLock::new();
+static RE_SHELL_UNQUOTED_VAR: OnceLock<Regex> = OnceLock::new();
+static RE_HTTP_URL: OnceLock<Regex> = OnceLock::new();
+static RE_HTTP_LOCALHOST: OnceLock<Regex> = OnceLock::new();
+static RE_HARDCODED_SECRET: OnceLock<Regex> = OnceLock::new();
 
 pub struct Analyzer {
     target: PathBuf,
@@ -115,9 +126,10 @@ impl Analyzer {
                 }
             };
 
-            // Try UTF-8 first, then Latin-1 fallback
-            let content = match String::from_utf8(raw_bytes.clone()) {
-                Ok(s) => s,
+            // Try UTF-8 first, then Latin-1 fallback.
+            // Use str::from_utf8 to borrow rather than cloning raw_bytes.
+            let content = match std::str::from_utf8(&raw_bytes) {
+                Ok(s) => s.to_owned(),
                 Err(_) => {
                     let (cow, _, had_errors) = encoding_rs::WINDOWS_1252.decode(&raw_bytes);
                     if had_errors {
@@ -639,7 +651,7 @@ impl Analyzer {
         stats.threading_constructs += content.matches("pthread_").count();
         stats.threading_constructs += content.matches("std::thread").count();
 
-        let unchecked_malloc = Regex::new(r"malloc\([^)]+\)\s*;").unwrap();
+        let unchecked_malloc = RE_UNCHECKED_MALLOC.get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").unwrap());
         if unchecked_malloc.is_match(content) {
             weak_points.push(WeakPoint {
                 category: WeakPointCategory::UncheckedAllocation,
@@ -1000,7 +1012,7 @@ impl Analyzer {
         }
 
         // Unsafe apply
-        let apply_re = Regex::new(r"apply\([^,]+,\s*[^,]+,").unwrap();
+        let apply_re = RE_ELIXIR_APPLY.get_or_init(|| Regex::new(r"apply\([^,]+,\s*[^,]+,").unwrap());
         if apply_re.is_match(content) {
             weak_points.push(WeakPoint {
                 category: WeakPointCategory::DynamicCodeExecution,
@@ -1787,7 +1799,7 @@ impl Analyzer {
         file_path: &str,
     ) -> Result<()> {
         // FFI calls (@ prefix)
-        let ffi_re = Regex::new(r"@[a-zA-Z_]\w*\[").unwrap();
+        let ffi_re = RE_PONY_FFI.get_or_init(|| Regex::new(r"@[a-zA-Z_]\w*\[").unwrap());
         let ffi_count = ffi_re.find_iter(content).count();
         stats.unsafe_blocks += ffi_count;
 
@@ -1914,7 +1926,7 @@ impl Analyzer {
         }
 
         // Unquoted variable expansion (potential injection)
-        let unquoted_var = Regex::new(r#"\$[A-Za-z_]\w*"#).unwrap();
+        let unquoted_var = RE_SHELL_UNQUOTED_VAR.get_or_init(|| Regex::new(r#"\$[A-Za-z_]\w*"#).unwrap());
         let dollar_vars = unquoted_var.find_iter(content).count();
         // Only flag if high number of unquoted vars
         if dollar_vars > 20 {
@@ -2119,9 +2131,9 @@ impl Analyzer {
     ) -> Result<()> {
         // HTTP (insecure) URLs - should be HTTPS
         // Count http:// URLs that are NOT localhost/127.0.0.1 (those are fine)
-        let http_re = Regex::new(r#"http://[a-zA-Z0-9]"#).unwrap();
-        let http_localhost_re =
-            Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#).unwrap();
+        let http_re = RE_HTTP_URL.get_or_init(|| Regex::new(r#"http://[a-zA-Z0-9]"#).unwrap());
+        let http_localhost_re = RE_HTTP_LOCALHOST.get_or_init(||
+            Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#).unwrap());
         let http_total = http_re.find_iter(content).count();
         let http_local = http_localhost_re.find_iter(content).count();
         let http_count = http_total.saturating_sub(http_local);
@@ -2136,9 +2148,9 @@ impl Analyzer {
         }
 
         // Hardcoded secrets patterns
-        let secret_re = Regex::new(
+        let secret_re = RE_HARDCODED_SECRET.get_or_init(|| Regex::new(
             r#"(?i)(api[_-]?key|api[_-]?secret|password|passwd|secret[_-]?key|access[_-]?token|private[_-]?key)\s*[=:]\s*["'][^"']{8,}"#
-        ).unwrap();
+        ).unwrap());
         if secret_re.is_match(content) {
             weak_points.push(WeakPoint {
                 category: WeakPointCategory::HardcodedSecret,

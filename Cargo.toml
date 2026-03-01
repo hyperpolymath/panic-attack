@@ -23,7 +23,7 @@ encoding_rs = "0.8"
 crossterm = "0.26"
 eframe = "0.27"
 rayon = "1.10"
-blake3 = "1.5"
+blake3 = { version = "1.5", features = ["mmap"] }
 sha2 = "0.10"
 hex = "0.4"
 getrandom = "0.2"
@@ -35,6 +35,13 @@ signing = ["ed25519-dalek"]
 
 [dev-dependencies]
 tempfile = "3.8"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
 
 [[bin]]
 name = "panic-attack"
