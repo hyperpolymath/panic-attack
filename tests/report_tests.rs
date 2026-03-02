@@ -41,6 +41,7 @@ fn make_assail_report() -> AssailReport {
         dependency_graph: DependencyGraph { edges: vec![] },
         taint_matrix: TaintMatrix { rows: vec![] },
         recommended_attacks: vec![AttackAxis::Memory, AttackAxis::Concurrency],
+        migration_metrics: None,
     }
 }
 

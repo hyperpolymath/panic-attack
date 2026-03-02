@@ -225,6 +225,105 @@ pub fn persist_report(
     Ok(stored)
 }
 
+/// Build a VerisimDB hexad from an assemblyline aggregate report.
+///
+/// Unlike single-repo hexads which wrap an AssaultReport, assemblyline
+/// hexads capture the batch scan results across many repos.
+fn build_assemblyline_hexad(
+    report: &crate::assemblyline::AssemblylineReport,
+) -> Result<PanicAttackHexad> {
+    let now = Utc::now();
+    let id = format!(
+        "pa-asmline-{}-{}",
+        now.format("%Y%m%d%H%M%S"),
+        &uuid_from_timestamp(now.timestamp_millis())
+    );
+
+    let document = serde_json::to_value(report)?;
+
+    // Collect unique categories from all repo results
+    let mut categories: Vec<String> = Vec::new();
+    for result in &report.results {
+        if let Some(ref rpt) = result.report {
+            for wp in &rpt.weak_points {
+                let cat = format!("{:?}", wp.category);
+                if !categories.contains(&cat) {
+                    categories.push(cat);
+                }
+            }
+        }
+    }
+    categories.sort();
+
+    Ok(PanicAttackHexad {
+        schema: "verisimdb.hexad.v1".to_string(),
+        id,
+        created_at: now.to_rfc3339(),
+        provenance: HexadProvenance {
+            tool: "panic-attack".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            program_path: report.directory.display().to_string(),
+            language: "multi".to_string(),
+            attestation_hash: None,
+        },
+        semantic: HexadSemantic {
+            total_weak_points: report.total_weak_points,
+            critical_count: report.total_critical,
+            high_count: report
+                .results
+                .iter()
+                .map(|r| r.high_count)
+                .sum(),
+            total_crashes: 0,
+            robustness_score: 0.0,
+            categories,
+            migration: None,
+        },
+        document,
+    })
+}
+
+/// Persist an assemblyline report to storage (filesystem and/or verisimdb).
+///
+/// This is the batch-scan counterpart to `persist_report()` — it stores
+/// the aggregate assemblyline report rather than individual assault reports.
+pub fn persist_assemblyline_report(
+    report: &crate::assemblyline::AssemblylineReport,
+    directory: Option<&Path>,
+    modes: &[StorageMode],
+) -> Result<Vec<PathBuf>> {
+    let mut stored = Vec::new();
+    let timestamp = Utc::now().format("%Y%m%d%H%M%S").to_string();
+
+    if modes.contains(&StorageMode::Filesystem) {
+        let base_dir = directory
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("reports"));
+        fs::create_dir_all(&base_dir)?;
+        let file_name = format!("assemblyline-{}.json", timestamp);
+        let path = base_dir.join(&file_name);
+        let content = serde_json::to_string_pretty(report)?;
+        fs::write(&path, content)?;
+        stored.push(path);
+    }
+
+    if modes.contains(&StorageMode::VerisimDb) {
+        let base_dir = directory
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+        let hexad_dir = base_dir.join("hexads");
+        fs::create_dir_all(&hexad_dir)?;
+
+        let hexad = build_assemblyline_hexad(report)?;
+        let path = hexad_dir.join(format!("{}.json", hexad.id));
+        let payload = serde_json::to_string_pretty(&hexad)?;
+        fs::write(&path, payload)?;
+        stored.push(path);
+    }
+
+    Ok(stored)
+}
+
 pub fn latest_reports(dir: &Path, count: usize) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Err(anyhow!(

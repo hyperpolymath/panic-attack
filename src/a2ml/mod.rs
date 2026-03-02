@@ -759,6 +759,7 @@ mod tests {
             recommended_attacks: vec![AttackAxis::Concurrency],
             dependency_graph: DependencyGraph::default(),
             taint_matrix: TaintMatrix::default(),
+            migration_metrics: None,
         }
     }
 

@@ -530,6 +530,14 @@ enum Commands {
         /// Minimum number of findings to include a repo
         #[arg(long, default_value = "0")]
         min_findings: usize,
+
+        /// Enable incremental scanning (skip repos unchanged since last run)
+        #[arg(long)]
+        incremental: bool,
+
+        /// Path to fingerprint cache file (default: .panic-attack-cache.json in DIRECTORY)
+        #[arg(long, value_name = "FILE")]
+        cache: Option<PathBuf>,
     },
 
     /// Run panic-attack self-diagnostics for Hypatia/gitbot-fleet visibility
@@ -1562,22 +1570,59 @@ fn main() -> Result<()> {
             output,
             findings_only,
             min_findings,
+            incremental,
+            cache,
         } => {
+            let cache_file = if incremental {
+                Some(cache.unwrap_or_else(|| directory.join(".panic-attack-cache.json")))
+            } else {
+                cache // explicit --cache implies incremental
+            };
+
             let config = assemblyline::AssemblylineConfig {
                 directory: directory.clone(),
                 output: output.clone(),
                 findings_only,
                 min_findings,
                 sarif: cli.output_format == report::output::ReportOutputFormat::Sarif,
+                cache_file: cache_file.clone(),
             };
+
+            if cache_file.is_some() && !cli.quiet {
+                let cf = cache_file.as_ref().unwrap();
+                if cf.exists() {
+                    println!("Incremental mode: loading cache from {}", cf.display());
+                } else {
+                    println!("Incremental mode: first run (cache will be saved to {})", cf.display());
+                }
+            }
 
             let report = assemblyline::run(&config)?;
             assemblyline::print_summary(&report, cli.quiet);
+
+            if report.repos_skipped > 0 && !cli.quiet {
+                println!(
+                    "  {} repos skipped (unchanged since last scan)",
+                    report.repos_skipped
+                );
+            }
 
             if let Some(out_path) = output {
                 assemblyline::write_report(&report, &out_path)?;
                 if !cli.quiet {
                     println!("Report written to {}", out_path.display());
+                }
+            }
+
+            // Persist to verisimdb/filesystem if storage modes are configured
+            if !storage_modes.is_empty() {
+                let stored = storage::persist_assemblyline_report(
+                    &report,
+                    cli.store.as_deref(),
+                    &storage_modes,
+                )?;
+                for path in stored {
+                    qprintln!(cli.quiet, "Stored report: {}", path.display());
                 }
             }
 

@@ -33,6 +33,7 @@ fn make_test_report() -> AssailReport {
         recommended_attacks: vec![],
         dependency_graph: Default::default(),
         taint_matrix: Default::default(),
+        migration_metrics: None,
     }
 }
 
@@ -140,6 +141,7 @@ fn test_sarif_empty_report() {
         recommended_attacks: vec![],
         dependency_graph: Default::default(),
         taint_matrix: Default::default(),
+        migration_metrics: None,
     };
 
     let json = sarif::to_sarif_json(&report).expect("SARIF conversion should succeed");

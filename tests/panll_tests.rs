@@ -34,6 +34,7 @@ fn make_assault_report(
             dependency_graph: DependencyGraph { edges: vec![] },
             taint_matrix: TaintMatrix { rows: vec![] },
             recommended_attacks: vec![],
+            migration_metrics: None,
         },
         attack_results,
         total_crashes: 0,

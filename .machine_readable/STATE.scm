@@ -7,8 +7,8 @@
   (metadata
     (version "1.0")
     (project "panic-attack")
-    (last-updated "2026-03-01T12:00:00Z")
-    (session-count 9))
+    (last-updated "2026-03-02T20:30:00Z")
+    (session-count 10))
 
   (project-context
     (name "panic-attack")
@@ -16,8 +16,8 @@
     (language "Rust")
     (type "CLI tool + library")
     (purpose "Multi-language static analysis with miniKanren-inspired logic engine for taint analysis, cross-language reasoning, and search strategies")
-    (current-version "2.0.0")
-    (next-milestone "v2.1.0")
+    (current-version "2.1.0")
+    (next-milestone "v2.2.0")
     (lines-of-code 9000))
 
   (naming

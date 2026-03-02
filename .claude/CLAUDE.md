@@ -96,13 +96,21 @@ The kanren module provides:
 - **Forward chaining**: Derives new vulnerability facts from rules applied to existing facts
 - **Backward queries**: Given a vulnerability type, finds which files could cause it
 
+## Deployment Modes
+
+Three self-contained modes — none requires the others:
+
+1. **Standalone** (USB/laptop/air-gapped): Single binary, zero deps, `assail`/`assault` individual targets
+2. **Panicbot** (gitbot-fleet/CI): Automated JSON scanning, PA001–PA020 codes, bot directives
+3. **Mass-panic** (assemblyline + verisimdb + Chapel): Org-scale batch scanning with incremental BLAKE3, hexad persistence, delta reporting, notifications. Chapel (planned) for distributed multi-machine orchestration.
+
 ## Planned Features (Next Priorities)
 
-1. **verisimdb API integration**: Push scan results as hexads directly
-2. **Incremental assemblyline**: BLAKE3 delta scanning (skip unchanged repos)
-3. **kanren context-facts**: ~10 rules for FP suppression (~8% -> ~2-3%)
-4. **hypatia pipeline**: Export kanren facts as Logtalk predicates via PanLL
-5. **Shell completions**: bash, zsh, fish, nushell
+1. **verisimdb HTTP API integration**: Push hexads via REST (awaiting API stabilisation)
+2. **kanren context-facts**: ~10 rules for FP suppression (~8% -> ~2-3%)
+3. **hypatia pipeline**: Export kanren facts as Logtalk predicates via PanLL
+4. **Shell completions**: bash, zsh, fish, nushell
+5. **Chapel metalayer**: Distributed `coforall` scanning across compute clusters
 
 ## Integration Points
 

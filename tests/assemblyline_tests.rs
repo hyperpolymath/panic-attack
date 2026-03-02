@@ -23,6 +23,7 @@ fn test_assemblyline_empty_directory() {
         findings_only: false,
         min_findings: 0,
         sarif: false,
+        cache_file: None,
     };
 
     let report = assemblyline::run(&config).expect("assemblyline should succeed on empty dir");
@@ -51,6 +52,7 @@ fn test_assemblyline_discovers_git_repos_only() {
         findings_only: false,
         min_findings: 0,
         sarif: false,
+        cache_file: None,
     };
 
     let report = assemblyline::run(&config).expect("assemblyline should succeed");
@@ -87,6 +89,7 @@ fn main() {
         findings_only: false,
         min_findings: 0,
         sarif: false,
+        cache_file: None,
     };
 
     let report = assemblyline::run(&config).expect("assemblyline should succeed");
@@ -128,6 +131,7 @@ fn main() {
         findings_only: true,
         min_findings: 0,
         sarif: false,
+        cache_file: None,
     };
 
     let report = assemblyline::run(&config).expect("assemblyline should succeed");
@@ -151,6 +155,7 @@ fn test_assemblyline_write_report() {
         findings_only: false,
         min_findings: 0,
         sarif: false,
+        cache_file: None,
     };
 
     let report = assemblyline::run(&config).expect("assemblyline should succeed");
@@ -179,6 +184,7 @@ fn test_assemblyline_not_a_directory() {
         findings_only: false,
         min_findings: 0,
         sarif: false,
+        cache_file: None,
     };
 
     let result = assemblyline::run(&config);

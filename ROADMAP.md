@@ -41,6 +41,14 @@
 - miniKanren-inspired logic engine (taint analysis, cross-language, search strategies)
 - Renamed xray -> assail, panic-attacker -> panic-attack
 
+### v2.1.0 — Mass-Panic Mode (2026-03-02)
+
+- Incremental assemblyline with BLAKE3 fingerprint cache (`--incremental`, `--cache`)
+- VerisimDB hexad persistence for assemblyline aggregate reports
+- `--store` wired into assemblyline handler (was only assail/assault before)
+- Three deployment modes documented: standalone, panicbot, mass-panic
+- Fixed pre-existing migration_metrics test failures (269 tests, 0 failures)
+
 ### v2.0.0+ — Session 8/9 Features (2026-03-01)
 
 - SARIF output format (GitHub Security tab integration)
@@ -70,13 +78,15 @@
 
 ## v2.1.0 — Bulk Scanning & Persistence (NEXT)
 
-**Theme: Production pipeline for organisation-scale scanning**
+**Theme: Production pipeline for organisation-scale scanning (mass-panic mode)**
 
-- [ ] verisimdb API integration: push scan results as hexads directly
-- [ ] Incremental assemblyline: skip unchanged repos via BLAKE3 delta
-- [ ] Assemblyline checkpointing: resume interrupted sweeps
-- [ ] Delta reporting: "What's new/fixed since last run"
-- [ ] `--store` flag for automatic verisimdb persistence
+- [x] Incremental assemblyline: skip unchanged repos via BLAKE3 delta (`--incremental`)
+- [x] Assemblyline checkpointing: resume interrupted sweeps via fingerprint cache
+- [x] Delta reporting: `panic-attack diff` compares any two reports side-by-side
+- [x] `--store` flag for automatic verisimdb/filesystem persistence (assemblyline + assail + assault)
+- [x] VerisimDB hexad persistence: assemblyline aggregate reports stored as hexads
+- [x] Fixed pre-existing test failures (migration_metrics field in test fixtures)
+- [ ] verisimdb HTTP API integration: push hexads via REST (awaiting VerisimDB API stabilisation)
 
 ---
 

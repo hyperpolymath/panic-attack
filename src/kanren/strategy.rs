@@ -305,6 +305,7 @@ mod tests {
             recommended_attacks: vec![],
             dependency_graph: Default::default(),
             taint_matrix: Default::default(),
+            migration_metrics: None,
         };
 
         // Small, single-language, no high risk: should be DepthFirst
@@ -338,6 +339,7 @@ mod tests {
             recommended_attacks: vec![],
             dependency_graph: Default::default(),
             taint_matrix: Default::default(),
+            migration_metrics: None,
         };
 
         let ordered = prioritise_files(&report, SearchStrategy::RiskWeighted);

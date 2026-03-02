@@ -20,8 +20,9 @@ use std::path::{Path, PathBuf};
 
 /// Configuration for an assemblyline run.
 ///
-/// Note: `output` and `sarif` are read by the CLI caller, not by the
-/// assemblyline engine itself — hence the allow attribute.
+/// Note: `output`, `sarif`, and `cache_file` are read by the CLI caller,
+/// not by the assemblyline engine itself (except `cache_file` which is
+/// used by `run()` for incremental scanning).
 #[allow(dead_code)]
 pub struct AssemblylineConfig {
     /// Parent directory to scan for git repos
@@ -34,6 +35,8 @@ pub struct AssemblylineConfig {
     pub min_findings: usize,
     /// Emit SARIF instead of default JSON (handled by caller)
     pub sarif: bool,
+    /// Path to fingerprint cache file for incremental scanning
+    pub cache_file: Option<PathBuf>,
 }
 
 /// Results from scanning a single repository
@@ -75,8 +78,6 @@ pub struct FingerprintCache {
     pub fingerprints: HashMap<PathBuf, String>,
 }
 
-/// Public API for incremental scanning — not yet wired into CLI.
-#[allow(dead_code)]
 impl FingerprintCache {
     /// Load fingerprint cache from a previous assemblyline report
     pub fn from_report(report: &AssemblylineReport) -> Self {
@@ -89,8 +90,8 @@ impl FingerprintCache {
         Self { fingerprints }
     }
 
-    /// Load fingerprint cache from a JSON file
-    pub fn load(path: &Path) -> Result<Self> {
+    /// Load fingerprint cache from a previous assemblyline report JSON file
+    pub fn load_from_report_file(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)?;
         let report: AssemblylineReport = serde_json::from_str(&content)?;
         Ok(Self::from_report(&report))
@@ -102,6 +103,24 @@ impl FingerprintCache {
             .get(repo_path)
             .map(|cached| cached == current_fingerprint)
             .unwrap_or(false)
+    }
+
+    /// Save fingerprint cache extracted from an assemblyline report
+    pub fn save_from_report(report: &AssemblylineReport, path: &Path) -> Result<()> {
+        let cache = Self::from_report(report);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(&cache)?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load fingerprint cache from a standalone cache JSON file
+    pub fn load_cache_file(path: &Path) -> Result<Self> {
+        let content = fs::read_to_string(path)?;
+        let cache: Self = serde_json::from_str(&content)?;
+        Ok(cache)
     }
 }
 
@@ -282,10 +301,26 @@ fn scan_repo(repo_path: &Path) -> RepoResult {
 /// Run assemblyline across all repos in a directory.
 ///
 /// Uses rayon for parallel scanning across available CPU cores.
-/// If a previous report is provided, uses BLAKE3 fingerprints to skip
+/// If a cache file is configured, loads BLAKE3 fingerprints to skip
 /// repos whose source files haven't changed (incremental mode).
+/// After scanning, saves updated fingerprints back to the cache file.
 pub fn run(config: &AssemblylineConfig) -> Result<AssemblylineReport> {
-    run_with_cache(config, None)
+    let cache = match &config.cache_file {
+        Some(path) if path.exists() => {
+            FingerprintCache::load_cache_file(path)
+                .ok() // gracefully degrade if cache is corrupt
+        }
+        _ => None,
+    };
+
+    let report = run_with_cache(config, cache.as_ref())?;
+
+    // Save updated fingerprints for next incremental run
+    if let Some(path) = &config.cache_file {
+        FingerprintCache::save_from_report(&report, path)?;
+    }
+
+    Ok(report)
 }
 
 /// Run assemblyline with optional fingerprint cache for incremental scanning.

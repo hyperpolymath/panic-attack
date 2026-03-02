@@ -194,9 +194,11 @@ Grade D = runs without crashing, C = correct output, B = edge cases handled.
 
 ---
 
-## Tier 3: At Scale
+## Tier 3: At Scale (mass-panic)
 
 **Large-scale scanning, distributed analysis, and ecosystem integration. These are optional layers — panic-attack works perfectly without them.**
+
+This is the "mass-panic" deployment mode: assemblyline + incremental BLAKE3 + verisimdb + delta reporting + notifications. Designed for scanning datacenters, organisations, or entire ecosystems. Chapel will eventually slot in here for distributed multi-machine orchestration.
 
 ### VerisimDB persistence
 
@@ -206,24 +208,38 @@ Store scan results for trending, diffing, and cross-project analysis:
 # Auto-store via manifest configuration
 panic-attack assault ./my-program --store ./verisimdb-data/
 
+# Assemblyline batch scan with verisimdb persistence
+panic-attack assemblyline /path/to/repos/ --store ./verisimdb-data/
+
 # Diff the latest two stored reports
 panic-attack diff
 ```
 
 Storage modes (filesystem, verisimdb) are configured in `AI.a2ml`.
 
-### Assemblyline at scale
+### Incremental assemblyline
 
-For 500+ repos, `assemblyline` parallelises across all available cores:
+For 500+ repos, `assemblyline` parallelises across all available cores with incremental scanning:
+
+```bash
+# First run: scans all repos, saves BLAKE3 fingerprint cache
+panic-attack assemblyline /path/to/repos/ --incremental --output sweep.json
+
+# Second run: skips repos whose source files haven't changed
+panic-attack assemblyline /path/to/repos/ --incremental --output sweep.json
+
+# Custom cache location
+panic-attack assemblyline /path/to/repos/ --cache /shared/cache.json
+```
 
 - **Rayon parallelism**: 17.7x speedup (141 repos in 39.9s vs ~705s sequential)
 - **BLAKE3 fingerprinting**: Hash source files, skip unchanged repos on re-scan
-- **Incremental checkpointing**: Resume interrupted sweeps (planned)
-- **Delta reporting**: "What's new/fixed since last run" (planned)
+- **Incremental checkpointing**: Cache survives interruptions; resume by re-running with `--incremental`
+- **Delta reporting**: `panic-attack diff` compares any two reports side-by-side
 
-### Chapel metalayer (planned)
+### Chapel metalayer (planned — mass-panic)
 
-A parallel orchestration layer for cross-repo analysis:
+A parallel orchestration layer for cross-repo analysis across multiple machines:
 
 - Parallel assail across thousands of repos via Chapel `coforall`
 - Cross-repo taint analysis (FFI chains spanning multiple projects)
@@ -234,7 +250,7 @@ See `docs/` for design documents. Chapel is strictly optional — the core tool 
 
 ### PanLL visualisation
 
-For interactive visualisation, dashboarding, and extended analysis, use panic-attack as part of [PanLL](https://github.com/hyperpolymath/panll) — the three-pane mission control that can ingest panic-attack reports as event-chain models. Export with `panic-attack panll report.json` and load the result into PanLL's Pane-W for visual triage.
+For interactive visualisation, dashboarding, and extended analysis, use panic-attack as part of [PanLL](https://github.com/hyperpolymath/panll) — the three-panel mission control that can ingest panic-attack reports as event-chain models. Export with `panic-attack panll report.json` and load the result into PanLL's Panel-W for visual triage.
 
 ### Integration points
 
@@ -242,9 +258,72 @@ For interactive visualisation, dashboarding, and extended analysis, use panic-at
 |--------|-------------|--------|
 | **Hypatia** | Feed kanren facts as Logtalk predicates | Planned |
 | **gitbot-fleet** | Trigger scans via repository_dispatch | Hooks wired |
-| **VerisimDB** | Store results as hexads | File I/O works, API planned |
+| **VerisimDB** | Store results as hexads | Working (file I/O; HTTP API planned) |
 | **PanLL** | Export event-chain models | Working |
 | **GitHub Security** | SARIF upload | Working |
+
+---
+
+## Deployment Modes
+
+panic-attack supports three deployment modes. Each is self-contained — none requires the others.
+
+### Standalone (USB / laptop / air-gapped)
+
+**Use case:** Quick security scan of a single project. No dependencies, no network, no database. Just the binary.
+
+```bash
+# Copy the binary to a USB stick, run it anywhere
+panic-attack assail /path/to/project
+panic-attack assault /path/to/project --output report.json
+```
+
+- Single static binary (~15MB, stripped)
+- Zero runtime dependencies
+- Works offline, air-gapped, on any Linux machine
+- Full 47-language analysis + 20 weak point categories
+- JSON/YAML/SARIF output for manual review
+
+### Panicbot (gitbot-fleet / CI)
+
+**Use case:** Automated scanning in CI pipelines or via gitbot-fleet's panicbot verifier.
+
+```bash
+# panicbot invokes this in CI:
+panic-attack assail /path/to/repo --output-format json --quiet
+```
+
+- Invoked by panicbot (gitbot-fleet verifier bot)
+- JSON contract: findings mapped to PA001–PA020 codes
+- Bot directives at `.machine_readable/bot_directives/panicbot.scm`
+- Safe allow list (assail, adjudicate, diagnostics) — no stress testing in CI
+- Diagnostics endpoint for hypatia/gitbot-fleet health checks
+- No verisimdb or Chapel required
+
+### Mass-panic (assemblyline + verisimdb + Chapel)
+
+**Use case:** Organisation-scale or datacenter-scale scanning across hundreds/thousands of repos with persistence, trending, and delta reporting.
+
+```bash
+# Scan everything with incremental caching + verisimdb persistence
+panic-attack assemblyline /path/to/all/repos/ --incremental --store ./verisimdb-data/
+
+# Compare runs
+panic-attack diff
+
+# Generate notifications for critical findings
+panic-attack notify sweep-report.json --critical-only --github-issues
+```
+
+- **Assemblyline**: Batch scan with rayon parallelism (17.7x speedup)
+- **BLAKE3 incremental**: Skip unchanged repos between runs
+- **VerisimDB hexads**: Persist results for trending and cross-project analysis
+- **Delta reporting**: Track what's new/fixed since last run
+- **Notification pipeline**: Markdown summaries + GitHub issue creation
+- **Chapel metalayer** (planned): Distributed multi-machine orchestration via `coforall`
+- **PanLL Panel-W**: Visual triage dashboard for findings
+
+None of these components are required by the standalone or panicbot modes.
 
 ---
 
