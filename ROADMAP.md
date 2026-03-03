@@ -47,6 +47,7 @@
 - VerisimDB hexad persistence for assemblyline aggregate reports
 - `--store` wired into assemblyline handler (was only assail/assault before)
 - Three deployment modes documented: standalone, panicbot, mass-panic
+- PanLL "Mass Panic" panel: GUI for assemblyline batch scanning with repo discovery, select-all/checkbox controls, incremental BLAKE3, progress tracking, delta comparison, sort/filter, notification generation
 - Fixed pre-existing migration_metrics test failures (269 tests, 0 failures)
 
 ### v2.0.0+ — Session 8/9 Features (2026-03-01)

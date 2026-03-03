@@ -117,7 +117,7 @@ Three self-contained modes — none requires the others:
 - **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA020). Directives at `.machine_readable/bot_directives/panicbot.scm`
 - **verisimdb**: Store scan results as hexads (document + semantic modalities). File I/O works, API planned
 - **hypatia**: Neurosymbolic rule engine processes findings. Env var watcher in diagnostics
-- **panll**: Event-chain export for three-pane visualisation. Working via `panll` subcommand
+- **panll**: Event-chain export for three-panel visualisation. Working via `panll` subcommand. Two dedicated panels: panic-attack (single-repo) and Mass Panic (assemblyline batch GUI)
 - **assemblyline**: Batch scanning of repo directories. Rayon parallelism, BLAKE3 fingerprinting
 - **notify**: Notification pipeline. Assemblyline -> markdown summaries -> GitHub issues
 - **attestation**: Cryptographic chain (intent/evidence/seal). Optional Ed25519 signing

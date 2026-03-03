@@ -80,7 +80,8 @@
       "Panicbot integration (JSON contract verified, bot directives, diagnostics check)"
       "Cryptographic attestation chain (intent → evidence → seal)"
       "i18n support (ISO 639-1, 10 languages)"
-      "Machine-verifiable readiness tests (CRG D/C/B grades)"))
+      "Machine-verifiable readiness tests (CRG D/C/B grades)"
+      "PanLL Mass Panic panel: GUI for assemblyline batch scanning with repo discovery, select-all, progress tracking, delta comparison, notifications"))
 
   (route-to-mvp
     (target "v2.1.0: Bulk scanning + verisimdb integration")

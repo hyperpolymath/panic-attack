@@ -252,6 +252,10 @@ See `docs/` for design documents. Chapel is strictly optional — the core tool 
 
 For interactive visualisation, dashboarding, and extended analysis, use panic-attack as part of [PanLL](https://github.com/hyperpolymath/panll) — the three-panel mission control that can ingest panic-attack reports as event-chain models. Export with `panic-attack panll report.json` and load the result into PanLL's Panel-W for visual triage.
 
+PanLL includes two dedicated panels for panic-attack:
+- **panic-attack panel** — single-repo scanning, findings browser, severity filtering, report comparison
+- **Mass Panic panel** — organisation-scale GUI: repo discovery, select-all/checkbox batch controls, assemblyline scanning with progress tracking, incremental BLAKE3 delta, verisimdb persistence, delta comparison, sort/filter controls, notification generation. This replaces the complex CLI orchestration needed for mass-panic mode.
+
 ### Integration points
 
 | System | Integration | Status |
@@ -260,6 +264,7 @@ For interactive visualisation, dashboarding, and extended analysis, use panic-at
 | **gitbot-fleet** | Trigger scans via repository_dispatch | Hooks wired |
 | **VerisimDB** | Store results as hexads | Working (file I/O; HTTP API planned) |
 | **PanLL** | Export event-chain models | Working |
+| **PanLL Mass Panic** | GUI panel for assemblyline batch scanning | Working |
 | **GitHub Security** | SARIF upload | Working |
 
 ---
