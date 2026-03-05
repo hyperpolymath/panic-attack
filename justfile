@@ -70,3 +70,8 @@ assemblyline:
 # Lint (check warnings)
 lint:
     cargo build --release 2>&1 | grep -c "warning" || echo "0 warnings"
+
+# [AUTO-GENERATED] Multi-arch / RISC-V target
+build-riscv:
+	@echo "Building for RISC-V..."
+	cross build --target riscv64gc-unknown-linux-gnu
