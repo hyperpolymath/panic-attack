@@ -18,6 +18,7 @@ mod axial;
 mod diagnostics;
 mod i18n;
 mod kanren;
+mod kin;
 mod panll;
 mod report;
 mod signatures;
@@ -865,6 +866,34 @@ fn default_axial_markdown_path() -> PathBuf {
 }
 
 fn main() -> Result<()> {
+    // Write startup heartbeat for kin coordination
+    let _ = kin::write_startup_heartbeat();
+
+    let result = run_main();
+
+    // Write final heartbeat based on outcome
+    match &result {
+        Ok(()) => {
+            let _ = kin::write_heartbeat(
+                kin::RunMetrics {
+                    command: std::env::args().collect::<Vec<_>>().join(" "),
+                    repos_scanned: None,
+                    findings: None,
+                    duration_secs: None,
+                    exit_success: true,
+                },
+                vec![],
+            );
+        }
+        Err(e) => {
+            let _ = kin::write_error_heartbeat(format!("{}", e));
+        }
+    }
+
+    result
+}
+
+fn run_main() -> Result<()> {
     let cli = Cli::parse();
     let manifest = match Manifest::load_default() {
         Ok(manifest) => manifest,
