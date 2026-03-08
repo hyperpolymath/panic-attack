@@ -324,6 +324,304 @@ pub fn persist_assemblyline_report(
     Ok(stored)
 }
 
+// ---------------------------------------------------------------------------
+// VeriSimDB HTTP API integration (via V-lang gateway on port 9090)
+// ---------------------------------------------------------------------------
+
+/// Push a hexad to the VeriSimDB V-lang API gateway via REST.
+///
+/// Endpoint: POST http://{host}:{port}/api/v1/hexads
+/// The V-lang gateway proxies to the Rust core on port 8080.
+///
+/// Requires the `http` feature flag: `cargo build --features http`
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+pub fn push_hexad_http(hexad: &PanicAttackHexad, gateway_url: &str) -> Result<String> {
+    let url = format!("{}/api/v1/hexads", gateway_url.trim_end_matches('/'));
+    let payload = serde_json::to_string(hexad)?;
+
+    let response = attach_auth(ureq::post(&url))
+        .set("Content-Type", "application/json")
+        .send_string(&payload)
+        .map_err(|e| anyhow!("VeriSimDB gateway error: {}", e))?;
+
+    let status = response.status();
+    let body = response
+        .into_string()
+        .unwrap_or_else(|_| String::from("(no body)"));
+
+    if status >= 200 && status < 300 {
+        Ok(body)
+    } else {
+        Err(anyhow!(
+            "VeriSimDB gateway returned {}: {}",
+            status,
+            body
+        ))
+    }
+}
+
+/// Push a hexad via HTTP, falling back to filesystem if the gateway is unavailable.
+///
+/// Uses VERISIM_GATEWAY_URL env var (default: http://localhost:9090).
+/// Checks gateway health (cached for 30s) before attempting HTTP push.
+/// Retries with exponential backoff (3 attempts: 1s, 2s, 4s) before falling back.
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+pub fn push_hexad_with_fallback(
+    hexad: &PanicAttackHexad,
+    fallback_dir: &Path,
+) -> Result<Vec<PathBuf>> {
+    let gateway_url = std::env::var("VERISIM_GATEWAY_URL")
+        .unwrap_or_else(|_| "http://localhost:9090".to_string());
+
+    // Skip HTTP entirely if gateway is known-down (cached health check)
+    if !check_gateway(&gateway_url) {
+        return fallback_write_hexad(hexad, fallback_dir);
+    }
+
+    match push_hexad_http_with_retry(hexad, &gateway_url) {
+        Ok(_response) => Ok(Vec::new()), // pushed via HTTP, no local file
+        Err(_) => {
+            // All retries exhausted — fall back to filesystem
+            fallback_write_hexad(hexad, fallback_dir)
+        }
+    }
+}
+
+/// Write a hexad to the local filesystem fallback directory.
+#[cfg(feature = "http")]
+fn fallback_write_hexad(
+    hexad: &PanicAttackHexad,
+    fallback_dir: &Path,
+) -> Result<Vec<PathBuf>> {
+    let hexad_dir = fallback_dir.join("hexads");
+    fs::create_dir_all(&hexad_dir)?;
+    let path = hexad_dir.join(format!("{}.json", hexad.id));
+    let payload = serde_json::to_string_pretty(hexad)?;
+    fs::write(&path, &payload)?;
+    Ok(vec![path])
+}
+
+/// Persist a report to VeriSimDB via HTTP API (with filesystem fallback).
+///
+/// This is the HTTP-enabled counterpart to the file-based VerisimDb mode.
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+pub fn persist_report_http(
+    report: &AssaultReport,
+    fallback_dir: Option<&Path>,
+) -> Result<Vec<PathBuf>> {
+    let hexad = build_hexad(report)?;
+    let dir = fallback_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+    push_hexad_with_fallback(&hexad, &dir)
+}
+
+/// Persist an assemblyline report to VeriSimDB via HTTP API (with filesystem fallback).
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+pub fn persist_assemblyline_report_http(
+    report: &crate::assemblyline::AssemblylineReport,
+    fallback_dir: Option<&Path>,
+) -> Result<Vec<PathBuf>> {
+    let hexad = build_assemblyline_hexad(report)?;
+    let dir = fallback_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+    push_hexad_with_fallback(&hexad, &dir)
+}
+
+// ---------------------------------------------------------------------------
+// VeriSimDB HTTP API — retry, auth, batch, query, health check
+// ---------------------------------------------------------------------------
+
+/// Cached gateway health state: stores (is_healthy, timestamp_secs).
+/// Used to avoid repeated HTTP attempts against a known-down gateway.
+#[cfg(feature = "http")]
+static GATEWAY_HEALTH: std::sync::OnceLock<std::sync::Mutex<(bool, u64)>> =
+    std::sync::OnceLock::new();
+
+/// Duration (in seconds) to cache a gateway health check result.
+#[cfg(feature = "http")]
+const HEALTH_CACHE_TTL_SECS: u64 = 30;
+
+/// Return the current wall-clock time in seconds since UNIX epoch.
+#[cfg(feature = "http")]
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// Build a ureq::Request with optional Bearer token from `VERISIM_API_TOKEN`.
+///
+/// If the environment variable is set and non-empty the `Authorization` header
+/// is attached; otherwise the request is sent unauthenticated.
+#[cfg(feature = "http")]
+fn attach_auth(request: ureq::Request) -> ureq::Request {
+    match std::env::var("VERISIM_API_TOKEN") {
+        Ok(token) if !token.is_empty() => {
+            request.set("Authorization", &format!("Bearer {}", token))
+        }
+        _ => request,
+    }
+}
+
+/// Push a single hexad with exponential-backoff retry.
+///
+/// Makes up to 3 attempts with delays of 1 s, 2 s, 4 s between them.
+/// Returns as soon as one attempt succeeds.
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+pub fn push_hexad_http_with_retry(
+    hexad: &PanicAttackHexad,
+    gateway_url: &str,
+) -> Result<String> {
+    let delays = [
+        std::time::Duration::from_secs(1),
+        std::time::Duration::from_secs(2),
+        std::time::Duration::from_secs(4),
+    ];
+    let max_attempts: usize = 3;
+    let mut last_err: Option<anyhow::Error> = None;
+
+    for attempt in 0..max_attempts {
+        match push_hexad_http(hexad, gateway_url) {
+            Ok(body) => return Ok(body),
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < max_attempts - 1 {
+                    std::thread::sleep(delays[attempt]);
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| anyhow!("VeriSimDB push failed after {} attempts", max_attempts)))
+}
+
+/// Push a batch of hexads to the VeriSimDB batch endpoint.
+///
+/// Endpoint: POST `{gateway_url}/api/v1/hexads/batch`
+///
+/// If the batch endpoint returns HTTP 404 (not implemented on the gateway),
+/// falls back to pushing each hexad individually via [`push_hexad_http_with_retry`].
+/// Auth token from `VERISIM_API_TOKEN` is attached when present.
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+pub fn push_hexads_batch(
+    hexads: &[PanicAttackHexad],
+    gateway_url: &str,
+) -> Result<Vec<String>> {
+    if hexads.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let url = format!("{}/api/v1/hexads/batch", gateway_url.trim_end_matches('/'));
+    let payload = serde_json::to_string(hexads)?;
+
+    let request = attach_auth(ureq::post(&url))
+        .set("Content-Type", "application/json");
+
+    match request.send_string(&payload) {
+        Ok(response) => {
+            let status = response.status();
+            let body = response
+                .into_string()
+                .unwrap_or_else(|_| String::from("(no body)"));
+            if status >= 200 && status < 300 {
+                Ok(vec![body])
+            } else {
+                Err(anyhow!("VeriSimDB batch returned {}: {}", status, body))
+            }
+        }
+        Err(ureq::Error::Status(404, _)) => {
+            // Batch endpoint not available — push individually
+            let mut results = Vec::with_capacity(hexads.len());
+            for hexad in hexads {
+                let body = push_hexad_http_with_retry(hexad, gateway_url)?;
+                results.push(body);
+            }
+            Ok(results)
+        }
+        Err(e) => Err(anyhow!("VeriSimDB batch request failed: {}", e)),
+    }
+}
+
+/// Query hexads from the VeriSimDB gateway for temporal diff comparison.
+///
+/// Endpoint: GET `{gateway_url}/api/v1/hexads?tool=panic-attack&limit={limit}`
+///
+/// Returns parsed hexads from the gateway. Useful for comparing current scan
+/// results against previous scans stored in VeriSimDB.
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+pub fn query_hexads(gateway_url: &str, limit: usize) -> Result<Vec<PanicAttackHexad>> {
+    let url = format!(
+        "{}/api/v1/hexads?tool=panic-attack&limit={}",
+        gateway_url.trim_end_matches('/'),
+        limit,
+    );
+
+    let request = attach_auth(ureq::get(&url));
+    let response = request
+        .call()
+        .map_err(|e| anyhow!("VeriSimDB query failed: {}", e))?;
+
+    let status = response.status();
+    let body = response
+        .into_string()
+        .unwrap_or_else(|_| String::from("[]"));
+
+    if status >= 200 && status < 300 {
+        let hexads: Vec<PanicAttackHexad> = serde_json::from_str(&body)
+            .map_err(|e| anyhow!("Failed to parse VeriSimDB response: {}", e))?;
+        Ok(hexads)
+    } else {
+        Err(anyhow!("VeriSimDB query returned {}: {}", status, body))
+    }
+}
+
+/// Check whether the VeriSimDB gateway is reachable.
+///
+/// Endpoint: GET `{gateway_url}/api/v1/health`
+///
+/// Results are cached for 30 seconds via a static `OnceLock<Mutex<...>>` to
+/// avoid hammering a down gateway on every push call.  Returns `true` if the
+/// gateway responded 2xx within the cache window, `false` otherwise.
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+pub fn check_gateway(gateway_url: &str) -> bool {
+    let mutex = GATEWAY_HEALTH.get_or_init(|| std::sync::Mutex::new((false, 0)));
+    let now = now_secs();
+
+    // Check cached result
+    if let Ok(guard) = mutex.lock() {
+        let (healthy, checked_at) = *guard;
+        if now.saturating_sub(checked_at) < HEALTH_CACHE_TTL_SECS {
+            return healthy;
+        }
+    }
+
+    // Cache expired or first call — perform live check
+    let url = format!("{}/api/v1/health", gateway_url.trim_end_matches('/'));
+    let request = attach_auth(ureq::get(&url));
+    let is_healthy = match request.call() {
+        Ok(resp) => resp.status() >= 200 && resp.status() < 300,
+        Err(_) => false,
+    };
+
+    // Update cache
+    if let Ok(mut guard) = mutex.lock() {
+        *guard = (is_healthy, now);
+    }
+
+    is_healthy
+}
+
 pub fn latest_reports(dir: &Path, count: usize) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Err(anyhow!(
