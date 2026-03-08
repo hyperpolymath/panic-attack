@@ -43,6 +43,8 @@ use crate::report::{format_diff, load_report, ReportOutputFormat, ReportTui, Rep
 use crate::storage::{latest_reports, persist_report};
 use anyhow::{anyhow, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
+use clap_complete_nushell::Nushell;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
@@ -666,6 +668,13 @@ enum Commands {
         #[command(subcommand)]
         action: TemporalAction,
     },
+
+    /// Generate shell completions for the specified shell
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: ShellArg,
+    },
 }
 
 #[derive(Subcommand)]
@@ -849,6 +858,15 @@ enum A2mlReportKindArg {
 enum MigrationDiffFormatArg {
     Markdown,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum ShellArg {
+    Bash,
+    Zsh,
+    Fish,
+    Nushell,
+    Powershell,
 }
 
 impl From<A2mlReportKindArg> for ReportBundleKind {
@@ -2018,6 +2036,21 @@ fn run_main() -> Result<()> {
                 );
             }
 
+            return Ok(());
+        }
+
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            let bin_name = "panic-attack".to_string();
+            match shell {
+                ShellArg::Bash => generate(Shell::Bash, &mut cmd, &bin_name, &mut io::stdout()),
+                ShellArg::Zsh => generate(Shell::Zsh, &mut cmd, &bin_name, &mut io::stdout()),
+                ShellArg::Fish => generate(Shell::Fish, &mut cmd, &bin_name, &mut io::stdout()),
+                ShellArg::Nushell => generate(Nushell, &mut cmd, &bin_name, &mut io::stdout()),
+                ShellArg::Powershell => {
+                    generate(Shell::PowerShell, &mut cmd, &bin_name, &mut io::stdout())
+                }
+            }
             return Ok(());
         }
 
