@@ -7,7 +7,7 @@
 pub mod analyzer;
 pub mod patterns;
 
-use crate::kanren::core::LogicEngine;
+use crate::kanren::core::{FactDB, LogicEngine};
 use crate::kanren::crosslang::CrossLangAnalyzer;
 use crate::kanren::strategy::{self, SearchStrategy};
 use crate::kanren::taint::TaintAnalyzer;
@@ -73,6 +73,24 @@ pub fn analyze_verbose<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     Ok(report)
 }
 
+/// Build a fully-populated kanren FactDB from an assail report.
+///
+/// Ingest all facts (report, taint, cross-language, context) and run
+/// forward chaining including FP suppression rules.
+/// Returned DB can be used for Logtalk export or further queries.
+pub fn build_logic_db(report: &AssailReport) -> FactDB {
+    let mut engine = LogicEngine::new();
+    engine.ingest_report(report);
+    TaintAnalyzer::extract_facts(&mut engine.db, report);
+    TaintAnalyzer::load_rules(&mut engine.db);
+    CrossLangAnalyzer::extract_facts(&mut engine.db, report);
+    CrossLangAnalyzer::load_rules(&mut engine.db);
+    engine.extract_context_facts(report);
+    engine.load_suppression_rules();
+    engine.analyze();
+    engine.db
+}
+
 /// Run the miniKanren-inspired logic engine on a completed report
 fn run_logic_engine(report: &AssailReport) {
     let mut engine = LogicEngine::new();
@@ -88,7 +106,11 @@ fn run_logic_engine(report: &AssailReport) {
     CrossLangAnalyzer::extract_facts(&mut engine.db, report);
     CrossLangAnalyzer::load_rules(&mut engine.db);
 
-    // Phase 4: Run forward chaining
+    // Phase 4: Extract context facts and load FP suppression rules
+    engine.extract_context_facts(report);
+    engine.load_suppression_rules();
+
+    // Phase 5: Run forward chaining
     let results = engine.analyze();
 
     println!("\n  Logic Engine Results:");
@@ -101,6 +123,12 @@ fn run_logic_engine(report: &AssailReport) {
     );
     println!("    High vulnerabilities: {}", results.high_vulnerabilities);
     println!("    Cross-language vulns: {}", results.cross_language_vulns);
+    if results.suppressed_false_positives > 0 {
+        println!(
+            "    Suppressed false positives: {}",
+            results.suppressed_false_positives
+        );
+    }
 
     // Query taint flows
     let flows = TaintAnalyzer::query_flows(&engine.db);

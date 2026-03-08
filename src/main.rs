@@ -24,6 +24,7 @@ mod report;
 mod signatures;
 mod storage;
 mod assemblyline;
+mod mass_panic;
 mod notify;
 mod types;
 
@@ -113,6 +114,10 @@ enum Commands {
         /// Requires the `signing` feature.
         #[arg(long, value_name = "PATH")]
         signing_key: Option<PathBuf>,
+
+        /// Export kanren logic facts as Logtalk predicates for hypatia integration
+        #[arg(long, value_name = "PATH")]
+        logtalk: Option<PathBuf>,
     },
 
     /// Execute a single attack on a target program
@@ -620,6 +625,80 @@ enum Commands {
         #[arg(long, default_value = "hyperpolymath")]
         github_owner: String,
     },
+
+    /// Image: generate a system health image from an assemblyline scan (fNIRS-style)
+    Image {
+        /// Parent directory containing repos to scan (runs assemblyline internally)
+        #[arg(value_name = "DIRECTORY")]
+        directory: PathBuf,
+
+        /// Output file for the system image JSON
+        #[arg(short, long, value_name = "OUT")]
+        output: Option<PathBuf>,
+
+        /// Enable incremental scanning
+        #[arg(long)]
+        incremental: bool,
+
+        /// Fingerprint cache file
+        #[arg(long, value_name = "FILE")]
+        cache: Option<PathBuf>,
+
+        /// Take a temporal snapshot (writes to VeriSimDB)
+        #[arg(long)]
+        snapshot: bool,
+
+        /// Label for the temporal snapshot
+        #[arg(long, value_name = "LABEL", default_value = "")]
+        label: String,
+
+        /// VeriSimDB directory for snapshots
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+
+        /// Export PanLL-format system image alongside raw output
+        #[arg(long)]
+        panll: bool,
+    },
+
+    /// Temporal: navigate system health through time (diff, list, replay)
+    Temporal {
+        #[command(subcommand)]
+        action: TemporalAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum TemporalAction {
+    /// List all temporal snapshots
+    List {
+        /// VeriSimDB directory
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+    },
+
+    /// Diff two temporal snapshots
+    Diff {
+        /// Sequence number of the older snapshot
+        #[arg(value_name = "FROM")]
+        from_seq: usize,
+
+        /// Sequence number of the newer snapshot
+        #[arg(value_name = "TO")]
+        to_seq: usize,
+
+        /// VeriSimDB directory
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+
+        /// Output diff report to file
+        #[arg(short, long, value_name = "OUT")]
+        output: Option<PathBuf>,
+
+        /// Export PanLL-format temporal diff alongside raw output
+        #[arg(long)]
+        panll: bool,
+    },
 }
 
 // CLI argument types
@@ -912,6 +991,7 @@ fn run_main() -> Result<()> {
             verbose,
             attest,
             signing_key,
+            logtalk,
         } => {
             qprintln!(
                 cli.quiet,
@@ -977,6 +1057,17 @@ fn run_main() -> Result<()> {
                     cli.quiet,
                     "Attestation written to: {}",
                     sidecar_path.display()
+                );
+            }
+
+            // Export kanren facts as Logtalk predicates for hypatia
+            if let Some(logtalk_path) = &logtalk {
+                let db = assail::build_logic_db(&report);
+                kanren::write_logtalk_export(&db, logtalk_path)?;
+                qprintln!(
+                    cli.quiet,
+                    "Logtalk export written to: {}",
+                    logtalk_path.display()
                 );
             }
         }
@@ -1851,6 +1942,170 @@ fn run_main() -> Result<()> {
                 qprintln!(cli.quiet, "Migration diff written to: {}", out_path.display());
             } else {
                 println!("{}", content);
+            }
+
+            return Ok(());
+        }
+
+        Commands::Image {
+            directory,
+            output,
+            incremental,
+            cache,
+            snapshot,
+            label,
+            verisimdb_dir,
+            panll,
+        } => {
+            // Run assemblyline scan on the directory
+            let cache_file = if incremental {
+                Some(cache.unwrap_or_else(|| directory.join(".panic-attack-cache.json")))
+            } else {
+                cache
+            };
+
+            let config = assemblyline::AssemblylineConfig {
+                directory: directory.clone(),
+                output: None,
+                findings_only: false,
+                min_findings: 0,
+                sarif: false,
+                cache_file: cache_file.clone(),
+            };
+
+            qprintln!(cli.quiet, "Running assemblyline scan for imaging...");
+            let report = assemblyline::run(&config)?;
+            qprintln!(cli.quiet, "Scan complete. Building system image...");
+
+            // Build the fNIRS-style system image
+            let image = mass_panic::imaging::build_image(&report);
+
+            qprintln!(
+                cli.quiet,
+                "System image: {} nodes, {} edges, global health {:.1}%, global risk {:.1}%",
+                image.node_count,
+                image.edge_count,
+                image.global_health * 100.0,
+                image.global_risk * 100.0
+            );
+
+            // Write image to output file
+            let out_path = output.unwrap_or_else(|| directory.join("system-image.json"));
+            mass_panic::imaging::write_image(&image, &out_path)?;
+            qprintln!(cli.quiet, "System image written to: {}", out_path.display());
+
+            // Export PanLL-format system image
+            if panll {
+                let panll_path = out_path.with_extension("panll.json");
+                panll::write_image_export(&image, &panll_path)?;
+                qprintln!(cli.quiet, "PanLL image export: {}", panll_path.display());
+            }
+
+            // Optionally take a temporal snapshot
+            if snapshot {
+                let snap_label = if label.is_empty() {
+                    String::new()
+                } else {
+                    label.clone()
+                };
+                let entry =
+                    mass_panic::temporal::take_snapshot(&image, &verisimdb_dir, &snap_label)?;
+                qprintln!(
+                    cli.quiet,
+                    "Temporal snapshot #{} saved ({})",
+                    entry.sequence,
+                    entry.timestamp
+                );
+            }
+
+            return Ok(());
+        }
+
+        Commands::Temporal { action } => {
+            match action {
+                TemporalAction::List { verisimdb_dir } => {
+                    let snapshots = mass_panic::temporal::list_snapshots(&verisimdb_dir)?;
+                    if snapshots.is_empty() {
+                        println!("No temporal snapshots found.");
+                    } else {
+                        println!(
+                            "{:<6} {:<28} {:<8} {:<10} {}",
+                            "SEQ", "TIMESTAMP", "NODES", "HEALTH", "LABEL"
+                        );
+                        println!("{}", "-".repeat(60));
+                        for snap in &snapshots {
+                            println!(
+                                "{:<6} {:<28} {:<8} {:<10.1}% {}",
+                                snap.sequence,
+                                snap.timestamp,
+                                snap.node_count,
+                                snap.global_health * 100.0,
+                                snap.label
+                            );
+                        }
+                        println!("\n{} snapshots total.", snapshots.len());
+                    }
+                }
+                TemporalAction::Diff {
+                    from_seq,
+                    to_seq,
+                    verisimdb_dir,
+                    output,
+                    panll,
+                } => {
+                    let (older_entry, newer_entry) =
+                        mass_panic::temporal::get_snapshot_pair(&verisimdb_dir, from_seq, to_seq)?;
+                    let older_image =
+                        mass_panic::temporal::load_snapshot_image(&older_entry)?;
+                    let newer_image =
+                        mass_panic::temporal::load_snapshot_image(&newer_entry)?;
+
+                    let older_label = format!("#{}", from_seq);
+                    let newer_label = format!("#{}", to_seq);
+                    let diff = mass_panic::temporal::diff_images(
+                        &older_image,
+                        &newer_image,
+                        &older_label,
+                        &newer_label,
+                    );
+
+                    println!(
+                        "Temporal diff: {} → {} | Δhealth {}{:.1}%, Δrisk {}{:.1}%",
+                        older_label,
+                        newer_label,
+                        if diff.health_delta >= 0.0 { "+" } else { "" },
+                        diff.health_delta * 100.0,
+                        if diff.risk_delta >= 0.0 { "+" } else { "" },
+                        diff.risk_delta * 100.0,
+                    );
+                    println!(
+                        "  New: {} | Removed: {} | Improved: {} | Degraded: {} | Unchanged: {}",
+                        diff.new_nodes.len(),
+                        diff.removed_nodes.len(),
+                        diff.improved_nodes.len(),
+                        diff.degraded_nodes.len(),
+                        diff.unchanged_count,
+                    );
+
+                    if let Some(ref out_path) = output {
+                        mass_panic::temporal::write_diff(&diff, out_path)?;
+                        println!("Diff report written to: {}", out_path.display());
+                    }
+
+                    if panll {
+                        let panll_path = output
+                            .as_ref()
+                            .map(|p| p.with_extension("panll.json"))
+                            .unwrap_or_else(|| {
+                                verisimdb_dir.join(format!(
+                                    "diff-{}-{}.panll.json",
+                                    from_seq, to_seq
+                                ))
+                            });
+                        panll::write_temporal_export(&diff, &panll_path)?;
+                        println!("PanLL temporal export: {}", panll_path.display());
+                    }
+                }
             }
 
             return Ok(());

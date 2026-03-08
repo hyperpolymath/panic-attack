@@ -1,0 +1,148 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# Release workflow — triggered by version tags (v*).
+# Builds release binary for Linux x86_64, generates changelog via git-cliff,
+# creates a GitHub Release with the binary attached, and produces SLSA provenance.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: read-all
+
+jobs:
+  build:
+    name: Build Release Binary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Build release binary with http feature
+        run: cargo build --release --features http --verbose
+
+      - name: Package release artifacts
+        run: |
+          mkdir -p dist
+          cp target/release/panic-attack dist/panic-attack-linux-x86_64
+          strip dist/panic-attack-linux-x86_64
+          chmod +x dist/panic-attack-linux-x86_64
+          # Create tarball
+          tar -czf dist/panic-attack-${GITHUB_REF_NAME}-linux-x86_64.tar.gz \
+            -C dist panic-attack-linux-x86_64 \
+            -C "${GITHUB_WORKSPACE}" LICENSE README.md ROADMAP.md SECURITY.md
+
+      - name: Generate artifact hashes
+        id: hash
+        run: |
+          cd dist
+          HASHES=$(sha256sum panic-attack-*.tar.gz | base64 -w0)
+          echo "hashes=$HASHES" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-artifacts
+          path: dist/panic-attack-*.tar.gz
+          retention-days: 5
+
+  changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changelog: ${{ steps.cliff.outputs.content }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install git-cliff
+        run: |
+          curl -sSfL https://github.com/orhun/git-cliff/releases/latest/download/git-cliff-$(uname -m)-unknown-linux-gnu.tar.gz \
+            | tar -xz --strip-components=1 -C /usr/local/bin/ git-cliff-*/git-cliff
+
+      - name: Generate changelog for this release
+        id: cliff
+        run: |
+          CHANGELOG=$(git cliff --latest --strip header)
+          {
+            echo "content<<CLIFF_EOF"
+            echo "$CHANGELOG"
+            echo "CLIFF_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update full CHANGELOG.md
+        run: |
+          git cliff --output CHANGELOG.md
+
+      - name: Upload updated CHANGELOG.md
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: changelog
+          path: CHANGELOG.md
+          retention-days: 5
+
+  release:
+    name: Create GitHub Release
+    needs: [build, changelog]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-artifacts
+          path: artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
+        with:
+          body: ${{ needs.changelog.outputs.changelog }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          generate_release_notes: false
+          files: |
+            artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  provenance:
+    name: SLSA Provenance
+    needs: [build]
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    with:
+      base64-subjects: ${{ needs.build.outputs.hashes }}

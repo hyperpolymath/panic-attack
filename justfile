@@ -67,9 +67,27 @@ dogfood:
 assemblyline:
     cargo run --release -- assemblyline ~/Documents/hyperpolymath-repos/
 
-# Lint (check warnings)
+# Lint (clippy)
 lint:
-    cargo build --release 2>&1 | grep -c "warning" || echo "0 warnings"
+    cargo clippy --all-targets
+
+# Format check
+fmt:
+    cargo fmt -- --check
+
+# Full CI check (fmt + lint + test)
+ci: fmt lint test
+
+# Tag and push a release (usage: just release 2.1.0)
+release version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Preparing release v{{version}}..."
+    cargo test --verbose
+    cargo build --release --verbose
+    echo "Tagging v{{version}}..."
+    git tag -a "v{{version}}" -m "Release v{{version}}"
+    echo "Push with: git push origin v{{version}}"
 
 # [AUTO-GENERATED] Multi-arch / RISC-V target
 build-riscv:

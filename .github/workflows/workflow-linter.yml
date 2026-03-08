@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Validates GitHub workflows against RSR security standards
+name: Workflow Security Linter
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  lint-workflows:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Check SPDX Headers
+        run: |
+          echo "=== Checking SPDX License Headers ==="
+          failed=0
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$file" ] || continue
+            if ! head -1 "$file" | grep -q "^# SPDX-License-Identifier:"; then
+              echo "ERROR: $file missing SPDX header"
+              failed=1
+            fi
+          done
+          if [ $failed -eq 1 ]; then
+            echo "Add '# SPDX-License-Identifier: PMPL-1.0-or-later' as first line"
+            exit 1
+          fi
+          echo "All workflows have SPDX headers"
+
+      - name: Check Permissions Declaration
+        run: |
+          echo "=== Checking Permissions ==="
+          failed=0
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$file" ] || continue
+            if ! grep -q "^permissions:" "$file"; then
+              echo "ERROR: $file missing top-level 'permissions:' declaration"
+              failed=1
+            fi
+          done
+          if [ $failed -eq 1 ]; then
+            echo "Add 'permissions: read-all' at workflow level"
+            exit 1
+          fi
+          echo "All workflows have permissions declared"
+
+      - name: Check SHA-Pinned Actions
+        run: |
+          echo "=== Checking Action Pinning ==="
+          unpinned=$(grep -rn "uses:" .github/workflows/ | \
+            grep -v "@[a-f0-9]\{40\}" | \
+            grep -v "uses: \./\|uses: docker://\|uses: actions/github-script" || true)
+
+          if [ -n "$unpinned" ]; then
+            echo "ERROR: Found unpinned actions:"
+            echo "$unpinned"
+            exit 1
+          fi
+          echo "All actions are SHA-pinned"
+
+      - name: Summary
+        run: |
+          echo ""
+          echo "=== Workflow Linter Summary ==="
+          echo "All critical checks passed."

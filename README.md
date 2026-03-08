@@ -169,6 +169,15 @@ panic-attack a2ml-export --kind assail report.json --output report.a2ml
 panic-attack panll assault-report.json --output event-chain.json
 ```
 
+### Logtalk export (hypatia integration)
+
+```bash
+# Export kanren logic facts as Logtalk predicates for neurosymbolic reasoning
+panic-attack assail ./my-project --logtalk kanren-facts.lgt
+```
+
+Generates a Logtalk source file containing all taint, cross-language, and vulnerability facts from the kanren engine. Designed for import into hypatia's neurosymbolic reasoning layer.
+
 ### Output formats
 
 `--output-format` accepts: `json` (default), `yaml`, `nickel`, `sarif`.
@@ -237,16 +246,48 @@ panic-attack assemblyline /path/to/repos/ --cache /shared/cache.json
 - **Incremental checkpointing**: Cache survives interruptions; resume by re-running with `--incremental`
 - **Delta reporting**: `panic-attack diff` compares any two reports side-by-side
 
-### Chapel metalayer (planned — mass-panic)
+### System imaging (fNIRS-style health maps)
+
+```bash
+# Build a spatial health image from assemblyline results
+panic-attack image /path/to/repos/ --output system-image.json
+
+# With PanLL export
+panic-attack image /path/to/repos/ --panll --output system-image.json
+
+# Take a temporal snapshot for trending
+panic-attack image /path/to/repos/ --snapshot --label "v2.1.0-release"
+```
+
+Generates an fNIRS-inspired functional health map: each repo is a "voxel" with health score, risk intensity, weak point density, and connectivity edges. Sigmoid normalisation squashes raw risk to [0,1].
+
+### Temporal navigation
+
+```bash
+# List temporal snapshots
+panic-attack temporal list
+
+# Diff two snapshots
+panic-attack temporal diff --from 1 --to 3
+
+# Diff with PanLL export
+panic-attack temporal diff --from 1 --to 3 --panll
+```
+
+Track codebase health over time. Each snapshot captures the system image; diffs show improved/degraded/stable nodes, health deltas, and trend classification (improving/degrading/stable).
+
+### Chapel metalayer (mass-panic)
 
 A parallel orchestration layer for cross-repo analysis across multiple machines:
 
-- Parallel assail across thousands of repos via Chapel `coforall`
+- Multi-mode support: assail, assault, ambush, adjudicate, or full (all modes)
+- Parallel scanning across thousands of repos via Chapel `coforall`
 - Cross-repo taint analysis (FFI chains spanning multiple projects)
 - Distributed kanren reasoning across the entire codebase
-- Load-balanced campaign execution
+- Load-balanced campaign execution with configurable timeout and intensity
+- PanLL export and notification support
 
-See `docs/` for design documents. Chapel is strictly optional — the core tool never depends on it.
+See `chapel/README.md` for architecture, usage, and configuration. Chapel is strictly optional — the core tool never depends on it.
 
 ### PanLL visualisation
 
@@ -254,17 +295,20 @@ For interactive visualisation, dashboarding, and extended analysis, use panic-at
 
 PanLL includes two dedicated panels for panic-attack:
 - **panic-attack panel** — single-repo scanning, findings browser, severity filtering, report comparison
-- **Mass Panic panel** — organisation-scale GUI: repo discovery, select-all/checkbox batch controls, assemblyline scanning with progress tracking, incremental BLAKE3 delta, verisimdb persistence, delta comparison, sort/filter controls, notification generation. This replaces the complex CLI orchestration needed for mass-panic mode.
+- **Mass Panic panel** — organisation-scale GUI with three sub-views:
+  - **Scan** — repo discovery, select-all/checkbox batch controls, assemblyline scanning with progress tracking, incremental BLAKE3 delta, verisimdb persistence, delta comparison, sort/filter controls, notification generation
+  - **Imaging** — fNIRS-style spatial health map: node grid with health indicators, risk bars, distribution histogram, category tags, and import/export
+  - **Temporal** — snapshot timeline navigation: list snapshots, select pairs, diff with health/risk/weak-point deltas, trend classification, improved/degraded node lists
 
 ### Integration points
 
 | System | Integration | Status |
 |--------|-------------|--------|
-| **Hypatia** | Feed kanren facts as Logtalk predicates | Planned |
+| **Hypatia** | Feed kanren facts as Logtalk predicates | Working (`--logtalk`) |
 | **gitbot-fleet** | Trigger scans via repository_dispatch | Hooks wired |
-| **VerisimDB** | Store results as hexads | Working (file I/O; HTTP API planned) |
-| **PanLL** | Export event-chain models | Working |
-| **PanLL Mass Panic** | GUI panel for assemblyline batch scanning | Working |
+| **VerisimDB** | Store results as hexads | Working (file I/O + HTTP via V-lang gateway) |
+| **PanLL** | Export event-chain, imaging, temporal models | Working |
+| **PanLL Mass Panic** | GUI panel: scan + imaging + temporal sub-views | Working |
 | **GitHub Security** | SARIF upload | Working |
 
 ---
@@ -336,17 +380,18 @@ None of these components are required by the standalone or panicbot modes.
 
 ```
 src/
-├── main.rs              # CLI (clap) — 20 subcommands
+├── main.rs              # CLI (clap) — 22 subcommands
 ├── lib.rs               # Library API
 ├── types.rs             # Core types (47 languages, 20 categories)
 ├── assail/              # Static analysis engine
 │   ├── analyzer.rs      # Per-file language detection + pattern matching
 │   └── patterns.rs      # Language-specific attack pattern library
 ├── kanren/              # miniKanren logic engine
-│   ├── core.rs          # Unification, substitution, fact DB
+│   ├── core.rs          # Unification, substitution, fact DB, FP suppression
 │   ├── taint.rs         # Source-to-sink taint analysis
 │   ├── crosslang.rs     # FFI boundary vulnerability chains
-│   └── strategy.rs      # Risk-weighted search prioritisation
+│   ├── strategy.rs      # Risk-weighted search prioritisation
+│   └── mod.rs           # Logtalk export for hypatia integration
 ├── attack/              # 6-axis stress testing
 ├── signatures/          # Bug signature detection (use-after-free, deadlock, etc.)
 ├── report/              # Output (JSON, YAML, Nickel, SARIF, TUI, GUI)
@@ -359,8 +404,11 @@ src/
 ├── axial/               # Reaction observation
 ├── a2ml/                # AI manifest protocol
 ├── attestation/         # Cryptographic attestation chain
-├── panll/               # PanLL event-chain export
-├── storage/             # Filesystem + VerisimDB persistence
+├── panll/               # PanLL export (event-chain, imaging, temporal)
+├── mass_panic/          # Imaging + temporal navigation
+│   ├── imaging.rs       # fNIRS-style system health images
+│   └── temporal.rs      # Snapshot timeline + diff engine
+├── storage/             # Filesystem + VerisimDB persistence (file + HTTP)
 ├── i18n/                # Multi-language support (ISO 639-1)
 └── diagnostics.rs       # Self-check for Hypatia/gitbot-fleet
 ```
@@ -369,7 +417,7 @@ src/
 
 | Command | What it does |
 |---------|-------------|
-| `assail` | Static analysis on a file or directory |
+| `assail` | Static analysis on a file or directory (+ `--logtalk` export) |
 | `attack` | Single-axis stress test on a binary |
 | `assault` | Combined assail + multi-axis attacks |
 | `ambush` | Run binary under ambient stressors |
@@ -387,6 +435,8 @@ src/
 | `a2ml-export` | Convert report to A2ML bundle |
 | `a2ml-import` | Convert A2ML bundle to JSON |
 | `panll` | Export as PanLL event-chain model |
+| `image` | Build fNIRS-style spatial health image |
+| `temporal` | List/diff temporal snapshots |
 | `notify` | Generate annotated finding summaries + GitHub issues |
 | `diagnostics` | Self-check for CI/CD visibility |
 
@@ -432,4 +482,4 @@ Add this badge to your repo's README to show it has been tested with panic-attac
 
 ---
 
-**Version**: 2.0.0 | **MSRV**: 1.85.0 | **Languages**: 47 | **Attack Axes**: 6
+**Version**: 2.1.0 | **MSRV**: 1.85.0 | **Languages**: 47 | **Attack Axes**: 6

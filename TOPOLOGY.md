@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: PMPL-1.0-or-later -->
 <!-- TOPOLOGY.md — Project architecture map and completion dashboard -->
-<!-- Last updated: 2026-03-01 -->
+<!-- Last updated: 2026-03-07 -->
 
 # panic-attack — Project Topology
 
@@ -36,6 +36,12 @@
               └─────────────────────────────────┘  │ - Hypatia / PanLL   │
                                                    │ - Diagnostics       │
               ┌─────────────────────────────────┐  └──────────────────────┘
+              │       MASS-PANIC LAYER           │
+              │  Imaging (fNIRS-style health)    │
+              │  Temporal (VeriSimDB snapshots)   │
+              │  Chapel (multi-machine distrib.)  │
+              └─────────────────────────────────┘
+              ┌─────────────────────────────────┐
               │       REPORTING & OUTPUT         │
               │  JSON / YAML / Nickel / SARIF    │
               │  A2ML / PanLL / TUI / GUI        │
@@ -61,9 +67,16 @@ REPORTING & UI
   Diff / Adjudicate / Axial         ██████████ 100%    Campaign tools stable
   A2ML Bundle Import/Export         ██████████ 100%    Schema-versioned, attestation
   PanLL Event-Chain Export          ██████████ 100%    DAW-style timeline export
+  PanLL Imaging Export              ██████████ 100%    panll.system-image.v0
+  PanLL Temporal Export             ██████████ 100%    panll.temporal-diff.v0
+
+MASS-PANIC
+  System Health Imaging             ██████████ 100%    fNIRS-style risk map + edges
+  Temporal Navigation               ██████████ 100%    VeriSimDB snapshots + diff
+  Chapel Distributed Layer          ██████████ 100%    coforall + locales + multi-mode
 
 BATCH & PIPELINE
-  Assemblyline (rayon + BLAKE3)     ██████████ 100%    17.7x speedup, 141 repos/39.9s
+  Assemblyline (rayon + BLAKE3)     ██████████ 100%    152 repos/49s, incremental 18.8s
   Notification Pipeline             ██████████ 100%    Markdown, critical-only, issues
   Cryptographic Attestation         ██████████ 100%    Intent → evidence → seal chain
   i18n Support (10 languages)       ██████████ 100%    ISO 639-1, compile-time safe
@@ -77,11 +90,11 @@ INTEGRATION
 REPO INFRASTRUCTURE
   Justfile Automation               ██████████ 100%    build/test/readiness/lint/install
   .machine_readable/                ██████████ 100%    STATE/ECOSYSTEM/META + directives
-  Test Suite                        ██████████ 100%    269 tests, 0 failures
+  Test Suite                        ██████████ 100%    196 tests, 0 failures
   Readiness Tests (CRG)             ██████████ 100%    18 tests: D(4) C(10) B(4)
 
 ─────────────────────────────────────────────────────────────────────────────
-OVERALL:                            █████████░  ~95%   v2.0.0 Stable
+OVERALL:                            █████████░  ~97%   v2.1.0 Stable
 ```
 
 ## Key Dependencies
@@ -94,6 +107,10 @@ Assemblyline ──► Notify Pipeline ──► GitHub Issues    Panicbot (PA00
      │                │                                    │
      ▼                ▼                                    ▼
 BLAKE3 Cache ──► VerisimDB Store ──► PanLL Export     Fleet FindingSet
+     │                │                                    │
+     ▼                ▼                                    ▼
+Imaging ────────► Temporal ─────────► Chapel          System Image
+(fNIRS map)       (snapshots)         (multi-machine)  (health portrait)
 ```
 
 ## Update Protocol

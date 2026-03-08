@@ -29,6 +29,7 @@ pub mod panll;
 pub mod report;
 pub mod signatures;
 pub mod assemblyline;
+pub mod mass_panic;
 pub mod notify;
 pub mod storage;
 pub mod types;

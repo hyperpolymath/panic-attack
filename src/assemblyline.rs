@@ -90,13 +90,6 @@ impl FingerprintCache {
         Self { fingerprints }
     }
 
-    /// Load fingerprint cache from a previous assemblyline report JSON file
-    pub fn load_from_report_file(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path)?;
-        let report: AssemblylineReport = serde_json::from_str(&content)?;
-        Ok(Self::from_report(&report))
-    }
-
     /// Check if a repo's fingerprint matches the cached value
     pub fn is_unchanged(&self, repo_path: &Path, current_fingerprint: &str) -> bool {
         self.fingerprints

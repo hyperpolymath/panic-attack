@@ -7,8 +7,8 @@
   (metadata
     (version "1.0")
     (project "panic-attack")
-    (last-updated "2026-03-02T20:30:00Z")
-    (session-count 10))
+    (last-updated "2026-03-07T23:30:00Z")
+    (session-count 12))
 
   (project-context
     (name "panic-attack")
@@ -18,7 +18,7 @@
     (purpose "Multi-language static analysis with miniKanren-inspired logic engine for taint analysis, cross-language reasoning, and search strategies")
     (current-version "2.1.0")
     (next-milestone "v2.2.0")
-    (lines-of-code 9000))
+    (lines-of-code 20000))
 
   (naming
     (note "Renamed from panic-attacker on 2026-02-08")
@@ -81,7 +81,16 @@
       "Cryptographic attestation chain (intent → evidence → seal)"
       "i18n support (ISO 639-1, 10 languages)"
       "Machine-verifiable readiness tests (CRG D/C/B grades)"
-      "PanLL Mass Panic panel: GUI for assemblyline batch scanning with repo discovery, select-all, progress tracking, delta comparison, notifications"))
+      "PanLL Mass Panic panel: GUI for assemblyline batch scanning with repo discovery, select-all, progress tracking, delta comparison, notifications"
+      "fNIRS-style system health imaging (spatial risk map with sigmoid-squashed intensity, risk-proximity + shared-pattern edges)"
+      "Temporal navigation via VeriSimDB snapshots (forward/backward through time, diff between any two points, trend detection)"
+      "Chapel distributed orchestrator (coforall across locales, round-robin partitioning, multi-mode: assail/assault/ambush/adjudicate/full)"
+      "PanLL imaging export (panll.system-image.v0) and temporal export (panll.temporal-diff.v0)"
+      "PanLL Mass Panic sub-views: scan, imaging (node grid + risk bars + distribution), temporal (snapshot timeline + diff)"
+      "Kanren FP suppression: 10 context-aware rules (null-check, error-propagation, mutex-guarded, RAII, test-file, etc.)"
+      "Logtalk export: --logtalk flag exports kanren facts as predicates for hypatia neurosymbolic reasoning"
+      "VeriSimDB HTTP API client (ureq, http feature flag) via V-lang gateway on port 9090"
+      "22 CLI subcommands including image and temporal"))
 
   (route-to-mvp
     (target "v2.1.0: Bulk scanning + verisimdb integration")
@@ -121,22 +130,57 @@
   (critical-next-actions
     (action
       (priority "1")
-      (description "verisimdb API integration: push scan results as hexads directly")
-      (estimated-effort "2-3 hours"))
-    (action
-      (priority "2")
-      (description "Incremental assemblyline: BLAKE3 delta scanning to skip unchanged repos")
+      (description "Chapel cluster testing with 2+ locales on real multi-machine setup")
       (estimated-effort "1-2 hours"))
     (action
-      (priority "3")
-      (description "kanren context-facts for FP suppression (~10 rules, 8% -> 2-3%)")
-      (estimated-effort "2-3 hours"))
+      (priority "2")
+      (description "PanLL imaging JSON parsing: full node/edge deserialization from panll.system-image.v0")
+      (estimated-effort "1 hour"))
     (action
-      (priority "4")
-      (description "Export kanren facts as Logtalk predicates for hypatia via PanLL")
-      (estimated-effort "1-2 hours")))
+      (priority "3")
+      (description "PanLL ImageFileLoaded: wire Tauri file picker for importing system-image JSON")
+      (estimated-effort "1 hour")))
 
   (session-history
+    (session
+      (id "12")
+      (date "2026-03-07")
+      (duration "1h")
+      (focus "Wiring FP suppression, Logtalk export, VeriSimDB HTTP, PanLL imaging/temporal sub-views, documentation")
+      (outcomes
+        "Wired kanren FP suppression (10 rules) and context-fact extraction into assail engine"
+        "Added --logtalk flag to assail CLI for Logtalk predicate export"
+        "Created build_logic_db() public API in assail module"
+        "VeriSimDB HTTP client (ureq, behind http feature flag) using V-lang gateway on port 9090"
+        "Added PanLL MassPanic imaging sub-view: node grid, risk bars, distribution histogram, health indicators"
+        "Added PanLL MassPanic temporal sub-view: snapshot timeline, diff summary, improved/degraded node lists"
+        "Added tab navigation (scan/imaging/temporal) to MassPanic panel header"
+        "Fixed MassPanicModel type ordering (types before state), fixed try/catch syntax in Update.res"
+        "Updated README.md with imaging, temporal, Logtalk, Chapel multi-mode documentation"
+        "Updated STATE.scm critical-next-actions"
+        "Zero compiler warnings, 196 tests pass, PanLL builds clean"))
+
+    (session
+      (id "11")
+      (date "2026-03-07")
+      (duration "2h")
+      (focus "Chapel multi-mode, fNIRS imaging, temporal navigation, PanLL integration, benchmarks")
+      (outcomes
+        "Implemented mass_panic::imaging module (SystemImage, build_image, risk edges, sigmoid squash)"
+        "Implemented mass_panic::temporal module (VeriSimDB snapshots, diff_images, trend detection)"
+        "Added image and temporal CLI subcommands with full handlers"
+        "Expanded Chapel orchestrator to multi-mode (assail/assault/ambush/adjudicate/full)"
+        "Added Chapel support for attack, adjudicate, notify, PanLL export"
+        "Added PanLL imaging export (panll.system-image.v0) with spatial risk data"
+        "Added PanLL temporal export (panll.temporal-diff.v0) with trend arrows"
+        "Updated PanLL MassPanicModel with imaging/temporal types and sub-views"
+        "Added 12 new PanLL messages and 4 Tauri command wrappers"
+        "Updated PanLL MassPanicModule capabilities (SystemImaging, TemporalNavigation)"
+        "Removed dead code (load_from_report_file), zero warnings"
+        "Benchmarked 152 repos: 49.2s fresh, 18.8s incremental, 533ms cached"
+        "System portrait: 87.7% health, 3519 WPs, 260 critical across 9.2M lines"
+        "196 tests, 0 failures, 0 warnings"))
+
     (session
       (id "9")
       (date "2026-03-01")
