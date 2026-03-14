@@ -184,11 +184,22 @@ fn collect_source_hashes(
     Ok(())
 }
 
-/// Hash a single file with BLAKE3 using memory-mapped I/O for performance
+/// Hash a single file with BLAKE3 using memory-mapped I/O for performance.
+///
+/// Falls back to buffered read if mmap fails (e.g. symlinks to deleted files,
+/// special files, permission issues, or files that vanish during parallel scan).
 fn hash_file(path: &Path) -> Result<blake3::Hash> {
     let mut hasher = blake3::Hasher::new();
-    hasher.update_mmap(path)?;
-    Ok(hasher.finalize())
+    match hasher.update_mmap(path) {
+        Ok(_) => Ok(hasher.finalize()),
+        Err(_) => {
+            // Fallback: read the file into memory instead of mmap
+            let content = fs::read(path)?;
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(&content);
+            Ok(hasher.finalize())
+        }
+    }
 }
 
 /// Check if a file has a known source code extension

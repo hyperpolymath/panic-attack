@@ -1,0 +1,23 @@
+{
+  "format": "panic-attack.system-image.v1",
+  "generated_at": "2026-03-13T11:28:26.200902216+00:00",
+  "scan_surface": ".",
+  "node_count": 0,
+  "edge_count": 0,
+  "global_health": 1.0,
+  "global_risk": 0.0,
+  "total_weak_points": 0,
+  "total_critical": 0,
+  "total_lines": 0,
+  "total_files": 0,
+  "repos_scanned": 0,
+  "nodes": [],
+  "edges": [],
+  "risk_distribution": {
+    "healthy": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 0,
+    "critical": 0
+  }
+}

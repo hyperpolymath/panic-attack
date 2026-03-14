@@ -303,27 +303,45 @@ fn collect_selected_files(
         }
         DependencyScope::Direct | DependencyScope::TwoHops => {
             let maybe_target_rel = target.strip_prefix(source_root).ok();
-            if maybe_target_rel.is_none() {
-                notes.push(
-                    "target is outside --source-root; dependency scope fell back to target only"
-                        .to_string(),
-                );
-            } else if let Ok(report) = assail::analyze(source_root) {
-                let target_rel = maybe_target_rel
-                    .expect("checked is_some")
-                    .to_string_lossy()
-                    .to_string();
-                let depth = if scope == DependencyScope::Direct {
-                    1
+            if let Some(target_rel_path) = maybe_target_rel {
+                if let Ok(report) = assail::analyze(source_root) {
+                    let target_rel = target_rel_path
+                        .to_string_lossy()
+                        .to_string();
+                    let depth = if scope == DependencyScope::Direct {
+                        1
+                    } else {
+                        2
+                    };
+                    let rel_nodes =
+                        related_nodes_from_graph(&target_rel, &report.dependency_graph.edges, depth);
+                    if rel_nodes.len() <= 1 {
+                        notes.push(
+                            "no direct dependency neighbors found; falling back to same directory"
+                                .to_string(),
+                        );
+                        if let Some(parent) = target.parent() {
+                            for entry in fs::read_dir(parent)
+                                .with_context(|| format!("reading directory {}", parent.display()))?
+                            {
+                                let entry = entry?;
+                                let path = entry.path();
+                                if path.is_file() {
+                                    selected.insert(path);
+                                }
+                            }
+                        }
+                    } else {
+                        for rel in rel_nodes {
+                            let abs = source_root.join(&rel);
+                            if abs.is_file() {
+                                selected.insert(abs);
+                            }
+                        }
+                    }
                 } else {
-                    2
-                };
-                let rel_nodes =
-                    related_nodes_from_graph(&target_rel, &report.dependency_graph.edges, depth);
-                if rel_nodes.len() <= 1 {
                     notes.push(
-                        "no direct dependency neighbors found; falling back to same directory"
-                            .to_string(),
+                        "assail dependency analysis failed; fell back to same directory".to_string(),
                     );
                     if let Some(parent) = target.parent() {
                         for entry in fs::read_dir(parent)
@@ -336,29 +354,12 @@ fn collect_selected_files(
                             }
                         }
                     }
-                } else {
-                    for rel in rel_nodes {
-                        let abs = source_root.join(&rel);
-                        if abs.is_file() {
-                            selected.insert(abs);
-                        }
-                    }
                 }
             } else {
                 notes.push(
-                    "assail dependency analysis failed; fell back to same directory".to_string(),
+                    "target is outside --source-root; dependency scope fell back to target only"
+                        .to_string(),
                 );
-                if let Some(parent) = target.parent() {
-                    for entry in fs::read_dir(parent)
-                        .with_context(|| format!("reading directory {}", parent.display()))?
-                    {
-                        let entry = entry?;
-                        let path = entry.path();
-                        if path.is_file() {
-                            selected.insert(path);
-                        }
-                    }
-                }
             }
         }
     }

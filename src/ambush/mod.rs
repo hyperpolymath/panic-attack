@@ -119,7 +119,7 @@ pub fn execute_timeline(
                     thread::sleep(Duration::from_millis(25));
                 }
                 let peak_memory = stress.stop();
-                let mut reports = reports.lock().expect("timeline report lock");
+                let mut reports = reports.lock().unwrap_or_else(|e| e.into_inner());
                 reports.push(TimelineEventReport {
                     id: event.id,
                     axis: event.axis,
@@ -135,7 +135,7 @@ pub fn execute_timeline(
                     ran: true,
                 });
             } else {
-                let mut reports = reports.lock().expect("timeline report lock");
+                let mut reports = reports.lock().unwrap_or_else(|e| e.into_inner());
                 reports.push(TimelineEventReport {
                     id: event.id,
                     axis: event.axis,
@@ -178,7 +178,7 @@ pub fn execute_timeline(
     };
 
     let event_reports = {
-        let mut reports = reports.lock().expect("timeline report lock");
+        let mut reports = reports.lock().unwrap_or_else(|e| e.into_inner());
         reports.sort_by_key(|report| report.start_offset);
         reports.clone()
     };
@@ -389,7 +389,7 @@ fn spawn_network_stress(
 
     for _ in 0..clients {
         let stop = stop.clone();
-        let addr = addr.clone();
+        let addr = addr;
         threads.push(thread::spawn(move || {
             let payload = vec![0x5A_u8; 4096];
             while !stop.load(Ordering::Relaxed) && Instant::now() < deadline {

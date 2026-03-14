@@ -574,8 +574,8 @@ enum Commands {
         bundle_size: bool,
 
         /// Store snapshot as VeriSimDB hexad
-        #[arg(long, default_value_t = false)]
-        store: bool,
+        #[arg(long = "store-hexad", default_value_t = false)]
+        store_hexad: bool,
 
         /// Output snapshot to file
         #[arg(short, long)]
@@ -1726,12 +1726,13 @@ fn run_main() -> Result<()> {
                 cache_file: cache_file.clone(),
             };
 
-            if cache_file.is_some() && !cli.quiet {
-                let cf = cache_file.as_ref().unwrap();
-                if cf.exists() {
-                    println!("Incremental mode: loading cache from {}", cf.display());
-                } else {
-                    println!("Incremental mode: first run (cache will be saved to {})", cf.display());
+            if let Some(cf) = &cache_file {
+                if !cli.quiet {
+                    if cf.exists() {
+                        println!("Incremental mode: loading cache from {}", cf.display());
+                    } else {
+                        println!("Incremental mode: first run (cache will be saved to {})", cf.display());
+                    }
                 }
             }
 
@@ -1821,7 +1822,7 @@ fn run_main() -> Result<()> {
             label,
             build_time,
             bundle_size,
-            store,
+            store_hexad,
             output,
         } => {
             qprintln!(
@@ -1929,7 +1930,7 @@ fn run_main() -> Result<()> {
                 println!("{}", json);
             }
 
-            if store {
+            if store_hexad {
                 qprintln!(cli.quiet, "VeriSimDB storage for snapshots: planned");
             }
 
