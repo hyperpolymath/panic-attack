@@ -26,12 +26,12 @@
 
   (critical-invariants
     (rule "SCM files MUST be in .machine_readable/ directory ONLY"
-      (never "STATE.scm in repository root")
-      (never "ECOSYSTEM.scm in repository root")
-      (never "META.scm in repository root")
-      (always ".machine_readable/STATE.scm")
-      (always ".machine_readable/ECOSYSTEM.scm")
-      (always ".machine_readable/META.scm"))
+      (never ".machine_readable/6a2/STATE.a2ml in repository root")
+      (never ".machine_readable/6a2/ECOSYSTEM.a2ml in repository root")
+      (never ".machine_readable/6a2/META.a2ml in repository root")
+      (always "`.machine_readable/6a2/STATE.a2ml`")
+      (always "`.machine_readable/6a2/ECOSYSTEM.a2ml`")
+      (always "`.machine_readable/6a2/META.a2ml`"))
 
     (rule "License MUST be PMPL-1.0-or-later"
       (never "AGPL-3.0")
@@ -67,14 +67,14 @@
 
   (lifecycle
     (on-enter
-      (action "read" (file ".machine_readable/STATE.scm"))
-      (action "read" (file ".machine_readable/ECOSYSTEM.scm"))
-      (action "read" (file ".machine_readable/META.scm"))
+      (action "read" (file "`.machine_readable/6a2/STATE.a2ml`"))
+      (action "read" (file "`.machine_readable/6a2/ECOSYSTEM.a2ml`"))
+      (action "read" (file "`.machine_readable/6a2/META.a2ml`"))
       (action "acknowledge"
         (message "AI manifest acknowledged. Canonical locations noted. Critical invariants loaded.")))
 
     (on-exit
-      (action "update" (file ".machine_readable/STATE.scm")
+      (action "update" (file "`.machine_readable/6a2/STATE.a2ml`")
         (condition "work completed"))
       (action "verify" (invariants)
         (message "All critical invariants respected"))
