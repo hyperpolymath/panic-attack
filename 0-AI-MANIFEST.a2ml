@@ -39,7 +39,7 @@
       (always "SPDX-License-Identifier: PMPL-1.0-or-later in all source files"))
 
     (rule "Author attribution MUST be correct"
-      (always "Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>")
+      (always "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>")
       (never "hyperpolymath as author name")
       (never "jonathan.jewell@gmail.com"))
 

@@ -3,7 +3,7 @@
 # Future Improvements: Insights from Scanning the Eclexia Compiler Toolchain
 
 **Date:** 2026-02-08
-**Author:** Jonathan D.A. Jewell <jonathan.jewell@open.ac.uk>
+**Author:** Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 **Context:** panic-attack v1.0.0, scanning Eclexia (10 crates, ~20,000 lines of Rust)
 
 ---

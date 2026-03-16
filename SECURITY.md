@@ -15,7 +15,7 @@ We release patches for security vulnerabilities for the following versions:
 
 Instead, please report them via email to:
 
-**jonathan.jewell@open.ac.uk**
+**j.d.a.jewell@open.ac.uk**
 
 You should receive a response within 48 hours. If for some reason you do not, please follow up via email to ensure we received your original message.
 
