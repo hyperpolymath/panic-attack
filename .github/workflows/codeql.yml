@@ -24,7 +24,7 @@ jobs:
         language: [ 'rust' ]
     steps:
       - name: Checkout code
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@6624720a57d4c312633c7b953db2f2da5bcb4c3a # v3
