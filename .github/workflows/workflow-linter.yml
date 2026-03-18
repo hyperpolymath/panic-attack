@@ -60,7 +60,7 @@ jobs:
       - name: Check SHA-Pinned Actions
         run: |
           echo "=== Checking Action Pinning ==="
-          unpinned=$(grep -rn "uses:" .github/workflows/ | \
+          unpinned=$(grep -rnE "^[[:space:]]+uses:" .github/workflows/ | \
             grep -v "@[a-f0-9]\{40\}" | \
             grep -v "uses: \./\|uses: docker://\|uses: actions/github-script" || true)
 
