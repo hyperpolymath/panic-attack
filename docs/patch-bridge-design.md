@@ -37,6 +37,50 @@ contextual risk assessment. Developers are left to:
 
 ---
 
+## 1a. Standalone Tool Principle
+
+**Patch Bridge is a CLI tool first.** It works entirely from the command line
+as `panic-attack bridge <subcommand>`. No GUI, no PanLL, no BoJ required.
+
+The PanLL panel and BoJ cartridge are **optional integrations** that hook onto
+the standalone tool via the existing PanLL clade system. This means:
+
+- **panic-attack** gains CVE mitigation without any PanLL dependency
+- **PanLL** gains a security panel without any panic-attack code changes
+- Either can be removed, upgraded, or disabled without breaking the other
+- The clade inheritance system handles capability negotiation
+
+### How the hookup works (PanLL clade architecture)
+
+PanLL's existing infrastructure makes this clean:
+
+1. **Minter** creates the panel scaffolding (Model, Engine, Cmd, Component)
+2. **Provisioner** adds it to the "security-ops" portfolio (or any custom portfolio)
+3. **EnsaidConfig** enables/disables it per-repo via `[[panels.enabled]]`
+4. **Clade Browser** shows it in the taxonomy with inherited traits
+
+The Patch Bridge panel would register as:
+
+```
+clade: patch-bridge
+kind: scanner
+parentCladeId: Some("scanner")   // inherits scanner traits
+siblingClades: ["panic-attack", "hypatia"]
+enhances: ["security", "provisioner"]
+protocols: [ProtoTauriIPC, ProtoREST]
+capabilities: [CapSecurityScan, CapNetwork, CapFilesystem]
+isolation: IsolationSoft         // default, overridable per-repo
+```
+
+This inherits `hasBackend: true` and `hasWorkItems: true` from the scanner
+parent clade via PanLL's trait inheritance (OR merge, line 449 of
+`CladeBrowserEngine.res`). The clade permission system gates cross-panel
+event delivery, so the Patch Bridge panel can receive events from
+panic-attack and Hypatia panels but cannot modify the Workspace panel
+without explicit permission.
+
+---
+
 ## 2. Architecture Overview
 
 ```
