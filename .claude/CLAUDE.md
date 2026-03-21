@@ -56,6 +56,13 @@ src/
 ├── abduct/              # Isolation + time-skew
 ├── adjudicate/          # Campaign verdict aggregation
 ├── axial/               # Reaction observation
+├── bridge/              # Patch Bridge — CVE mitigation lifecycle (feature: http)
+│   ├── mod.rs           # Triage orchestrator, core types (BridgeReport, AssessedCve)
+│   ├── lockfile.rs      # Cargo.lock parser
+│   ├── intelligence.rs  # OSV API batch queries (CVE feed)
+│   ├── reachability.rs  # Import scanning for phantom dependency detection
+│   ├── classify.rs      # Three-way classification: Mitigable/Unmitigable/Informational
+│   └── registry.rs      # Mitigation lifecycle registry (JSON persistence)
 ├── a2ml/                # AI manifest protocol
 ├── panll/               # PanLL event-chain export
 ├── storage/             # Filesystem + VerisimDB persistence
@@ -66,8 +73,9 @@ src/
 ## Build & Test
 
 ```bash
-cargo build --release
-cargo test
+cargo build --release --features http    # With Patch Bridge (needs network)
+cargo build --release                    # Without Patch Bridge
+cargo test --features http               # All tests including bridge
 
 # Run scan:
 panic-attack assail /path/to/repo
@@ -95,6 +103,58 @@ The kanren module provides:
 - **Search strategies**: Auto-selects RiskWeighted, BoundaryFirst, LanguageFamily, BreadthFirst, or DepthFirst based on project characteristics
 - **Forward chaining**: Derives new vulnerability facts from rules applied to existing facts
 - **Backward queries**: Given a vulnerability type, finds which files could cause it
+
+## Patch Bridge (feature: `http`)
+
+CVE mitigation lifecycle engine. Requires `--features http` at build time.
+Design document: `docs/patch-bridge-design.md`
+
+### Subcommands
+
+```bash
+# Full CVE triage with reachability analysis
+panic-attack bridge triage /path/to/project
+panic-attack bridge triage /path/to/project --output report.json
+panic-attack bridge triage /path/to/project --register  # update mitigation registry
+panic-attack bridge triage /path/to/project --offline    # skip API calls
+
+# View mitigation registry
+panic-attack bridge status /path/to/project
+```
+
+### How it works
+
+1. **Parse Cargo.lock** — extract all dependencies with versions
+2. **Query OSV API** — batch query api.osv.dev for known vulnerabilities
+3. **Reachability scan** — grep .rs files for imports of vulnerable crates
+4. **Classify** — Mitigable (fix available) / Unmitigable (no fix) / Informational (phantom dep)
+5. **Report** — JSON output compatible with RSR template static-analysis-gate.yml
+
+### Key capability: phantom dependency detection
+
+If a crate is in Cargo.toml but never imported in any .rs file, it's a "phantom" dependency.
+The CVE is compiled into the binary but unreachable. Classification: Informational.
+Action: remove the unused dependency. This was validated against Hypatia (octocrab/rsa).
+
+### Mitigation registry
+
+Active mitigations tracked at `.machine_readable/patch-bridge/registry.json`.
+Lifecycle: Pending → Active → Retiring → Retired / AcceptedRisk.
+Phase 2 adds VeriSimDB hexad persistence and auto-retire on upstream fix.
+
+### Output format
+
+```json
+{
+  "schema_version": "0.1.0",
+  "total_dependencies": 486,
+  "cves": [...],
+  "mitigated": 1,
+  "unmitigable": 0,
+  "concatenative": 0,
+  "informational": 2
+}
+```
 
 ## Deployment Modes
 

@@ -15,6 +15,8 @@ mod assail;
 mod attestation;
 mod attack;
 mod axial;
+#[cfg(feature = "http")]
+mod bridge;
 mod diagnostics;
 mod i18n;
 mod kanren;
@@ -669,11 +671,49 @@ enum Commands {
         action: TemporalAction,
     },
 
+    /// Patch Bridge: CVE triage with reachability analysis
+    #[cfg(feature = "http")]
+    Bridge {
+        #[command(subcommand)]
+        action: BridgeAction,
+    },
+
     /// Generate shell completions for the specified shell
     Completions {
         /// Shell to generate completions for
         #[arg(value_enum)]
         shell: ShellArg,
+    },
+}
+
+/// Patch Bridge subcommands for CVE lifecycle management.
+#[cfg(feature = "http")]
+#[derive(Subcommand)]
+enum BridgeAction {
+    /// Run full CVE triage: discover, assess reachability, classify
+    Triage {
+        /// Project directory to assess (default: current directory)
+        #[arg(value_name = "DIR", default_value = ".")]
+        dir: PathBuf,
+
+        /// Output report to file (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Skip network API calls (offline mode)
+        #[arg(long, default_value_t = false)]
+        offline: bool,
+
+        /// Update the mitigation registry with new findings
+        #[arg(long, default_value_t = false)]
+        register: bool,
+    },
+
+    /// Show active mitigation registry status
+    Status {
+        /// Project directory (default: current directory)
+        #[arg(value_name = "DIR", default_value = ".")]
+        dir: PathBuf,
     },
 }
 
@@ -2037,6 +2077,119 @@ fn run_main() -> Result<()> {
                 );
             }
 
+            return Ok(());
+        }
+
+        #[cfg(feature = "http")]
+        Commands::Bridge { action } => {
+            match action {
+                BridgeAction::Triage {
+                    dir,
+                    output,
+                    offline,
+                    register,
+                } => {
+                    let project_dir = std::fs::canonicalize(&dir)
+                        .unwrap_or_else(|_| dir.clone());
+
+                    qprintln!(cli.quiet, "Patch Bridge triage: {}", project_dir.display());
+
+                    let report = bridge::triage(&project_dir, offline)?;
+
+                    qprintln!(
+                        cli.quiet,
+                        "Dependencies: {}  CVEs: {}  Mitigable: {}  Unmitigable: {}  Informational: {}",
+                        report.total_dependencies,
+                        report.cves.len(),
+                        report.mitigated,
+                        report.unmitigable,
+                        report.informational
+                    );
+
+                    // Print details for non-informational CVEs
+                    for cve in &report.cves {
+                        if cve.classification != bridge::Classification::Informational || cli.expand_sections {
+                            let icon = match cve.classification {
+                                bridge::Classification::Mitigable => "MITIGABLE",
+                                bridge::Classification::Unmitigable => "UNMITIGABLE",
+                                bridge::Classification::Informational => "INFO",
+                            };
+                            qprintln!(cli.quiet, "");
+                            qprintln!(
+                                cli.quiet,
+                                "  [{}] {} {} ({})",
+                                icon,
+                                cve.vulnerability.package,
+                                cve.vulnerability.version,
+                                cve.vulnerability.id
+                            );
+                            qprintln!(cli.quiet, "    {}", cve.rationale);
+                            qprintln!(cli.quiet, "    Action: {}", cve.action);
+                        }
+                    }
+
+                    // Register mitigations if requested
+                    if register {
+                        let mut registry = bridge::registry::MitigationRegistry::load(&project_dir)?;
+                        let added = registry.register_from_triage(&report.cves);
+                        if added > 0 {
+                            registry.save(&project_dir)?;
+                            qprintln!(cli.quiet, "\nRegistered {} new mitigation entries.", added);
+                        }
+                    }
+
+                    // Output JSON
+                    let json = serde_json::to_string_pretty(&report)?;
+                    if let Some(out_path) = output {
+                        std::fs::write(&out_path, &json)?;
+                        qprintln!(cli.quiet, "\nReport written to: {}", out_path.display());
+                    } else if cli.quiet {
+                        // In quiet mode with no output file, print JSON to stdout
+                        println!("{}", json);
+                    }
+                }
+
+                BridgeAction::Status { dir } => {
+                    let project_dir = std::fs::canonicalize(&dir)
+                        .unwrap_or_else(|_| dir.clone());
+
+                    let registry = bridge::registry::MitigationRegistry::load(&project_dir)?;
+
+                    if registry.entries.is_empty() {
+                        println!("No mitigation entries registered.");
+                        println!("Run `panic-attack bridge triage --register` to populate.");
+                    } else {
+                        println!(
+                            "{:<12} {:<20} {:<15} {:<15} {}",
+                            "ID", "ADVISORY", "PACKAGE", "STATUS", "ACTION"
+                        );
+                        println!("{}", "-".repeat(80));
+                        for entry in &registry.entries {
+                            let status_str = match entry.status {
+                                bridge::registry::MitigationStatus::Pending => "pending",
+                                bridge::registry::MitigationStatus::Active => "active",
+                                bridge::registry::MitigationStatus::Retiring => "retiring",
+                                bridge::registry::MitigationStatus::Retired => "retired",
+                                bridge::registry::MitigationStatus::AcceptedRisk => "accepted",
+                            };
+                            println!(
+                                "{:<12} {:<20} {:<15} {:<15} {}",
+                                entry.id,
+                                entry.advisory_id,
+                                entry.package,
+                                status_str,
+                                entry.action
+                            );
+                        }
+                        println!(
+                            "\n{} entries ({} pending, {} accepted risk).",
+                            registry.entries.len(),
+                            registry.count_by_status(bridge::registry::MitigationStatus::Pending),
+                            registry.count_by_status(bridge::registry::MitigationStatus::AcceptedRisk),
+                        );
+                    }
+                }
+            }
             return Ok(());
         }
 

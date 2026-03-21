@@ -23,6 +23,8 @@ pub mod assail;
 pub mod attestation;
 pub mod attack;
 pub mod axial;
+#[cfg(feature = "http")]
+pub mod bridge;
 pub mod i18n;
 pub mod kanren;
 pub mod panll;
