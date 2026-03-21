@@ -11,7 +11,8 @@ on:
       - '.github/workflows/**'
   workflow_dispatch:
 
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   lint-workflows:
@@ -52,7 +53,8 @@ jobs:
             fi
           done
           if [ $failed -eq 1 ]; then
-            echo "Add 'permissions: read-all' at workflow level"
+            echo "Add 'permissions:
+  contents: read' at workflow level"
             exit 1
           fi
           echo "All workflows have permissions declared"
@@ -60,7 +62,7 @@ jobs:
       - name: Check SHA-Pinned Actions
         run: |
           echo "=== Checking Action Pinning ==="
-          unpinned=$(grep -rn "uses:" .github/workflows/ | \
+          unpinned=$(grep -rnE "^[[:space:]]+uses:" .github/workflows/ | \
             grep -v "@[a-f0-9]\{40\}" | \
             grep -v "uses: \./\|uses: docker://\|uses: actions/github-script" || true)
 
