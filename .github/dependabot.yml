@@ -8,3 +8,11 @@ updates:
       actions:
         patterns:
           - "*"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      rust-minor:
+        update-types: ["minor", "patch"]
