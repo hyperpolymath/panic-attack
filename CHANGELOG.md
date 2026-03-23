@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0+] - 2026-03-23
+
+### Fixed
+- **A2ML parser**: Now handles TOML-like format (key = "value") in addition to S-expression format
+- **Manifest lookup**: Tries `0-AI-MANIFEST.a2ml` first before falling back to `AI.a2ml`
+- **Language detection**: Skips `external_corpora/`, `third_party/`, and `corpus/` directories to avoid false positives from vendored or reference text
+
 ## [2.0.0+] - 2026-03-01
 
 ### Added

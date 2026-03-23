@@ -63,7 +63,7 @@ src/
 │   ├── reachability.rs  # Import scanning for phantom dependency detection
 │   ├── classify.rs      # Three-way classification: Mitigable/Unmitigable/Informational
 │   └── registry.rs      # Mitigation lifecycle registry (JSON persistence)
-├── a2ml/                # AI manifest protocol
+├── a2ml/                # AI manifest protocol (TOML-like format support, 0-AI-MANIFEST.a2ml priority lookup)
 ├── panll/               # PanLL event-chain export
 ├── storage/             # Filesystem + VerisimDB persistence
 ├── i18n/                # Multi-language support (ISO 639-1, 10 languages)
@@ -90,7 +90,7 @@ cp target/release/panic-attack ~/.asdf/installs/rust/nightly/bin/
 
 - **47 language analyzers**: Rust, C/C++, Go, Python, JavaScript, Ruby, Elixir, Erlang, Gleam, ReScript, OCaml, SML, Scheme, Racket, Haskell, PureScript, Idris, Lean, Agda, Prolog, Logtalk, Datalog, Zig, Ada, Odin, Nim, Pony, D, Nickel, Nix, Shell, Julia, Lua, + 12 nextgen DSLs
 - **20 weak point categories**: UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, AtomExhaustion, UnsafeFFI, PathTraversal, HardcodedSecret, etc.
-- **Per-file language detection**: Each file analyzed with its own language-specific patterns
+- **Per-file language detection**: Each file analyzed with its own language-specific patterns. Skips `external_corpora/`, `third_party/`, and `corpus/` directories
 - **miniKanren logic engine**: Relational reasoning for taint analysis, cross-language vulnerability chains, and search strategy optimisation
 - **Latin-1 fallback**: Non-UTF-8 files handled gracefully
 - **JSON output**: Machine-readable for pipeline integration

@@ -5,10 +5,15 @@
 [metadata]
 project = "panic-attacker"
 version = "0.1.0"
-last-updated = "2026-03-15"
+last-updated = "2026-03-23"
 status = "active"
 
 [project-context]
 name = "panic-attacker"
 completion-percentage = 0
 phase = "In development"
+
+[fixes-2026-03-23]
+a2ml-parser = "Now handles TOML-like format in addition to S-expression format"
+manifest-lookup = "Tries 0-AI-MANIFEST.a2ml first, then falls back to AI.a2ml"
+language-detection = "Skips external_corpora/, third_party/, and corpus/ directories during scanning"

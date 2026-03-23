@@ -1035,7 +1035,7 @@ fn run_main() -> Result<()> {
     let manifest = match Manifest::load_default() {
         Ok(manifest) => manifest,
         Err(err) => {
-            eprintln!("warning: failed to read AI.a2ml: {}", err);
+            eprintln!("warning: failed to read AI manifest: {}", err);
             Manifest::default()
         }
     };
@@ -1660,7 +1660,13 @@ fn run_main() -> Result<()> {
         }
 
         Commands::Manifest { path, output } => {
-            let target = path.unwrap_or_else(|| PathBuf::from("AI.a2ml"));
+            let target = path.unwrap_or_else(|| {
+                if PathBuf::from("0-AI-MANIFEST.a2ml").exists() {
+                    PathBuf::from("0-AI-MANIFEST.a2ml")
+                } else {
+                    PathBuf::from("AI.a2ml")
+                }
+            });
             let manifest = Manifest::load(&target).unwrap_or_default();
             let nickel = manifest.to_nickel();
             if let Some(output_path) = output {

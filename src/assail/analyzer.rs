@@ -679,6 +679,13 @@ impl Analyzer {
                         "zig-cache",
                         "zig-out",
                         "ebin",
+                        "external_corpora",
+                        "third_party",
+                        "testdata",
+                        "test_fixtures",
+                        "fixtures",
+                        "corpus",
+                        "corpora",
                     ]
                     .contains(&name_str)
                 {

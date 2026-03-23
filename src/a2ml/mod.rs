@@ -152,26 +152,120 @@ impl Default for Manifest {
 
 impl Manifest {
     pub fn load_default() -> Result<Self> {
-        let path = PathBuf::from("AI.a2ml");
-        Self::load(&path)
+        // Try RSR standard name first, then legacy name
+        let candidates = [
+            PathBuf::from("0-AI-MANIFEST.a2ml"),
+            PathBuf::from("AI.a2ml"),
+        ];
+        for path in &candidates {
+            if path.exists() {
+                return Self::load(path);
+            }
+        }
+        // Fall through with the primary name for a clear error message
+        Self::load(&candidates[0])
     }
 
     pub fn load(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("reading A2ML manifest {}", path.display()))?;
-        let mut parser = Parser::new(&raw);
-        let tree = parser.parse_all()?;
-        if let Sexpr::List(mut items) = tree {
-            if let Some(Sexpr::Atom(root)) = items.first() {
-                let root_name = root.clone();
-                items.remove(0);
-                return Ok(Self {
-                    root_name,
-                    entries: items,
-                });
+
+        // Detect format: TOML-like ([sections]) vs S-expression ((manifest ...))
+        let trimmed = raw.trim_start();
+        let first_meaningful = trimmed
+            .lines()
+            .find(|line| {
+                let l = line.trim();
+                !l.is_empty() && !l.starts_with('#')
+            })
+            .unwrap_or("");
+
+        if first_meaningful.trim().starts_with('[') {
+            // TOML-like A2ML format — parse sections into S-expression tree
+            Self::parse_toml_like(&raw)
+        } else {
+            // Classic S-expression format
+            let mut parser = Parser::new(&raw);
+            let tree = parser.parse_all()?;
+            if let Sexpr::List(mut items) = tree {
+                if let Some(Sexpr::Atom(root)) = items.first() {
+                    let root_name = root.clone();
+                    items.remove(0);
+                    return Ok(Self {
+                        root_name,
+                        entries: items,
+                    });
+                }
             }
+            Err(anyhow!("unexpected A2ML manifest structure"))
         }
-        Err(anyhow!("unexpected A2ML manifest structure"))
+    }
+
+    /// Parse TOML-like A2ML format into the same internal structure
+    fn parse_toml_like(raw: &str) -> Result<Self> {
+        let mut root_name = "manifest".to_string();
+        let mut sections: Vec<(String, Vec<(String, String)>)> = Vec::new();
+        let mut current_section: Option<(String, Vec<(String, String)>)> = None;
+
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+
+            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                // Section header
+                if let Some(section) = current_section.take() {
+                    sections.push(section);
+                }
+                let name = trimmed[1..trimmed.len() - 1].trim().to_string();
+                current_section = Some((name, Vec::new()));
+            } else if let Some(eq_pos) = trimmed.find('=') {
+                // Key = value pair
+                let key = trimmed[..eq_pos].trim().to_string();
+                let mut value = trimmed[eq_pos + 1..].trim().to_string();
+                // Strip surrounding quotes
+                if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+                    value = value[1..value.len() - 1].to_string();
+                }
+                // Strip inline comments
+                if let Some(comment_pos) = value.find(" #") {
+                    value = value[..comment_pos].trim().to_string();
+                }
+                if let Some(ref mut section) = current_section {
+                    section.1.push((key, value));
+                }
+            }
+            // Arrays ([...]) are skipped for now — not needed for manifest lookup
+        }
+        if let Some(section) = current_section {
+            sections.push(section);
+        }
+
+        // Find the root name from the first section (typically [manifest])
+        if let Some((name, _)) = sections.first() {
+            root_name = name.clone();
+        }
+
+        // Convert sections into Sexpr tree
+        let entries: Vec<Sexpr> = sections
+            .into_iter()
+            .map(|(name, pairs)| {
+                let mut list = vec![Sexpr::Atom(name)];
+                for (k, v) in pairs {
+                    list.push(Sexpr::List(vec![
+                        Sexpr::Atom(k),
+                        Sexpr::String(v),
+                    ]));
+                }
+                Sexpr::List(list)
+            })
+            .collect();
+
+        Ok(Self {
+            root_name,
+            entries,
+        })
     }
 
     pub fn report_formats(&self) -> Vec<ReportOutputFormat> {
