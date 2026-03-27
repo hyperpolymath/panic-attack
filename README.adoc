@@ -1,5 +1,164 @@
-= panic-attacker
-:toc: preamble
+= panic-attack
+:toc:
+:toc-placement: preamble
 :icons: font
 
+// SPDX-License-Identifier: PMPL-1.0-or-later
 
+image:https://img.shields.io/badge/status-active-green[Status]
+image:https://img.shields.io/badge/domain-security--analysis-blue[Domain]
+image:https://img.shields.io/badge/tests-196%20passing-brightgreen[Tests]
+image:https://img.shields.io/badge/languages-47-blue[Languages]
+
+**panic-attack** is a multi-language security analysis and stress-testing system.
+
+It combines static analysis, logic reasoning, attack simulation, and distributed execution to identify weaknesses across codebases and systems.
+
+---
+
+== What it is
+
+panic-attack is a **security and resilience tool**.
+
+It is designed to:
+
+* analyse codebases across many languages
+* identify weak points and vulnerabilities
+* simulate failure conditions and stress scenarios
+* generate verifiable reports and system-level insights
+
+It operates across:
+
+* static analysis
+* dynamic attack execution
+* logical inference (miniKanren)
+* distributed batch scanning
+
+---
+
+== Why it exists
+
+Modern systems are:
+
+* large
+* heterogeneous
+* distributed
+* difficult to reason about globally
+
+Security tools often:
+
+* operate per-language
+* miss cross-system interactions
+* generate high false-positive rates
+* lack temporal or system-level context
+
+panic-attack exists to address this by combining:
+
+* multi-language analysis
+* logic-based reasoning
+* system-wide scanning
+* temporal and spatial modelling
+
+---
+
+== Core capabilities
+
+panic-attack provides:
+
+* **47-language static analysis** across multiple families
+* **Weak point detection** (20 categories)
+* **Attack simulation (6 axes)**: CPU, memory, disk, network, concurrency, time
+* **miniKanren logic engine** for taint analysis and cross-language reasoning
+* **Signature detection** (use-after-free, deadlock, etc.)
+* **Batch scanning (assemblyline)** with parallel execution
+* **Temporal analysis** via snapshots and diffing
+* **System imaging** (fNIRS-style risk visualisation)
+* **Cryptographic attestation** (intent -> evidence -> seal)
+
+---
+
+== Operating modes
+
+panic-attack supports multiple deployment patterns:
+
+* **Standalone**: local analysis and reporting
+* **panicbot**: integrated automated diagnostics
+* **mass-panic**: large-scale multi-repo / multi-system scanning
+
+---
+
+== Relationship to PanLL
+
+panic-attack integrates with PanLL as a **diagnostic and analysis layer**.
+
+* panic-attack generates structured outputs
+* PanLL visualises and interacts with those outputs
+* PanLL panels (imaging, temporal, event-chain) provide exploratory views
+
+Examples:
+
+* event-chain export -> DAW-style timeline
+* system-image -> spatial risk maps
+* temporal-diff -> change over time
+
+---
+
+== Relationship to NAFA
+
+panic-attack represents a **non-ambient layer**.
+
+It is intentionally:
+
+* explicit
+* analytical
+* visible
+
+Where NAFA aims for:
+
+* calm
+* low cognitive load
+* minimal surface noise
+
+panic-attack operates when:
+
+* systems must be inspected
+* risks must be surfaced
+* problems must be made visible
+
+---
+
+== Design philosophy
+
+panic-attack prioritises:
+
+* correctness over convenience
+* visibility over abstraction
+* verifiability over guesswork
+
+It is not designed to be silent.
+
+It is designed to be **trustworthy**.
+
+---
+
+== Status
+
+Current state: **v2.1.0**
+
+* 19,000+ lines of Rust + Chapel
+* 196 tests
+* 0 warnings
+* 22 CLI subcommands
+* 47 supported languages
+
+See link:ROADMAP.md[ROADMAP.md] for full capability breakdown and milestones.
+
+---
+
+== One line summary
+
+---
+
+panic-attack makes system risk visible, measurable, and testable.
+
+---
