@@ -26,6 +26,7 @@ mod report;
 mod signatures;
 mod storage;
 mod assemblyline;
+mod groove;
 mod mass_panic;
 mod notify;
 mod types;
@@ -683,6 +684,18 @@ enum Commands {
         /// Shell to generate completions for
         #[arg(value_enum)]
         shell: ShellArg,
+    },
+
+    /// Start the groove discovery server for service mesh integration.
+    ///
+    /// Runs a lightweight HTTP server exposing panic-attacker's static-analysis
+    /// capabilities via the Gossamer groove protocol. Other groove-aware systems
+    /// (PanLL, Gossamer, Hypatia, etc.) can discover panic-attacker by probing
+    /// GET /.well-known/groove on the configured port.
+    Groove {
+        /// Port to bind the groove server to
+        #[arg(short, long, default_value = "7600")]
+        port: u16,
     },
 }
 
@@ -2211,6 +2224,11 @@ fn run_main() -> Result<()> {
                     generate(Shell::PowerShell, &mut cmd, &bin_name, &mut io::stdout())
                 }
             }
+            return Ok(());
+        }
+
+        Commands::Groove { port } => {
+            groove::run(port)?;
             return Ok(());
         }
 
