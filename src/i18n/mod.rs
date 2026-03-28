@@ -4,7 +4,7 @@
 //!
 //! Provides a data-driven translation system with ISO 639-1 language code
 //! validation. Inspired by the lol (1000Langs) project's ISO 639 handling
-//! at `/var/mnt/eclipse/repos/standards/lol/src/utils/Iso639.res`.
+//! at `/var$REPOS_DIR/standards/lol/src/utils/Iso639.res`.
 //!
 //! ## Supported languages
 //!

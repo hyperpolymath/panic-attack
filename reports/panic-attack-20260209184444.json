@@ -1,6 +1,6 @@
 {
   "assail_report": {
-    "program_path": "/var/mnt/eclipse/repos/panic-attacker/target/debug/panic-attack",
+    "program_path": "/var$REPOS_DIR/panic-attacker/target/debug/panic-attack",
     "language": "unknown",
     "frameworks": [],
     "weak_points": [
@@ -61,7 +61,7 @@
   },
   "attack_results": [
     {
-      "program": "/var/mnt/eclipse/repos/panic-attacker/target/debug/panic-attack",
+      "program": "/var$REPOS_DIR/panic-attacker/target/debug/panic-attack",
       "axis": "cpu",
       "success": false,
       "exit_code": 2,
@@ -82,7 +82,7 @@
       "signatures_detected": []
     },
     {
-      "program": "/var/mnt/eclipse/repos/panic-attacker/target/debug/panic-attack",
+      "program": "/var$REPOS_DIR/panic-attacker/target/debug/panic-attack",
       "axis": "memory",
       "success": false,
       "exit_code": 2,
@@ -103,7 +103,7 @@
       "signatures_detected": []
     },
     {
-      "program": "/var/mnt/eclipse/repos/panic-attacker/target/debug/panic-attack",
+      "program": "/var$REPOS_DIR/panic-attacker/target/debug/panic-attack",
       "axis": "disk",
       "success": false,
       "exit_code": 2,
@@ -124,7 +124,7 @@
       "signatures_detected": []
     },
     {
-      "program": "/var/mnt/eclipse/repos/panic-attacker/target/debug/panic-attack",
+      "program": "/var$REPOS_DIR/panic-attacker/target/debug/panic-attack",
       "axis": "network",
       "success": false,
       "exit_code": 2,
@@ -145,7 +145,7 @@
       "signatures_detected": []
     },
     {
-      "program": "/var/mnt/eclipse/repos/panic-attacker/target/debug/panic-attack",
+      "program": "/var$REPOS_DIR/panic-attacker/target/debug/panic-attack",
       "axis": "concurrency",
       "success": false,
       "exit_code": 2,
@@ -166,7 +166,7 @@
       "signatures_detected": []
     },
     {
-      "program": "/var/mnt/eclipse/repos/panic-attacker/target/debug/panic-attack",
+      "program": "/var$REPOS_DIR/panic-attacker/target/debug/panic-attack",
       "axis": "time",
       "success": false,
       "exit_code": 2,

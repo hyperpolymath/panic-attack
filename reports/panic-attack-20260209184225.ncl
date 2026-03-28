@@ -1,5 +1,5 @@
 let assault_report = {
-  program = "/var/mnt/eclipse/repos/panic-attacker/target/debug/panic-attack";
+  program = "/var$REPOS_DIR/panic-attacker/target/debug/panic-attack";
   language = "Unknown";
   framework_count = 0;
   weak_points = 1;

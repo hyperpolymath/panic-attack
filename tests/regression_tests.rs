@@ -8,7 +8,7 @@ use std::path::Path;
 #[test]
 #[ignore] // Run with --ignored flag, requires repos
 fn test_echidna_baseline() {
-    let echidna_path = Path::new("/var/mnt/eclipse/repos/echidna");
+    let echidna_path = Path::new("/var$REPOS_DIR/echidna");
 
     if !echidna_path.exists() {
         eprintln!("⚠️  Skipping: echidna repo not found");
@@ -53,7 +53,7 @@ fn test_echidna_baseline() {
 #[test]
 #[ignore] // Run with --ignored flag, requires repos
 fn test_eclexia_baseline() {
-    let eclexia_path = Path::new("/var/mnt/eclipse/repos/eclexia");
+    let eclexia_path = Path::new("/var$REPOS_DIR/eclexia");
 
     if !eclexia_path.exists() {
         eprintln!("⚠️  Skipping: eclexia repo not found");
