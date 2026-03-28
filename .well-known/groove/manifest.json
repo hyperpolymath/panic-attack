@@ -1,0 +1,22 @@
+{
+  "groove_version": "1",
+  "service_id": "panic-attacker",
+  "service_version": "0.1.0",
+  "capabilities": {
+    "static-analysis": {
+      "type": "static-analysis",
+      "description": "Universal static analysis and security scanning",
+      "protocol": "http",
+      "endpoint": "/api/scan",
+      "requires_auth": false,
+      "panel_compatible": true
+    }
+  },
+  "consumes": ["octad-storage", "workflow"],
+  "endpoints": {
+    "health": "/health",
+    "groove": "/.well-known/groove"
+  },
+  "health": "/health",
+  "applicability": ["individual", "team"]
+}
