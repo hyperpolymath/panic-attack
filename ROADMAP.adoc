@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell
+:toc: macro
+:toclevels: 2
+:icons: font
+
+= panic-attack Roadmap
+
+_Static analysis and bug signature detection across 47 languages, used in 500+ repos._
+
+toc::[]
+
+== Current State
+
+panic-attack is a Rust CLI tool providing static analysis, taint tracking, cross-language
+vulnerability detection, and CVE triage. It operates in three deployment modes: standalone
+binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch scanning).
+
+**Key capabilities today:**
+
+* 47-language analyzer with per-file detection and 20 weak-point categories
+* miniKanren v2.0.0 logic engine (taint analysis, cross-language reasoning, search strategies)
+* Patch Bridge CVE lifecycle engine (OSV API, reachability scan, phantom dependency detection)
+* Cryptographic attestation chain (intent/evidence/seal)
+* Assemblyline batch scanning with rayon parallelism and BLAKE3 fingerprinting
+* Pre-commit hook integration (`panic-attack assail` before every commit)
+* Component Readiness Grades: D (Alpha) through B (RC) verified
+
+== v2.1.0 -- Logic Engine Refinement (Next)
+
+* [x] miniKanren v2.0.0 core (Term, Substitution, unification, FactDB)
+* [x] Taint analysis: source-to-sink tracking
+* [x] Cross-language analyzer: FFI boundary detection
+* [x] Search strategy: risk-weighted file prioritisation
+* [x] Forward chaining: derive new vulnerability facts from rules
+* [x] Backward queries: find files that could cause a vulnerability type
+* [ ] Context-facts for false-positive suppression (~10 rules, target ~8% -> ~2-3% FP rate)
+* [ ] Kanren fact export as Logtalk predicates for Hypatia pipeline
+
+== v2.2.0 -- VeriSimDB Integration
+
+* [x] Filesystem persistence for scan results
+* [ ] VeriSimDB HTTP API integration: push hexads via REST
+* [ ] Delta reporting: only report changes since last scan
+* [ ] Hexad persistence for Patch Bridge mitigation registry (currently JSON file)
+* [ ] Historical trend queries via VQL-UT
+
+== v2.3.0 -- Shell and UX
+
+* [x] CLI with 20 subcommands (clap)
+* [x] JSON output for pipeline integration
+* [x] A2ML manifest protocol support
+* [x] i18n support (10 languages, ISO 639-1)
+* [ ] Shell completions: bash, zsh, fish, nushell
+* [ ] Interactive TUI mode for reviewing findings
+* [ ] Improved error messages with fix suggestions
+
+== v2.4.0 -- Patch Bridge Phase 2
+
+* [x] Cargo.lock parsing and OSV API batch queries
+* [x] Reachability scanning for phantom dependency detection
+* [x] Three-way classification (Mitigable/Unmitigable/Informational)
+* [x] Mitigation registry with lifecycle (Pending/Active/Retiring/Retired/AcceptedRisk)
+* [ ] VeriSimDB hexad persistence for mitigation lifecycle
+* [ ] Auto-retire mitigations when upstream fix is released
+* [ ] Upstream health monitoring (PipeWire, ReScript, UTF-8 tracking)
+* [ ] Multi-lockfile support (beyond Cargo.lock: package-lock.json, mix.lock, etc.)
+
+== v3.0.0 -- Distributed Scanning
+
+* [x] Assemblyline batch scanning with rayon parallelism
+* [x] BLAKE3 fingerprinting for incremental scanning
+* [x] Notification pipeline (markdown summaries, GitHub issues)
+* [ ] Chapel metalayer: distributed `coforall` scanning across compute clusters
+* [ ] Multi-machine orchestration for org-scale scanning
+* [ ] Scan result aggregation across distributed nodes
+
+== v3.1.0 -- Ecosystem Integration
+
+* [x] Panicbot integration (gitbot-fleet, PA001-PA020 codes)
+* [x] Hypatia diagnostics self-check
+* [x] PanLL event-chain export (two dedicated panels)
+* [x] Cryptographic attestation chain with optional Ed25519 signing
+* [ ] Echidnabot proof verification of scan claims
+* [ ] Hypatia learning loop: findings -> observed-patterns -> rules
+* [ ] PanLL panel for Patch Bridge CVE dashboard
+
+== Long-Term
+
+* [ ] Formal verification of core analysis rules (via proven library)
+* [ ] WASM build for browser-based scanning
+* [ ] IDE plugin: real-time scanning in editor
+* [ ] ML-assisted vulnerability classification (beyond pattern matching)
