@@ -5,7 +5,7 @@
 # Tests VeriSimDB integration (gracefully skips if gateway unavailable)
 # and full scan→detect→report pipeline.
 
-name: E2E Tests
+name: E2E + Readiness + Bench
 
 on:
   push:
@@ -113,3 +113,49 @@ jobs:
           name: e2e-scan-results
           path: /tmp/*-scan.json
           retention-days: 7
+
+  # ─── Readiness Grade Tests (CRG: D/C/B tiers) ─────────────────────
+  readiness:
+    name: Readiness — Component Grade Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7  # stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2
+
+      - name: Run readiness tests (Grade D/C/B)
+        run: cargo test --test readiness -- --nocapture
+
+  # ─── Benchmarks: Performance Regression Detection ──────────────────
+  benchmarks:
+    name: Bench — Scan Performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7  # stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2
+
+      - name: Run benchmarks
+        run: cargo bench 2>&1 | tee /tmp/bench-results.txt
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: benchmark-results
+          path: /tmp/bench-results.txt
+          retention-days: 30
