@@ -141,6 +141,44 @@ It is designed to be **trustworthy**.
 
 ---
 
+== CLI & Automation
+
+`panic-attack` is a Clap-powered CLI. Each subcommand inherits a shared set of knobs so the UX is consistent whether developers run `assail`, `attack`, `assault`, `temporal`, `panll`, `groove`, or another entry point.
+
+=== Global options
+
+Globally applied flags let automation pipelines control verbosity, output format, storage location, and presentation. Current defaults are:
+
+[cols="1,1,6",options="header"]
+|===
+| Flag | Default | Description
+| `--report-view` | `Accordion` | Controls the presentation mode (`Accordion`, `Summary`, `Timeline`) that the CLI writes and that PanLL mirrors.
+| `--expand-sections` | `false` | Expands extra detail blocks in the formatted report.
+| `--output-format` | `json` | Chooses how the artifact is serialized (`json`, `markdown`, or `text`); the CLI reuses this when it writes PanLL exports or temporal diffs.
+| `--pivot` | `false` | Rotates the narrative axis for boards that expect events-first storytelling.
+| `--store` | unset | Directory where generated reports, exports, and artifacts should land.
+| `--quiet` | `false` | Suppresses informational log lines for automation.
+| `--parallel` | `false` | Enables threaded execution when commands support it (assault, image, mass-panic).
+|===
+
+Consult `man/panic-attack.1` or `panic-attack help` for every command, and use `panic-attack completions --shell <fish|zsh|bash|powershell|nushell>` to bootstrap automation-friendly helpers.
+
+=== Automation readiness
+
+`panic-attack diagnostics` validates AI manifests, VeriSimDB caches, Hypatia and gitbot-fleet watchers, and the docs PanLL expects (`docs/ambush-timeline.md`, `docs/panll-export.md`). `docs/patch-bridge-design.md` details how the patch-bridge subcommands plug into BoJ cartridges, CVE workflows, and the PanLL panel.
+
+`just test-elixir` runs the Elixir harnesses that cover the CLI surface so documentation, help text, and automation flags stay aligned.
+
+== Integration & Groove
+
+panic-attack can emit PanLL-friendly exports (event chains, system images, temporal diffs) per `docs/panll-export.md`, and it also advertises its static-analysis capability via the Gossamer groove protocol. Start the discovery endpoint with `panic-attack groove --port 7600` and check the JSON manifest by curling `http://localhost:7600/.well-known/groove` (the health endpoint sits at `/health`).
+
+The manifest follows the Idris-aligned semantics that live in `boj-server/src/interface/abi/Groove.idr` and the `gossamer` schema references. As a result, any groove-aware consumer—PanLL event-chain panels, the Burble voice platform, Hypatia, or other automation fabrics—sees the same capability vocabulary and can attach its own UI (Groove + Burble PanLL) confidently.
+
+VeriSimDB remains the foundation dependency for these exports, so every snapshot recorded for PanLL, Gossamer, or Burble can be replayed, inspected, and audited even after the CLI process exits.
+
+---
+
 == Status
 
 Current state: **v2.1.0**

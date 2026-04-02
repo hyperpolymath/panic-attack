@@ -60,6 +60,12 @@ Encodes a report artifact as a schema-versioned A2ML report bundle (supports ass
 .B a2ml-import INPUT --output OUT [--kind KIND]
 Decodes an A2ML report bundle back into JSON (optionally assert expected kind).
 .TP
+.B completions --shell SHELL
+Generates shell tab-completion helpers for the CLI (fish, zsh, bash, powershell, and nushell). Use this before wiring automation so every flag and subcommand can be discovered programmatically.
+.TP
+.B groove [--port PORT]
+Starts a minimal HTTP groove discovery endpoint (default port 7600). The server answers `/.well-known/groove` with the manifest defined in `src/groove.rs` and `/health` for service monitors; Gossamer, PanLL, Hypatia, or Burble-aware clients can curl the manifest to see the `static_analysis` capability and fetch the exports documented in `docs/panll-export.md`.
+.TP
 .B panll REPORT [--out OUT]
 Converts an assault report into a PanLL event-chain JSON for Pane-W import.
 .TP

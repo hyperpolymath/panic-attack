@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+= panic-attack Audit 2026-03-30
+:revdate: 2026-03-30
+
+== Summary
+
+Status: `fail` (implementation strong, publication blocked)
+
+panic-attack is a mature security analysis suite: the README lists 196 passing
+tests, 47 supported languages, and multiple CLI modes. That makes it one of the
+headline wish-list tools for the estate, but the release gate still requires
+proof closure, green builds, and traceable invariants before any v1/stable
+claims get restored.
+
+== Evidence log
+
+* README claims: multi-language static analysis (47 langs), 20 weakness
+  categories, attack simulation, system imaging, attestation, plus the
+  event-chain export described in `panll-event-chain.json`.
+* `PROOF-NEEDS.md` records the current proof debt: analyzer soundness/completeness,
+  SARIF correctness, CVE classification accuracy, reachability/taint invariants,
+  attestation chain integrity, and lockfile parsing. Idris2 types exist only in
+  `src/abi/Types.idr` and are minimal; large portions of the logic remain
+  informal and would benefit from an Agda/Idris session.
+* `just test` runs `cargo test` but the build stops at `src/attestation/intent.rs:59`
+  because `getrandom::getrandom` cannot be found in the version of the `getrandom`
+  crate currently pulled in. The nightly compile log ends with `rustc` error
+  E0425 (`cannot find function getrandom in crate getrandom`), so every test
+  target fails before exercising anything beyond the first module.
+* `PROOF-NEEDS` also records 282 `unwrap()` calls scattered across the analyzer
+  (already noted in the README as “dangerous patterns: 0 in our code but there
+  are many `unwrap()`s because panic-attack hunts for them).
+
+== Confirmed blockers
+
+* `just test` fails immediately because `src/attestation/intent.rs` calls
+  `getrandom::getrandom` but Rust cannot resolve that symbol in the dependency
+  graph; until the crate dependency or feature set is corrected, there is no
+  build/test evidence.
+* The proof debt is wide open: the analyzer’s detection/completeness invariants,
+  the SARIF/attestation outputs, the miniKanren taint engine, and the bridge
+  classification logic all have entries in `PROOF-NEEDS.md` and lack machine-checked
+  scripts.
+* Template metadata such as `panic-attacker.toml.example`, `contractiles`
+  scaffolding, and `docs/` narratives still expose TODOs about future
+  system-level features, so the release gate sees residual preflight noise.
+
+== Containment actions taken
+
+* The README/ROADMAP/VISION files already insist the tool is for analysis and
+  visibility, not for quiet operation; the gate now treats panic-attack as a
+  research-grade scanner until the proofs and build-green status is restored.
+* `reports/` capture the latest assemblyline/adjudicate runs, so reviewers can
+  see the operational output even though the upstream proofs remain untracked.
+* The `PROOF-NEEDS` document surfaced the high-priority invariants, so the next
+  proof sessions have a defined backlog.
+
+== Immediate next actions
+
+* Fix the `getrandom` linkage: verify the `getrandom` dependency exposes `getrandom`
+  or replace the call with a supported API (e.g., `rand::random`, `secrecy`
+  wrappers, or a custom randomizer) so `cargo test`/`just test` can finish.
+* Schedule Claude-level proof sessions to mechanize analyzer soundness,
+  taint propagation, SARIF validity, reachability accuracy, and the attestation
+  chain described in `docs/assemblyline` outputs. Each theorem should produce a
+  machine-checked Idris2/Agda file with zero `believe_me`.
+* Clean up the remaining template placeholders in the `contractiles`/`docs`
+  directories so the release preflight does not flag `TODO` noise as proof debt.
+* Document the `self-*` reports (`self-a2ml.a2ml`, `self-roundtrip.json`) so
+  reviewers can reproduce the scans and verify the attestation/assemblyline
+  pipelines.
+
+== Invitation for review
+
+If you disagree with these blockers or can help close one, annotate this file
+or open an issue. We intentionally accept challenge; the goal is to make every
+release claim fact-based before we call it stable or publishable.
