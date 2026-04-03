@@ -594,7 +594,8 @@ impl Analyzer {
 
             if path.is_dir() {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                // Skip build artifacts, hidden dirs, and dependency dirs
+                // Skip build artifacts, hidden dirs, dependency dirs, and
+                // generated runtime artifacts (e.g. amuck mutation runs).
                 if ![
                     "target",
                     "build",
@@ -608,6 +609,7 @@ impl Analyzer {
                     "deps",
                     "_deps",
                     "zig-cache",
+                    ".zig-cache",
                     "zig-out",
                     ".elixir_ls",
                     ".lexical",
@@ -619,6 +621,7 @@ impl Analyzer {
                     ".nimble",
                     ".dub",
                     "obj",
+                    "runtime",
                 ]
                 .contains(&name)
                 {
@@ -677,6 +680,7 @@ impl Analyzer {
                         "dist-newstyle",
                         "deps",
                         "zig-cache",
+                        ".zig-cache",
                         "zig-out",
                         "ebin",
                         "external_corpora",
@@ -686,6 +690,7 @@ impl Analyzer {
                         "fixtures",
                         "corpus",
                         "corpora",
+                        "runtime",
                     ]
                     .contains(&name_str)
                 {
@@ -748,8 +753,14 @@ impl Analyzer {
             });
         }
 
+        // For dangerous pattern checks (transmute, mem::forget, raw pointer casts),
+        // strip string literal contents first.  Detection tools like panic-attack
+        // itself embed these patterns as string literals for matching — scanning the
+        // literals would produce false positives.
+        let code_only = Self::strip_string_literals_rs(content);
+
         // mem::transmute — type-punning bypasses Rust's type system entirely
-        if content.contains("transmute(") || content.contains("transmute::<") {
+        if code_only.contains("transmute(") || code_only.contains("transmute::<") {
             weak_points.push(WeakPoint {
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
@@ -760,7 +771,7 @@ impl Analyzer {
         }
 
         // mem::forget — deliberately leaks resources without running destructors
-        if content.contains("mem::forget(") || content.contains("forget(") && content.contains("use std::mem") {
+        if code_only.contains("mem::forget(") || (code_only.contains("forget(") && code_only.contains("use std::mem")) {
             weak_points.push(WeakPoint {
                 category: WeakPointCategory::ResourceLeak,
                 location: Some(file_path.to_string()),
@@ -771,7 +782,7 @@ impl Analyzer {
         }
 
         // Raw pointer casts — escape safe Rust's borrow checker guarantees
-        if content.contains("as *const ") || content.contains("as *mut ") {
+        if code_only.contains("as *const ") || code_only.contains("as *mut ") {
             weak_points.push(WeakPoint {
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
@@ -782,6 +793,95 @@ impl Analyzer {
         }
 
         Ok(())
+    }
+
+    /// Strip the contents (but not the delimiters) of Rust string literals from
+    /// `content`, replacing each string body with a single space.
+    ///
+    /// This prevents dangerous-pattern checks from triggering on detection
+    /// strings embedded as literals (e.g. `content.contains("transmute(")`).
+    /// Both regular strings (`"…"`) and raw strings (`r"…"`, `r#"…"#`, …) are
+    /// handled.  The function is intentionally conservative — it is not a full
+    /// Rust parser and will not strip every edge case (e.g. string interpolation
+    /// via macros), but it eliminates the common false-positive sources.
+    fn strip_string_literals_rs(content: &str) -> String {
+        let mut out = String::with_capacity(content.len());
+        let chars: Vec<char> = content.chars().collect();
+        let n = chars.len();
+        let mut i = 0;
+
+        while i < n {
+            // Raw string: optional 'b' prefix then r#*"…"#*
+            let is_raw = chars[i] == 'r'
+                || (chars[i] == 'b' && i + 1 < n && chars[i + 1] == 'r');
+
+            if is_raw {
+                let prefix_end = if chars[i] == 'b' { i + 2 } else { i + 1 };
+                let mut j = prefix_end;
+                while j < n && chars[j] == '#' {
+                    j += 1;
+                }
+                let hash_count = j - prefix_end;
+                if j < n && chars[j] == '"' {
+                    // Raw string opener confirmed — emit prefix + opening delimiter.
+                    for k in i..=j {
+                        out.push(chars[k]);
+                    }
+                    i = j + 1;
+                    // Build the closing sequence: " followed by hash_count '#'.
+                    let closing: Vec<char> = std::iter::once('"')
+                        .chain(std::iter::repeat('#').take(hash_count))
+                        .collect();
+                    // Search for the closing sequence.
+                    let mut found = false;
+                    let remaining = n.saturating_sub(i);
+                    for start in 0..=remaining.saturating_sub(closing.len()) {
+                        if i + start + closing.len() <= n
+                            && chars[i + start..i + start + closing.len()] == closing[..]
+                        {
+                            out.push(' ');
+                            out.extend(closing.iter());
+                            i += start + closing.len();
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        // Unterminated raw string — copy remainder verbatim.
+                        out.extend(chars[i..].iter());
+                        break;
+                    }
+                    continue;
+                }
+                // Not a raw string opener — fall through to normal char handling.
+            }
+
+            match chars[i] {
+                '"' => {
+                    // Regular string literal.
+                    out.push('"');
+                    i += 1;
+                    while i < n {
+                        if chars[i] == '\\' {
+                            i += 2; // skip escape sequence (one extra char)
+                        } else if chars[i] == '"' {
+                            break;
+                        } else {
+                            i += 1;
+                        }
+                    }
+                    out.push('"');
+                    if i < n {
+                        i += 1;
+                    }
+                }
+                c => {
+                    out.push(c);
+                    i += 1;
+                }
+            }
+        }
+        out
     }
 
     fn analyze_c_cpp(
