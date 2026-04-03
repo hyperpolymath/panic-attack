@@ -56,7 +56,7 @@ impl ExecutionIntent {
     pub fn commit(target: &Path, args: &[String]) -> Result<Self> {
         // 1. Generate 32-byte random nonce
         let mut nonce_bytes = [0u8; 32];
-        getrandom::getrandom(&mut nonce_bytes)
+        getrandom::fill(&mut nonce_bytes)
             .map_err(|e| anyhow::anyhow!("getrandom failed: {}", e))?;
         let session_nonce = hex::encode(nonce_bytes);
 

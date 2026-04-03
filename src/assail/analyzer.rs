@@ -716,12 +716,19 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
-        stats.unsafe_blocks += content.matches("unsafe {").count();
-        stats.unsafe_blocks += content.matches("unsafe fn").count();
-        stats.panic_sites += content.matches("panic!(").count();
-        stats.panic_sites += content.matches("unreachable!(").count();
-        stats.unwrap_calls += content.matches(".unwrap()").count();
-        stats.unwrap_calls += content.matches(".expect(").count();
+        // Strip string literal contents before counting so that detection-tool
+        // source files (which embed patterns as string literals) do not trigger
+        // their own rules.  Stats that measure code structure rather than
+        // dangerous patterns (allocation sites, I/O, threading) still use the
+        // raw content because those patterns are safe to count in any context.
+        let code_only = Self::strip_string_literals_rs(content);
+
+        stats.unsafe_blocks += code_only.matches("unsafe {").count();
+        stats.unsafe_blocks += code_only.matches("unsafe fn").count();
+        stats.panic_sites += code_only.matches("panic!(").count();
+        stats.panic_sites += code_only.matches("unreachable!(").count();
+        stats.unwrap_calls += code_only.matches(".unwrap()").count();
+        stats.unwrap_calls += code_only.matches(".expect(").count();
         stats.allocation_sites += content.matches("Vec::new()").count();
         stats.allocation_sites += content.matches("Box::new(").count();
         stats.allocation_sites += content.matches("String::new()").count();
@@ -752,12 +759,6 @@ impl Analyzer {
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Disk],
             });
         }
-
-        // For dangerous pattern checks (transmute, mem::forget, raw pointer casts),
-        // strip string literal contents first.  Detection tools like panic-attack
-        // itself embed these patterns as string literals for matching — scanning the
-        // literals would produce false positives.
-        let code_only = Self::strip_string_literals_rs(content);
 
         // mem::transmute — type-punning bypasses Rust's type system entirely
         if code_only.contains("transmute(") || code_only.contains("transmute::<") {
@@ -857,6 +858,42 @@ impl Analyzer {
             }
 
             match chars[i] {
+                // Character literal — must be handled before '"' to avoid treating
+                // '"' as the start of a string literal.
+                '\'' => {
+                    out.push('\'');
+                    i += 1;
+                    if i < n {
+                        if chars[i] == '\\' {
+                            // Escaped char: '\n', '\"', '\u{XXXX}', etc.
+                            out.push('\\');
+                            i += 1;
+                            if i < n && chars[i] == 'u' && i + 1 < n && chars[i + 1] == '{' {
+                                // Unicode escape: '\u{XXXX}'
+                                while i < n && chars[i] != '}' {
+                                    out.push(chars[i]);
+                                    i += 1;
+                                }
+                                if i < n {
+                                    out.push(chars[i]);
+                                    i += 1;
+                                }
+                            } else if i < n {
+                                out.push(chars[i]);
+                                i += 1;
+                            }
+                        } else {
+                            // Single character (including '"').
+                            out.push(chars[i]);
+                            i += 1;
+                        }
+                        // Consume closing single quote if present.
+                        if i < n && chars[i] == '\'' {
+                            out.push('\'');
+                            i += 1;
+                        }
+                    }
+                }
                 '"' => {
                     // Regular string literal.
                     out.push('"');

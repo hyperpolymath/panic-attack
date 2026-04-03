@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: PMPL-1.0-or-later
 # panic-attacker configuration file example
-# Copy to panic-attacker.toml and customize
+# Copy to panic-attack.toml and customize
 
-[xray]
-# Default verbosity for X-Ray scans
+[assail]
+# Default verbosity for assail scans
 verbose = false
 
 # Include hidden files in analysis

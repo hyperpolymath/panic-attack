@@ -59,7 +59,7 @@ impl ReportGui {
         eframe::run_native(
             "panic-attack report",
             options,
-            Box::new(|_cc| Box::new(app)),
+            Box::new(|_cc| Ok(Box::new(app))),
         )
         .map_err(|err| anyhow!("failed to launch report GUI: {err}"))?;
         Ok(())
@@ -114,6 +114,10 @@ impl ReportGui {
 }
 
 impl App for ReportGui {
+    // eframe 0.34 requires `ui` in addition to `update`.  All rendering is
+    // handled by `update` which drives each panel directly, so this is a no-op.
+    fn ui(&mut self, _ui: &mut egui::Ui, _frame: &mut Frame) {}
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
             ui.horizontal(|ui| {

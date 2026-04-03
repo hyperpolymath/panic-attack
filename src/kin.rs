@@ -144,7 +144,7 @@ fn iso8601_now() -> String {
 }
 
 fn days_to_ymd(days: u64) -> (u64, u64, u64) {
-    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
+    // Algorithm from https://howardhinnant.github.io/date_algorithms.html
     let z = days + 719468;
     let era = z / 146097;
     let doe = z - era * 146097;
