@@ -1,14 +1,27 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
-= panic-attacker — Show Me The Receipts
+= panic-attack — Show Me The Receipts
 :toc:
 :icons: font
 
 The README makes claims. This file backs them up.
 
-[quote, README]
-____
-See the link:README.adoc[README] for details.
-____
+== Claims Substantiation
+
+=== Claim 1: "47-language static analysis across multiple families"
+
+**How it works:** The `src/assail/analyzer.rs` module implements a per-file language detector that identifies file extension and shebang, dispatching to language-specific pattern matchers in `src/assail/patterns.rs`. Each language family (C/C++, Python, JavaScript, Rust, Go, etc.) has dedicated regex-based weak point detectors (unwrap, panic, unsafe blocks, expect, eval, hardcoded secrets). The analyzer processes 47 distinct language patterns without requiring external parsers—pattern-based shallow analysis enables fast scanning across heterogeneous codebases.
+
+**Caveat:** Pattern-based analysis has false negatives (e.g., dead code paths triggering unwrap won't be caught) and false positives (commented-out panic sites flagged). Full AST-based analysis would eliminate these but scale poorly. For production, pair with specialized language linters (clippy, pylint) for each language.
+
+**Evidence:** `src/assail/patterns.rs` defines language-specific patterns; `src/assail/analyzer.rs` performs dispatch and aggregation; `src/main.rs` exposes the `assail` subcommand.
+
+=== Claim 2: "miniKanren logic engine for taint analysis and cross-language reasoning"
+
+**How it works:** The `src/kanren/` module implements a miniKanren-inspired relational database with forward chaining. The `taint.rs` submodule tracks data flow from sources (user input, network calls, deserialization) to sinks (eval, shell exec, SQL queries). The `crosslang.rs` analyzer detects vulnerability chains across FFI boundaries by building facts about callers, callees, and their types. The `strategy.rs` module selects search strategies (risk-weighted, language-family-first, breadth-first) based on project characteristics.
+
+**Caveat:** Miniature implementation (not full Kanren) with limited rule expressiveness. Taint tracking is flow-insensitive (doesn't track control flow precisely). For correctness-critical applications, integrate with full constraint solvers (Z3, Coq).
+
+**Evidence:** `src/kanren/core.rs` defines unification and fact database; `src/kanren/taint.rs` implements taint propagation; `src/kanren/strategy.rs` selects search algorithms.
 
 == Technology Choices
 
@@ -17,18 +30,48 @@ ____
 | Technology | Learn More
 
 | **Rust** | https://www.rust-lang.org
+| **miniKanren** | Logic programming (relational reasoning)
+| **Rayon** | Parallel batch scanning
+| **Serde** | JSON serialization for pipeline integration
 |===
 
 == File Map
 
-[cols="1,2"]
+[cols="1,3"]
 |===
-| Path | What's There
+| Path | Purpose
 
-| `src/` | Source code
-| `test(s)/` | Test suite
+| `src/main.rs` | CLI entry: 20 subcommands (assail, assault, temporal, panll, groove, bridge, etc.)
+| `src/lib.rs` | Library API exposing all analysis engines
+| `src/assail/` | Static analysis (47 languages, 20 weak point categories)
+| `src/assail/analyzer.rs` | Per-file language detection and pattern matching dispatcher
+| `src/assail/patterns.rs` | Language-specific regex patterns for weak points
+| `src/kanren/` | Logic engine (unification, fact database, taint, cross-lang)
+| `src/kanren/core.rs` | Term, substitution, unification, FactDB, forward chaining
+| `src/kanren/taint.rs` | Source→sink tracking (user input, network, deserialization)
+| `src/kanren/crosslang.rs` | FFI boundary analysis, vulnerability chains
+| `src/kanren/strategy.rs` | Search strategy selection (risk-weighted, etc.)
+| `src/attack/` | 6-axis stress testing (CPU, memory, disk, network, concurrency, time)
+| `src/attestation/` | Cryptographic intent→evidence→seal chain
+| `src/bridge/` | CVE lifecycle: Cargo.lock parsing, OSV API, reachability, classification
+| `src/bridge/lockfile.rs` | Parses Cargo.lock for dependency extraction
+| `src/bridge/intelligence.rs` | Batch queries api.osv.dev for known CVEs
+| `src/bridge/reachability.rs` | Scans .rs files for imports of vulnerable crates
+| `src/bridge/classify.rs` | Three-way classification: Mitigable/Unmitigable/Informational
+| `src/assemblyline.rs` | Batch directory scanning with Rayon parallelism
+| `src/panll/` | PanLL event-chain export (three-panel visualization)
+| `src/report/` | Report generation and formatting (text, JSON, markdown)
+| `src/diagnostics.rs` | Self-check for Hypatia/gitbot-fleet integration
 |===
 
-== Questions?
+== Dogfooted Across The Account
 
-Open an issue or reach out directly — happy to explain anything in more detail.
+| Project | Integration |
+| **reposystem** | Feeds weak-point scores into graph aspects (security weight)
+| **proof-of-work** | Z3-verifies that assail findings are genuine vulnerabilities
+| **hypatia** | Consumes assail facts as Logtalk predicates for rule engine
+| **januskey** | Scans operation metadata for unsafe patterns in audit trail code
+
+== Readiness
+
+**CRG Grade:** C (Beta) - 47 languages working, miniKanren logic proven, CVE bridge tested on real Cargo.lock files, needs advanced proof integration for false-negative elimination.
