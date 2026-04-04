@@ -560,6 +560,14 @@ impl Analyzer {
             None
         };
 
+        // Post-process weak points to populate file/line fields from location
+        // strings, ensuring GitHub Actions annotations and gitbot-fleet fix scripts
+        // can access structured file paths.
+        let all_weak_points: Vec<_> = all_weak_points
+            .into_iter()
+            .map(|wp| wp.with_parsed_location())
+            .collect();
+
         Ok(AssailReport {
             program_path: self.target.clone(),
             language: self.language,
@@ -739,6 +747,8 @@ impl Analyzer {
 
         if stats.unsafe_blocks > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -749,6 +759,8 @@ impl Analyzer {
 
         if stats.unwrap_calls > 5 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::PanicPath,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -763,6 +775,8 @@ impl Analyzer {
         // mem::transmute — type-punning bypasses Rust's type system entirely
         if code_only.contains("transmute(") || code_only.contains("transmute::<") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -774,6 +788,8 @@ impl Analyzer {
         // mem::forget — deliberately leaks resources without running destructors
         if code_only.contains("mem::forget(") || (code_only.contains("forget(") && code_only.contains("use std::mem")) {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::ResourceLeak,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -785,6 +801,8 @@ impl Analyzer {
         // Raw pointer casts — escape safe Rust's borrow checker guarantees
         if code_only.contains("as *const ") || code_only.contains("as *mut ") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -940,6 +958,8 @@ impl Analyzer {
         let unchecked_malloc = RE_UNCHECKED_MALLOC.get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").unwrap());
         if unchecked_malloc.is_match(content) {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UncheckedAllocation,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -951,6 +971,8 @@ impl Analyzer {
         // gets() — no bounds checking, classic buffer overflow vector
         if content.contains("gets(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -962,6 +984,8 @@ impl Analyzer {
         // system() — shell command injection via unvalidated input
         if content.contains("system(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -973,6 +997,8 @@ impl Analyzer {
         // sprintf() — no bounds checking, format string overflow
         if content.contains("sprintf(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -984,6 +1010,8 @@ impl Analyzer {
         // strcpy/strcat — classic unbounded string operations
         if content.contains("strcpy(") || content.contains("strcat(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1009,6 +1037,8 @@ impl Analyzer {
         let go_count = content.matches("go ").count();
         if go_count > 10 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::ResourceLeak,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1020,6 +1050,8 @@ impl Analyzer {
         // unsafe.Pointer — bypasses Go's type safety and GC guarantees
         if content.contains("unsafe.Pointer") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1031,6 +1063,8 @@ impl Analyzer {
         // exec.Command — shell command execution, injection risk
         if content.contains("exec.Command") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1054,6 +1088,8 @@ impl Analyzer {
 
         if content.contains("while True:") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnboundedLoop,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1064,6 +1100,8 @@ impl Analyzer {
 
         if content.contains("eval(") || content.contains("exec(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1075,6 +1113,8 @@ impl Analyzer {
         // pickle.load / pickle.loads — arbitrary code execution via deserialization
         if content.contains("pickle.load") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeDeserialization,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1086,6 +1126,8 @@ impl Analyzer {
         // os.system / os.popen / subprocess with shell=True — command injection
         if content.contains("os.system(") || content.contains("os.popen(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1098,6 +1140,8 @@ impl Analyzer {
         if content.contains("subprocess.call") || content.contains("subprocess.Popen") || content.contains("subprocess.run") {
             if content.contains("shell=True") || content.contains("shell = True") {
                 weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
                     category: WeakPointCategory::CommandInjection,
                     location: Some(file_path.to_string()),
                     severity: Severity::High,
@@ -1125,6 +1169,8 @@ impl Analyzer {
 
         if content.contains("eval(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1136,6 +1182,8 @@ impl Analyzer {
         // innerHTML / document.write — DOM-based XSS vectors
         if content.contains("innerHTML") || content.contains("document.write(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1147,6 +1195,8 @@ impl Analyzer {
         // dangerouslySetInnerHTML — React's explicit escape hatch for raw HTML injection
         if content.contains("dangerouslySetInnerHTML") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1158,6 +1208,8 @@ impl Analyzer {
         // Deno -A permission check
         if content.contains("deno run -A") || content.contains("deno run --allow-all") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::ExcessivePermissions,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1170,6 +1222,8 @@ impl Analyzer {
         let parse_exn_count = content.matches("JSON.parseExn").count();
         if parse_exn_count > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeDeserialization,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1194,6 +1248,8 @@ impl Analyzer {
 
         if content.contains("eval(") || content.contains("send(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1220,6 +1276,8 @@ impl Analyzer {
 
         if content.contains("Runtime.getRuntime().exec(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1263,6 +1321,8 @@ impl Analyzer {
         // Dynamic code execution
         if content.contains("Code.eval_string") || content.contains("Code.eval_quoted") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1275,6 +1335,8 @@ impl Analyzer {
         let atom_count = content.matches("String.to_atom").count();
         if atom_count > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::AtomExhaustion,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1289,6 +1351,8 @@ impl Analyzer {
         // Port/System.cmd - command injection risk
         if content.contains("Port.open") || content.contains("System.cmd") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1301,6 +1365,8 @@ impl Analyzer {
         let apply_re = RE_ELIXIR_APPLY.get_or_init(|| Regex::new(r"apply\([^,]+,\s*[^,]+,").unwrap());
         if apply_re.is_match(content) {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1332,6 +1398,8 @@ impl Analyzer {
             content.matches("list_to_atom").count() + content.matches("binary_to_atom").count();
         if atom_count > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::AtomExhaustion,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1346,6 +1414,8 @@ impl Analyzer {
         // os:cmd - command injection
         if content.contains("os:cmd") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1373,6 +1443,8 @@ impl Analyzer {
 
         if external_count > 5 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeFFI,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1407,6 +1479,8 @@ impl Analyzer {
         if parse_exn > 0 {
             stats.panic_sites += parse_exn;
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeDeserialization,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1425,6 +1499,8 @@ impl Analyzer {
         let ignore_count = content.matches("ignore(").count();
         if ignore_count > 3 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UncheckedError,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1443,6 +1519,8 @@ impl Analyzer {
         if unsafe_gets > 0 {
             stats.unwrap_calls += unsafe_gets;
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::PanicPath,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1656,6 +1734,8 @@ impl Analyzer {
         if content.contains("Obj.magic") {
             stats.unsafe_blocks += content.matches("Obj.magic").count();
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeTypeCoercion,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1666,6 +1746,8 @@ impl Analyzer {
 
         if content.contains("Obj.repr") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1677,6 +1759,8 @@ impl Analyzer {
         // Unsafe deserialization
         if content.contains("Marshal.from_string") || content.contains("Marshal.from_channel") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeDeserialization,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1688,6 +1772,8 @@ impl Analyzer {
         // Command execution
         if content.contains("Unix.system") || content.contains("Unix.execvp") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1720,6 +1806,8 @@ impl Analyzer {
         if unsafe_count > 0 {
             stats.unsafe_blocks += unsafe_count;
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1749,6 +1837,8 @@ impl Analyzer {
         // Dynamic code execution
         if content.contains("(eval ") || content.contains("(eval\n") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1760,6 +1850,8 @@ impl Analyzer {
         // System calls
         if content.contains("(system ") || content.contains("(process ") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1779,6 +1871,8 @@ impl Analyzer {
             + content.matches("call/cc").count();
         if callcc_count > 3 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::ResourceLeak,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1808,6 +1902,8 @@ impl Analyzer {
 
         if unsafe_io > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1818,6 +1914,8 @@ impl Analyzer {
 
         if unsafe_coerce > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeTypeCoercion,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1835,6 +1933,8 @@ impl Analyzer {
 
         if partials > 3 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::PanicPath,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1854,6 +1954,8 @@ impl Analyzer {
 
         if error_count > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::PanicPath,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1884,6 +1986,8 @@ impl Analyzer {
 
         if ffi_count > 5 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeFFI,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1895,6 +1999,8 @@ impl Analyzer {
         // unsafeCoerce / unsafePartial
         if content.contains("unsafeCoerce") || content.contains("unsafePartial") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeTypeCoercion,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1922,6 +2028,8 @@ impl Analyzer {
         if believe_count > 0 {
             stats.unsafe_blocks += believe_count;
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -1936,6 +2044,8 @@ impl Analyzer {
         // unsafePerformIO
         if content.contains("unsafePerformIO") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1963,6 +2073,8 @@ impl Analyzer {
         if sorry_count > 0 {
             stats.unsafe_blocks += sorry_count;
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -1977,6 +2089,8 @@ impl Analyzer {
         // native_decide - can crash at runtime
         if content.contains("native_decide") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::PanicPath,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -1988,6 +2102,8 @@ impl Analyzer {
         // unsafe operations
         if content.contains("unsafeCast") || content.contains("implementedBy") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeTypeCoercion,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2010,6 +2126,8 @@ impl Analyzer {
         if content.contains("trustMe") || content.contains("primTrustMe") {
             stats.unsafe_blocks += 1;
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2047,6 +2165,8 @@ impl Analyzer {
 
         if assert_count + retract_count > 5 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::RaceCondition,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -2062,6 +2182,8 @@ impl Analyzer {
         // System calls
         if content.contains("shell(") || content.contains("process_create(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2101,6 +2223,8 @@ impl Analyzer {
 
         if ptr_ops > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2144,6 +2268,8 @@ impl Analyzer {
 
         if unchecked > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2155,6 +2281,8 @@ impl Analyzer {
         // pragma Suppress (disables runtime checks)
         if content.contains("pragma Suppress") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2205,6 +2333,8 @@ impl Analyzer {
             let rawptr_count = content.matches("rawptr").count();
             if rawptr_count > 0 {
                 weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
                     category: WeakPointCategory::UnsafeCode,
                     location: Some(file_path.to_string()),
                     severity: Severity::Medium,
@@ -2227,6 +2357,8 @@ impl Analyzer {
         // Unsafe pragmas
         if content.contains("{.emit:") || content.contains("{.emit.}") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -2240,6 +2372,8 @@ impl Analyzer {
         if cast_count > 0 {
             stats.unsafe_blocks += cast_count;
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeTypeCoercion,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2277,6 +2411,8 @@ impl Analyzer {
 
         if ffi_count > 3 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeFFI,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -2309,6 +2445,8 @@ impl Analyzer {
 
         if system_count > 5 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -2344,6 +2482,8 @@ impl Analyzer {
             // builtins.exec (arbitrary command execution)
             if content.contains("builtins.exec") {
                 weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
                     category: WeakPointCategory::CommandInjection,
                     location: Some(file_path.to_string()),
                     severity: Severity::Critical,
@@ -2389,6 +2529,8 @@ impl Analyzer {
         // Command injection via eval
         if content.contains("eval ") || content.contains("eval\t") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -2403,6 +2545,8 @@ impl Analyzer {
         // Only flag if high number of unquoted vars
         if dollar_vars > 20 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -2417,6 +2561,8 @@ impl Analyzer {
         // World-writable permissions
         if content.contains("chmod 777") || content.contains("chmod a+w") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::ExcessivePermissions,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2428,6 +2574,8 @@ impl Analyzer {
         // Deno -A in shell scripts
         if content.contains("deno run -A") || content.contains("deno run --allow-all") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::ExcessivePermissions,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2439,6 +2587,8 @@ impl Analyzer {
         // Unsafe temp files
         if content.contains("/tmp/") && !content.contains("mktemp") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::PathTraversal,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -2464,6 +2614,8 @@ impl Analyzer {
         // eval / Meta.parse (dynamic code execution)
         if content.contains("eval(") || content.contains("Meta.parse(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2478,6 +2630,8 @@ impl Analyzer {
 
         if ccall_count > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeFFI,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -2518,6 +2672,8 @@ impl Analyzer {
         // Dynamic code execution
         if content.contains("loadstring(") || content.contains("dofile(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2529,6 +2685,8 @@ impl Analyzer {
         // os.execute (command injection)
         if content.contains("os.execute(") || content.contains("io.popen(") {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
@@ -2568,6 +2726,8 @@ impl Analyzer {
 
         if ffi_patterns > 3 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UnsafeFFI,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -2611,6 +2771,8 @@ impl Analyzer {
         let http_count = http_total.saturating_sub(http_local);
         if http_count > 0 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::InsecureProtocol,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -2625,6 +2787,8 @@ impl Analyzer {
         ).unwrap());
         if secret_re.is_match(content) {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::HardcodedSecret,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
@@ -2640,6 +2804,8 @@ impl Analyzer {
             + content.matches("XXX").count();
         if todo_count > 10 {
             weak_points.push(WeakPoint {
+                file: None,
+                line: None,
                 category: WeakPointCategory::UncheckedError,
                 location: Some(file_path.to_string()),
                 severity: Severity::Low,

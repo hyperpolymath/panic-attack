@@ -1,6 +1,6 @@
 {
   "groove_version": "1",
-  "service_id": "panic-attacker",
+  "service_id": "panic-attack",
   "service_version": "0.1.0",
   "capabilities": {
     "static-analysis": {

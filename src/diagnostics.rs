@@ -206,6 +206,8 @@ fn check_panicbot_readiness() -> Diagnostic {
         weak_points: vec![crate::types::WeakPoint {
             category: crate::types::WeakPointCategory::UnsafeCode,
             location: Some("test.rs:1".to_string()),
+            file: None,
+            line: None,
             severity: crate::types::Severity::High,
             description: "test".to_string(),
             recommended_attack: vec![],

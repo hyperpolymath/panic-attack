@@ -1,0 +1,70 @@
+# k9iser manifest — wrap configs into self-validating K9 contracts
+# SPDX-License-Identifier: PMPL-1.0-or-later
+#
+# panic-attacker: universal static analysis and bug signature detection tool
+# for 47 languages. Safety-tier "hunt" because this is a security tool whose
+# own configuration must be above reproach.
+
+[project]
+name = "panic-attacker"
+safety-tier = "hunt"  # security tool — highest scrutiny
+
+# ── Cargo.toml — Rust package manifest ───────────────────────────────────────
+
+[[configs]]
+name = "cargo-manifest"
+source = "Cargo.toml"
+format = "toml"
+must = [
+  "package.name == 'panic-attack'",
+  "package.edition == '2021'",
+  "package.rust-version is set",             # minimum MSRV declared
+  "package.license-file is set",             # LICENSE present (PMPL)
+  "package.repository is non-empty",
+  "profile.release.lto is set",              # LTO enabled for security binary
+  "profile.release.codegen-units == 1",      # single CGU for max optimisation
+  "profile.release.strip == 'symbols'",
+  "profile.release.panic == 'unwind'",       # stack unwind required for proper error propagation
+  "dependencies.blake3 is set",              # BLAKE3 hashing mandatory
+  "dependencies.sha2 is set",               # SHA-2 hashing mandatory
+  "no dependency on md5",                    # MD5 banned for security tool
+  "no dependency on sha1",                   # SHA-1 banned for security tool
+]
+trust = ["signed-by: ci-pipeline"]
+dust = ["remove: unused optional features"]
+intend = ["production-ready", "security-critical"]
+
+# ── stapeln.toml — container build config ────────────────────────────────────
+
+[[configs]]
+name = "container-build"
+source = "stapeln.toml"
+format = "toml"
+must = [
+  "metadata.license == 'PMPL-1.0-or-later'",
+  "metadata.registry == 'ghcr.io/hyperpolymath'",
+  "build.runtime == 'podman'",               # Podman, never Docker
+  "layers.base.from starts-with 'cgr.dev/chainguard/'",  # Chainguard base only
+  "layers.base.verify == true",
+  "layers.runtime.user == 'nonroot'",        # never run as root
+  "security.non-root == true",
+  "security.no-new-privileges == true",
+  "security.cap-drop contains 'ALL'",
+  "security.signing.algorithm == 'ML-DSA-87'",  # post-quantum signing
+  "security.signing.provider == 'cerro-torre'",
+  "security.sbom.format == 'spdx-json'",     # SBOM mandatory
+  "security.sbom.include-deps == true",
+  "verify.vordr == true",
+  "verify.svalinn == true",
+  "verify.scan-on-build == true",
+  "verify.fail-on contains 'critical'",
+  "verify.fail-on contains 'high'",
+]
+trust = ["signed-by: ci-pipeline"]
+dust = ["remove: deprecated layer definitions"]
+intend = ["production-ready", "supply-chain-verified"]
+
+[validation]
+strict = true
+auto-fix = false
+report-format = "text"

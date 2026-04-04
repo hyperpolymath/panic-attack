@@ -272,13 +272,42 @@ impl AttackAxis {
 }
 
 /// Known weak points in program behavior
+///
+/// The `file` and `line` fields are derived from `location` for compatibility
+/// with GitHub Actions annotation format and gitbot-fleet fix scripts.
+/// Consumers should prefer `file`/`line` over parsing `location` directly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeakPoint {
     pub category: WeakPointCategory,
     pub location: Option<String>,
+    /// Structured file path extracted from location (e.g. "src/main.rs")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// Line number extracted from location
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
     pub severity: Severity,
     pub description: String,
     pub recommended_attack: Vec<AttackAxis>,
+}
+
+impl WeakPoint {
+    /// Parse file and line from a "path:line" location string
+    pub fn with_parsed_location(mut self) -> Self {
+        if let Some(ref loc) = self.location {
+            if let Some((path, line_str)) = loc.rsplit_once(':') {
+                if let Ok(line_num) = line_str.parse::<u32>() {
+                    self.file = Some(path.to_string());
+                    self.line = Some(line_num);
+                } else {
+                    self.file = Some(loc.clone());
+                }
+            } else {
+                self.file = Some(loc.clone());
+            }
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

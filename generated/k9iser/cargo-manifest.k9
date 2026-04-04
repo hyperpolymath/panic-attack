@@ -1,0 +1,19 @@
+# Auto-generated K9 contract for cargo-manifest
+# Safety tier: hunt
+
+[must]
+package.name : string { == 'panic-attack' }
+package.edition : string { == '2021' }
+profile.release.codegen-units : string { == 1 }
+profile.release.strip : string { == 'symbols' }
+profile.release.panic : string { == 'unwind' }
+
+[trust]
+signed-by = "ci-pipeline"
+
+[dust]
+remove = ["unused optional features"]
+
+[intend]
+production-ready = true
+security-critical = true
