@@ -5,15 +5,16 @@
 name = "runtime"
 
 [[functions]]
-name = "process_batch"
-source = "src/batch.rs"
-energy-budget-mj = 50.0
-carbon-budget-mg = 10.0
+name = "build_attack_overrides"
+source = "amuck/main.amuck.001.rs"
+energy-budget-mj = 35.0
+carbon-budget-mg = 7.0
 
 [[functions]]
-name = "render_page"
-source = "src/web.rs"
-energy-budget-mj = 5.0
+name = "cpu_work"
+source = "abduct/abduct-20260228235740/attack_harness.rs"
+energy-budget-mj = 80.0
+carbon-budget-mg = 16.0
 
 [carbon]
 provider = "static"
