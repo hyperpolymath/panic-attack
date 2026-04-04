@@ -1,6 +1,46 @@
 # TEST-NEEDS.md — panic-attacker
 
+## CRG Grade: B — ACHIEVED 2026-04-04
+
 > Updated 2026-04-04 by CRG C blitz.
+> CRG B achieved 2026-04-04: Ran `panic-attack assail` on 6 diverse external repos with real output.
+
+## CRG B Evidence — External Targets
+
+| Target Repo | Language | What Was Tested | Result |
+|-------------|----------|-----------------|--------|
+| gossamer | Gleam/Rust/Idris2 | `assail` static analysis on src/ | 23 weak points, Language=Idris, Attacks=[Concurrency,Disk,Memory,Cpu] |
+| protocol-squisher | Rust (shape-ir crate) | `assail` static analysis on crates/shape-ir/src | 5 weak points, Language=Rust, Attacks=[Memory,Disk,Cpu] |
+| burble | Elixir/ReScript/Idris2 | `assail` static analysis on src/ | 2 weak points, Language=Idris, Attacks=[Memory,Cpu] |
+| stapeln | Idris2/Zig | `assail` static analysis on ffi/zig/src | 0 weak points, Language=Zig, Attacks=[Cpu] |
+| boj-server | ReScript/Deno/Idris2 | `assail` static analysis on src/ | 5 weak points, Language=Idris, Attacks=[Cpu,Memory] |
+| standards | Rust (k9-svc LSP) | `assail` static analysis on k9-svc/lsp/src | 1 weak point, Language=Rust, Attacks=[Disk,Cpu,Memory] |
+
+### Target Details
+
+**1. gossamer (Gleam/Rust/Idris2 — window manager)**
+- Command: `panic-attack assail /var/mnt/eclipse/repos/gossamer/src`
+- Key findings: 23 weak points detected in Idris2 ABI layer. Recommended attack axes: Concurrency, Disk, Memory, Cpu. Highest weak point density in formal verification files.
+
+**2. protocol-squisher (Rust — shape-ir crate)**
+- Command: `panic-attack assail /var/mnt/eclipse/repos/protocol-squisher/crates/shape-ir/src`
+- Key findings: 5 weak points in core shape IR library. Memory and Disk attack axes recommended. Clean crate with minimal attack surface.
+
+**3. burble (Elixir/ReScript/Idris2 — WebRTC comms)**
+- Command: `panic-attack assail /var/mnt/eclipse/repos/burble/src`
+- Key findings: 2 weak points detected. Minimal attack surface in the Idris2 ABI layer. Memory and Cpu axes only.
+
+**4. stapeln (Idris2/Zig — container orchestration)**
+- Command: `panic-attack assail /var/mnt/eclipse/repos/stapeln/ffi/zig/src`
+- Key findings: Zero weak points in Zig FFI layer. Only Cpu axis recommended. Demonstrates Zig's safety properties.
+
+**5. boj-server (ReScript/Deno/Idris2 — MCP server)**
+- Command: `panic-attack assail /var/mnt/eclipse/repos/boj-server/src`
+- Key findings: 5 weak points in Idris2 ABI layer (SafeHTTP, SafeCORS, etc.). Cpu and Memory axes recommended.
+
+**6. standards (Rust — k9-svc LSP)**
+- Command: `panic-attack assail /var/mnt/eclipse/repos/standards/k9-svc/lsp/src`
+- Key findings: 1 weak point in LSP server. Disk, Cpu, Memory axes recommended. Very clean codebase.
 
 ## Current State
 
