@@ -16,6 +16,8 @@ fn make_assail_report() -> AssailReport {
             WeakPoint {
                 category: WeakPointCategory::UnsafeCode,
                 location: Some("src/main.rs".to_string()),
+                file: None,
+                line: None,
                 severity: Severity::Critical,
                 description: "2 unsafe blocks in src/main.rs".to_string(),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
@@ -23,6 +25,8 @@ fn make_assail_report() -> AssailReport {
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
                 location: Some("src/lib.rs".to_string()),
+                file: None,
+                line: None,
                 severity: Severity::Medium,
                 description: "5 unwrap/expect calls in src/lib.rs".to_string(),
                 recommended_attack: vec![AttackAxis::Memory],
@@ -132,6 +136,8 @@ fn test_robustness_score_clamped_to_zero() {
         assail.weak_points.push(WeakPoint {
             category: WeakPointCategory::UnsafeCode,
             location: Some(format!("src/file{}.rs", i)),
+            file: None,
+            line: None,
             severity: Severity::Critical,
             description: format!("critical issue {}", i),
             recommended_attack: vec![],

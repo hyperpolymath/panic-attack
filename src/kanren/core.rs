@@ -1052,6 +1052,8 @@ mod tests {
         WeakPoint {
             category,
             location: Some(location.to_string()),
+            file: None,
+            line: None,
             severity: Severity::Medium,
             description: description.to_string(),
             recommended_attack: vec![],
