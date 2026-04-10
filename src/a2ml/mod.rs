@@ -827,8 +827,8 @@ mod tests {
             weak_points: vec![WeakPoint {
                 category: WeakPointCategory::UncheckedError,
                 location: Some("src/main.rs:10".to_string()),
-                file: Some("src/main.rs".to_string()),
-                line: Some(10),
+                file: None,
+                line: None,
                 severity: Severity::Medium,
                 description: "unchecked result".to_string(),
                 recommended_attack: vec![AttackAxis::Concurrency],
