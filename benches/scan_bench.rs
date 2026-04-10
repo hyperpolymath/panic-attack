@@ -96,6 +96,8 @@ fn bench_location_extraction(c: &mut Criterion) {
             category: panic_attack::types::WeakPointCategory::UnsafeCode,
             severity: panic_attack::types::Severity::High,
             location: Some("test.rs:10".to_string()),
+            file: None,
+            line: None,
             description: "test".to_string(),
             recommended_attack: vec![],
         };
