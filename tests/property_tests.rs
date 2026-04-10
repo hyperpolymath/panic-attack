@@ -121,7 +121,7 @@ fn prop_kanren_forward_chaining_preserves_facts() {
     // This is a critical invariant for logic-based reasoning
     use panic_attack::kanren::core::FactDB;
 
-    let mut db = FactDB::new();
+    let db = FactDB::new();
     let original_size = db.total_facts();
 
     // After any operation, the database should not shrink unexpectedly
@@ -135,7 +135,7 @@ fn prop_taint_analyzer_setup() {
     // Verify that taint analyzer infrastructure is sound
     use panic_attack::kanren::core::FactDB;
 
-    let mut db = FactDB::new();
+    let db = FactDB::new();
     let initial_count = db.total_facts();
 
     // Database must be able to track facts
@@ -213,12 +213,6 @@ fn prop_report_statistics_consistency() {
         allocation_sites: 3,
         io_operations: 2,
     };
-
-    // Statistics should never have negative values
-    assert!(statistics.total_lines >= 0);
-    assert!(statistics.unwrap_calls >= 0);
-    assert!(statistics.panic_sites >= 0);
-    assert!(statistics.unsafe_blocks >= 0);
 
     // Unwrap + panic sites should not exceed total lines
     assert!(

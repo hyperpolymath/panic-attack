@@ -114,12 +114,8 @@ impl ReportGui {
 }
 
 impl App for ReportGui {
-    // eframe 0.34 requires `ui` in addition to `update`.  All rendering is
-    // handled by `update` which drives each panel directly, so this is a no-op.
-    fn ui(&mut self, _ui: &mut egui::Ui, _frame: &mut Frame) {}
-
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
-        egui::TopBottomPanel::top("header").show(ctx, |ui| {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {
+        egui::Panel::top("header").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("panic-attack report");
                 ui.separator();
@@ -137,7 +133,7 @@ impl App for ReportGui {
             });
         });
 
-        egui::SidePanel::left("nav").show(ctx, |ui| {
+        egui::Panel::left("nav").show_inside(ui, |ui| {
             ui.selectable_value(&mut self.tab, ReportTab::Summary, "Summary");
             ui.selectable_value(&mut self.tab, ReportTab::Assail, "Assail");
             ui.selectable_value(&mut self.tab, ReportTab::Matrix, "Matrix");
@@ -158,7 +154,7 @@ impl App for ReportGui {
             ui.selectable_value(&mut self.tab, ReportTab::Temporal, temporal_label);
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| match self.tab {
+        egui::CentralPanel::default().show_inside(ui, |ui| match self.tab {
             ReportTab::Summary => self.render_summary(ui),
             ReportTab::Assail => self.render_assail(ui),
             ReportTab::Matrix => self.render_matrix(ui),
@@ -600,7 +596,7 @@ impl ReportGui {
         if !diff.improved_nodes.is_empty() {
             ui.heading(format!("Improved nodes ({})", diff.improved_nodes.len()));
             egui::ScrollArea::vertical()
-                .id_source("improved-scroll")
+                .id_salt("improved-scroll")
                 .max_height(200.0)
                 .show(ui, |ui| {
                     egui::Grid::new("improved-nodes")
@@ -640,7 +636,7 @@ impl ReportGui {
         if !diff.degraded_nodes.is_empty() {
             ui.heading(format!("Degraded nodes ({})", diff.degraded_nodes.len()));
             egui::ScrollArea::vertical()
-                .id_source("degraded-scroll")
+                .id_salt("degraded-scroll")
                 .max_height(200.0)
                 .show(ui, |ui| {
                     egui::Grid::new("degraded-nodes")

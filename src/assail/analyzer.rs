@@ -253,7 +253,7 @@ impl Analyzer {
                 Ok(b) => b,
                 Err(e) => {
                     if self.verbose {
-                        eprintln!("Skipping unreadable file: {} ({})", file.display(), e);
+                        log::debug!("Skipping unreadable file: {} ({})", file.display(), e);
                     }
                     continue;
                 }
@@ -267,7 +267,7 @@ impl Analyzer {
                     let (cow, _, had_errors) = encoding_rs::WINDOWS_1252.decode(&raw_bytes);
                     if had_errors {
                         if self.verbose {
-                            eprintln!(
+                            log::debug!(
                                 "Skipping non-text file: {} (neither UTF-8 nor Latin-1)",
                                 file.display()
                             );
@@ -3230,5 +3230,341 @@ impl Analyzer {
             Severity::High => 3.5,
             Severity::Critical => 5.0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    // ---------------------------------------------------------------
+    // 1. Language::detect for different file extensions
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn language_detect_common_extensions() {
+        assert_eq!(Language::detect("main.rs"), Language::Rust);
+        assert_eq!(Language::detect("lib.c"), Language::C);
+        assert_eq!(Language::detect("app.cpp"), Language::Cpp);
+        assert_eq!(Language::detect("server.go"), Language::Go);
+        assert_eq!(Language::detect("script.py"), Language::Python);
+        assert_eq!(Language::detect("index.js"), Language::JavaScript);
+        assert_eq!(Language::detect("app.rb"), Language::Ruby);
+        assert_eq!(Language::detect("mix.ex"), Language::Elixir);
+        assert_eq!(Language::detect("gen_server.erl"), Language::Erlang);
+        assert_eq!(Language::detect("router.gleam"), Language::Gleam);
+        assert_eq!(Language::detect("README.md"), Language::Unknown);
+        assert_eq!(Language::detect("Makefile"), Language::Unknown);
+    }
+
+    #[test]
+    fn language_detect_typescript_maps_to_javascript() {
+        assert_eq!(Language::detect("component.ts"), Language::JavaScript);
+        assert_eq!(Language::detect("component.tsx"), Language::JavaScript);
+        assert_eq!(Language::detect("page.jsx"), Language::JavaScript);
+    }
+
+    // ---------------------------------------------------------------
+    // 2. Analyzer::new() with a valid temp directory
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyzer_new_valid_directory() {
+        let tmp = TempDir::new().unwrap();
+        // Create a Rust file so language detection succeeds
+        fs::write(tmp.path().join("main.rs"), "fn main() {}").unwrap();
+        let analyzer = Analyzer::new(tmp.path());
+        assert!(analyzer.is_ok(), "Analyzer::new should succeed on a valid directory with source files");
+    }
+
+    // ---------------------------------------------------------------
+    // 3. Analyzer::new() with a non-existent path
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyzer_new_nonexistent_path() {
+        let result = Analyzer::new(Path::new("/tmp/this_path_definitely_does_not_exist_29387"));
+        assert!(result.is_err(), "Analyzer::new should error on non-existent path");
+        let err_msg = result.err().expect("expected error").to_string();
+        assert!(
+            err_msg.contains("does not exist"),
+            "Error message should mention 'does not exist', got: {err_msg}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 4. analyze() on a Rust file containing `unsafe {}` — UnsafeCode
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_rust_detects_unsafe_code() {
+        let tmp = TempDir::new().unwrap();
+        let rust_file = tmp.path().join("danger.rs");
+        fs::write(
+            &rust_file,
+            r#"
+fn safe_wrapper() {
+    unsafe {
+        let ptr = std::ptr::null::<u8>();
+        *ptr;
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&rust_file).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let unsafe_points: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnsafeCode)
+            .collect();
+
+        assert!(
+            !unsafe_points.is_empty(),
+            "Should detect UnsafeCode weak point for file containing `unsafe {{}}`"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 5. analyze() on a Rust file containing `.unwrap()` — PanicPath
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_rust_detects_panic_path_from_unwrap() {
+        let tmp = TempDir::new().unwrap();
+        let rust_file = tmp.path().join("unwrappy.rs");
+        // The analyzer triggers PanicPath when unwrap_calls > 5,
+        // so we need at least 6 unwrap calls.
+        fs::write(
+            &rust_file,
+            r#"
+fn lots_of_unwraps() {
+    let a = Some(1).unwrap();
+    let b = Some(2).unwrap();
+    let c = Some(3).unwrap();
+    let d = Some(4).unwrap();
+    let e = Some(5).unwrap();
+    let f = Some(6).unwrap();
+    let g = Some(7).unwrap();
+}
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&rust_file).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let panic_points: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::PanicPath)
+            .collect();
+
+        assert!(
+            !panic_points.is_empty(),
+            "Should detect PanicPath weak point when >5 unwrap() calls are present"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 6. analyze() on a Python file with `eval(` — DynamicCodeExecution
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_python_detects_eval() {
+        let tmp = TempDir::new().unwrap();
+        let py_file = tmp.path().join("danger.py");
+        fs::write(
+            &py_file,
+            r#"
+user_input = input("Enter expression: ")
+result = eval(user_input)
+print(result)
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&py_file).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let dyn_exec_points: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::DynamicCodeExecution)
+            .collect();
+
+        assert!(
+            !dyn_exec_points.is_empty(),
+            "Should detect DynamicCodeExecution for Python eval() usage"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 7. analyze() on a Go file with `exec.Command(` — CommandInjection
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_go_detects_exec_command() {
+        let tmp = TempDir::new().unwrap();
+        let go_file = tmp.path().join("runner.go");
+        fs::write(
+            &go_file,
+            r#"
+package main
+
+import (
+    "os/exec"
+    "fmt"
+)
+
+func main() {
+    cmd := exec.Command("ls", "-la")
+    out, _ := cmd.Output()
+    fmt.Println(string(out))
+}
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&go_file).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let cmd_injection_points: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::CommandInjection)
+            .collect();
+
+        assert!(
+            !cmd_injection_points.is_empty(),
+            "Should detect CommandInjection for Go exec.Command usage"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 8. analyze() on an empty directory — empty results
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_empty_directory_produces_empty_results() {
+        let tmp = TempDir::new().unwrap();
+        // Create a single file so language detection doesn't fail,
+        // but put nothing dangerous in it.
+        fs::write(tmp.path().join("empty.rs"), "").unwrap();
+
+        let analyzer = Analyzer::new(tmp.path()).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        assert!(
+            report.weak_points.is_empty(),
+            "Empty source files should produce no weak points, got: {:?}",
+            report.weak_points,
+        );
+        assert_eq!(report.statistics.total_lines, 0);
+    }
+
+    // ---------------------------------------------------------------
+    // 9. analyze() should skip files in excluded directories
+    //    (walk_directory skips node_modules, target, .git, etc.)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_skips_excluded_directories() {
+        let tmp = TempDir::new().unwrap();
+
+        // Create a benign top-level file so language detection succeeds
+        fs::write(tmp.path().join("lib.rs"), "fn safe() {}").unwrap();
+
+        // Create a node_modules directory with a dangerous file inside.
+        // walk_directory should skip node_modules entirely.
+        let excluded_dir = tmp.path().join("node_modules");
+        fs::create_dir_all(&excluded_dir).unwrap();
+        fs::write(
+            excluded_dir.join("bad.rs"),
+            "fn bad() { unsafe { std::ptr::null::<u8>().read(); } }\n",
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(tmp.path()).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        // The dangerous file in node_modules should NOT produce weak points
+        let unsafe_in_excluded: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| {
+                wp.category == WeakPointCategory::UnsafeCode
+                    && wp
+                        .location
+                        .as_deref()
+                        .map_or(false, |loc| loc.contains("node_modules"))
+            })
+            .collect();
+
+        assert!(
+            unsafe_in_excluded.is_empty(),
+            "Files inside node_modules/ should be skipped during analysis"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 10. analyze() on a single file produces correct language field
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_single_file_reports_correct_language() {
+        let tmp = TempDir::new().unwrap();
+        let go_file = tmp.path().join("main.go");
+        fs::write(&go_file, "package main\nfunc main() {}\n").unwrap();
+
+        let analyzer = Analyzer::new(&go_file).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        assert_eq!(
+            report.language,
+            Language::Go,
+            "Report should identify Go as the language for a .go file"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // 11. Rust file with few unwraps should NOT trigger PanicPath
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_rust_few_unwraps_no_panic_path() {
+        let tmp = TempDir::new().unwrap();
+        let rust_file = tmp.path().join("safe.rs");
+        // Only 3 unwrap calls — threshold is >5
+        fs::write(
+            &rust_file,
+            r#"
+fn few_unwraps() {
+    let a = Some(1).unwrap();
+    let b = Some(2).unwrap();
+    let c = Some(3).unwrap();
+}
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&rust_file).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let panic_points: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::PanicPath)
+            .collect();
+
+        assert!(
+            panic_points.is_empty(),
+            "Should NOT trigger PanicPath when unwrap count is <= 5"
+        );
     }
 }
