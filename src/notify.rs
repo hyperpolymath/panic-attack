@@ -257,14 +257,14 @@ pub fn create_github_issues(
             }
             Ok(o) => {
                 let stderr = String::from_utf8_lossy(&o.stderr);
-                eprintln!(
-                    "Warning: failed to create issue for {}: {}",
+                log::warn!(
+                    "failed to create issue for {}: {}",
                     result.repo_name, stderr
                 );
             }
             Err(e) => {
-                eprintln!(
-                    "Warning: gh not available for {}: {}",
+                log::warn!(
+                    "gh not available for {}: {}",
                     result.repo_name, e
                 );
             }

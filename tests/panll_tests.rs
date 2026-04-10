@@ -68,6 +68,8 @@ fn test_panll_export_summary_reflects_report() {
         vec![WeakPoint {
             category: WeakPointCategory::UnsafeCode,
             location: Some("src/lib.rs".to_string()),
+            file: None,
+            line: None,
             severity: Severity::Critical,
             description: "unsafe block".to_string(),
             recommended_attack: vec![],
@@ -93,6 +95,8 @@ fn test_panll_export_constraints_from_critical_wp() {
             WeakPoint {
                 category: WeakPointCategory::UnsafeCode,
                 location: Some("src/danger.rs".to_string()),
+                file: None,
+                line: None,
                 severity: Severity::Critical,
                 description: "transmute usage".to_string(),
                 recommended_attack: vec![AttackAxis::Memory],
@@ -100,6 +104,8 @@ fn test_panll_export_constraints_from_critical_wp() {
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
                 location: Some("src/safe.rs".to_string()),
+                file: None,
+                line: None,
                 severity: Severity::Medium,
                 description: "unwrap call".to_string(),
                 recommended_attack: vec![],

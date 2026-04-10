@@ -77,7 +77,7 @@ impl RuleCatalog {
             match Self::from_file(path) {
                 Ok(catalog) => catalog,
                 Err(err) => {
-                    eprintln!("warning: failed to load rule catalog: {}", err);
+                    log::warn!("failed to load rule catalog: {}", err);
                     Self::new()
                 }
             }

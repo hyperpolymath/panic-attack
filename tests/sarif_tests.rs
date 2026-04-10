@@ -18,6 +18,8 @@ fn make_test_report() -> AssailReport {
                 severity: Severity::Critical,
                 description: "unsafe block found".to_string(),
                 location: Some("src/main.rs:10".to_string()),
+                file: None,
+                line: None,
                 recommended_attack: vec![AttackAxis::Memory],
             },
             WeakPoint {
@@ -25,6 +27,8 @@ fn make_test_report() -> AssailReport {
                 severity: Severity::Medium,
                 description: "unwrap on Option".to_string(),
                 location: Some("src/lib.rs:42".to_string()),
+                file: None,
+                line: None,
                 recommended_attack: vec![],
             },
         ],

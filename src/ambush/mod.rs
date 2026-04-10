@@ -42,7 +42,7 @@ pub fn execute(config: AttackConfig) -> Result<Vec<AttackResult>> {
 
     for program in &config.target_programs {
         for axis in &config.axes {
-            println!(
+            log::info!(
                 "Ambushing {:?} on axis {:?} (intensity: {:?}, duration: {:?})",
                 program, axis, config.intensity, config.duration
             );

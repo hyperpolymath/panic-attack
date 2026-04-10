@@ -2889,6 +2889,7 @@ dependencies = [
  "filetime",
  "getrandom 0.3.4",
  "hex",
+ "log",
  "proptest",
  "rayon",
  "regex",

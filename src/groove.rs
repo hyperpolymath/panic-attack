@@ -77,18 +77,18 @@ fn manifest(port: u16) -> String {
 pub fn run(port: u16) -> anyhow::Result<()> {
     let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
     let listener = TcpListener::bind(addr)?;
-    println!("[groove] panic-attacker groove endpoint listening on {}", addr);
-    println!("[groove] Probe: curl http://localhost:{}/.well-known/groove", port);
+    log::info!("[groove] panic-attack groove endpoint listening on {}", addr);
+    log::info!("[groove] Probe: curl http://localhost:{}/.well-known/groove", port);
 
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
                 if let Err(e) = handle_request(&mut stream, port) {
-                    eprintln!("[groove] Request error: {}", e);
+                    log::warn!("[groove] Request error: {}", e);
                 }
             }
             Err(e) => {
-                eprintln!("[groove] Accept error: {}", e);
+                log::error!("[groove] Accept error: {}", e);
             }
         }
     }
