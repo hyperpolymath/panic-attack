@@ -66,6 +66,65 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 * [ ] Upstream health monitoring (PipeWire, ReScript, UTF-8 tracking)
 * [ ] Multi-lockfile support (beyond Cargo.lock: package-lock.json, mix.lock, etc.)
 
+== v2.5.0 -- Attack Surface Widening
+
+The current weak-point categories cover generic resource-exhaustion patterns
+(Memory, CPU, Disk, Network, Concurrency) but miss the estate's distinctive
+risks.  This milestone adds five new detection categories.
+
+=== `crypto_misuse` — Cryptographic primitive misuse
+
+The estate uses SHA, Sodium, Ed25519, CBOR proofs, and hash-chain integrity
+throughout VerisimCore, Hypatia attestations, and the Patch Bridge.  Current
+coverage: none beyond `unsafe_blocks` (too blunt).
+
+* [ ] Detect weak-hash-for-security patterns (MD5/SHA1 in security contexts)
+* [ ] Detect constant-time comparison violations (using `==` on secret values)
+* [ ] Detect key-reuse patterns across contexts
+* [ ] Detect nonce reuse in symmetric encryption
+* [ ] Detect missing signature verification before use
+
+=== `proof_drift` — Formal verification drift
+
+The estate maintains Isabelle theories, Idris2 ABI definitions, and Lean4/Agda
+proofs alongside Julia/Rust mirrors.  Nothing currently checks that the mirrors
+stay in sync with their formal counterparts.
+
+* [ ] Detect `sorry` / `Admitted` / `believe_me` / `unsafeCoerce` / `Obj.magic` in formal files (`.thy`, `.idr`, `.lean`, `.agda`) — these are the estate's banned dangerous patterns
+* [ ] Detect `@assert` / `@test` standing in for a formally proven theorem in Julia mirror files
+* [ ] Flag Rust/Julia functions whose name matches an Isabelle definition but whose signature has drifted
+* [ ] Detect `# TODO: prove` / `-- sorry` comments in mirror implementations
+
+=== `input_boundary` — Structured-data parsing and deserialization
+
+Unvalidated deserialization paths at CBOR proof blobs, A2ML manifest parsing,
+VeriSimDB scan ingestion (DispatchBridge), and JSON from panic-attack itself.
+
+* [ ] Detect unchecked CBOR / MessagePack deserialization (`serde` without validation)
+* [ ] Detect A2ML parsing without `try`/`catch` boundary
+* [ ] Detect `JSON.parse` / `JSON3.read` calls not wrapped in error-handling
+* [ ] Track taint from external file reads to trust-sensitive sinks (store operations, proof evaluation)
+
+=== `supply_chain` — Dependency and build integrity
+
+SHA-pinned GitHub Actions are covered but not Julia `Manifest.toml` hash
+verification, Nix flake input pinning, or Cargo lock coherence checks.
+
+* [ ] Flag `Manifest.toml` present without `[deps]` hash entries (Julia)
+* [ ] Flag `flake.nix` inputs without locked `narHash` (Nix)
+* [ ] Flag `Cargo.toml` git dependencies without explicit `rev =`
+* [ ] Detect `Cargo.lock` absent when `Cargo.toml` has `[lib]` or `[[bin]]`
+* [ ] Flag unpinned `deno.json` import map entries (bare specifiers without version)
+
+=== `mutation` — Mutation and chaos coverage gaps
+
+Identified as an estate-wide gap in the 2026-04-05 KRL-stack CRG blitz audit.
+
+* [ ] Detect test suites with zero mutation-test configuration (no `cargo-mutants`, `mutagen`, etc.)
+* [ ] Flag `@testset` blocks with no assertion diversity (all `@test x isa Y` style, no value checks)
+* [ ] Detect Elixir test suites without `ExUnitProperties` or StreamData for property-based testing
+* [ ] Emit `mutation_gap` weak-point for any module with >80% line coverage but zero mutation score
+
 == v3.0.0 -- Distributed Scanning
 
 * [x] Assemblyline batch scanning with rayon parallelism
