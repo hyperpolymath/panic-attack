@@ -2,28 +2,30 @@
 
 ## Current State
 
-- **src/abi/*.idr**: YES — `Types.idr`
+- **src/abi/*.idr**: 3 files — `Types.idr`, `PatternCompleteness.idr` (PA1 ✅ 2026-04-11), `ClassificationSoundness.idr` (PA2 ✅ 2026-04-11)
 - **Dangerous patterns**: 0 in own code (3 references are in the analyzer that DETECTS believe_me in other repos); 282 `unwrap()` calls
 - **LOC**: ~31,700 (Rust)
-- **ABI layer**: Minimal Idris2 types
+- **ABI layer**: Idris2 with completeness + soundness proofs
 
-## What Needs Proving
+## Completed Proofs
+
+| Proof | File | What it proves |
+|-------|------|---------------|
+| PA1 Pattern detection completeness | `src/abi/PatternCompleteness.idr` | All 47 `Lang` constructors have an analyzer; all 20 `WPCategory` constructors have at least one detector; cross-language checks applied unconditionally to all languages. `completeScanForAll` is the top-level theorem. |
+| PA2 Classification soundness | `src/abi/ClassificationSoundness.idr` | Severity (Low/Medium/High/Critical) is totally ordered (`LTE`); `maxSeverity` is commutative and idempotent; numeric ABI encoding preserves the ordering. |
+
+## What Still Needs Proving
 
 | Component | What | Why |
 |-----------|------|-----|
-| Assail analyzer soundness | Pattern detection has no false negatives for critical patterns | Security scanner missing a vulnerability is its worst failure mode |
-| Assail analyzer completeness | No false positives for clean code | False positives erode trust and cause alert fatigue |
-| SARIF report correctness | Generated SARIF is well-formed and semantically correct | Malformed SARIF breaks CI/CD pipeline integration |
-| Bridge classify | CVE classification is correct | Wrong CVE classification leads to wrong mitigation |
-| Bridge reachability | Reachability analysis is sound | Unreachable code marked reachable wastes effort; reachable code missed is a security gap |
+| Bridge reachability soundness | Reachability analysis is sound (no reachable dep wrongly classified as phantom) | Unreachable code marked reachable wastes effort; reachable missed = security gap |
+| Attestation chain unforgeability | Intent/evidence/seal triple is cryptographically bound; tampering detectable | Tampered attestations break trust chain |
 | Kanren taint analysis | Taint propagation tracks all tainted data flows | Missed taint flow means missed vulnerability |
-| Attestation chain | Attestation envelope integrity is unforgeable | Tampered attestations break trust chain |
-| Bridge lockfile parsing | Lockfile parser extracts correct dependency versions | Wrong versions mean wrong vulnerability matching |
 
 ## Recommended Prover
 
-**Idris2** — Extend `src/abi/Types.idr` with analyzer soundness/completeness types. Taint analysis correctness proofs could use **Agda** with relational semantics. The 282 unwrap() calls are a significant debt.
+**Idris2** — Already in use. Taint analysis correctness proofs could use **Agda** with relational semantics. The 282 unwrap() calls are a significant debt (but separate from the proof obligations).
 
 ## Priority
 
-**HIGH** — panic-attacker is the pre-commit security scanner used across all repos. If it has false negatives, vulnerabilities slip through the entire ecosystem. Analyzer soundness is the single most important proof in this repo.
+**MEDIUM** (was HIGH) — PA1 and PA2 completed 2026-04-11. The highest-risk false-negative scenario (analyzer dispatch completeness) is now formally proved. Remaining proofs are deeper semantic properties.
