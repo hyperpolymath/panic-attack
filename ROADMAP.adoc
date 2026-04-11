@@ -35,7 +35,7 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 * [x] Forward chaining: derive new vulnerability facts from rules
 * [x] Backward queries: find files that could cause a vulnerability type
 * [ ] Context-facts for false-positive suppression (~10 rules, target ~8% -> ~2-3% FP rate)
-* [ ] Kanren fact export as Logtalk predicates for Hypatia pipeline
+* [ ] Context-facts for Hypatia Elixir rules: export FactDB snapshot as JSON for direct consumption by Hypatia rule engine (replaces removed Logtalk export; Hypatia now consumes JSON AssailReport via Elixir rules)
 
 == v2.2.0 -- VeriSimDB Integration
 

@@ -610,6 +610,7 @@ mod tests {
                 taint_matrix: TaintMatrix { rows: taint_rows },
                 recommended_attacks: vec![],
                 migration_metrics: None,
+            suppressed_count: 0,
             },
             attack_results,
             total_crashes: 0,
@@ -680,6 +681,7 @@ mod tests {
                     severity: Severity::Critical,
                     description: "unwrap on None".to_string(),
                     recommended_attack: vec![],
+                    suppressed: false,
                 },
                 WeakPoint {
                     category: WeakPointCategory::UnsafeCode,
@@ -689,6 +691,7 @@ mod tests {
                     severity: Severity::High,
                     description: "unsafe block".to_string(),
                     recommended_attack: vec![],
+                    suppressed: false,
                 },
             ],
             vec![],
@@ -726,6 +729,7 @@ mod tests {
                 severity: Severity::Critical,
                 description: "shell exec from user input".to_string(),
                 recommended_attack: vec![AttackAxis::Cpu],
+                    suppressed: false,
             }],
             // One failed attack -> generates constraint
             vec![AttackResult {

@@ -120,9 +120,6 @@ enum Commands {
         #[arg(long, value_name = "PATH")]
         signing_key: Option<PathBuf>,
 
-        /// Export kanren logic facts as Logtalk predicates for hypatia integration
-        #[arg(long, value_name = "PATH")]
-        logtalk: Option<PathBuf>,
     },
 
     /// Execute a single attack on a target program
@@ -1062,7 +1059,6 @@ fn run_main() -> Result<()> {
             verbose,
             attest,
             signing_key,
-            logtalk,
         } => {
             qprintln!(
                 cli.quiet,
@@ -1131,16 +1127,6 @@ fn run_main() -> Result<()> {
                 );
             }
 
-            // Export kanren facts as Logtalk predicates for hypatia
-            if let Some(logtalk_path) = &logtalk {
-                let db = assail::build_logic_db(&report);
-                kanren::write_logtalk_export(&db, logtalk_path)?;
-                qprintln!(
-                    cli.quiet,
-                    "Logtalk export written to: {}",
-                    logtalk_path.display()
-                );
-            }
         }
 
         Commands::Attack {

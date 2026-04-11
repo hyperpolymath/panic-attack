@@ -1040,6 +1040,7 @@ mod tests {
             dependency_graph: DependencyGraph::default(),
             taint_matrix: TaintMatrix::default(),
             migration_metrics: None,
+            suppressed_count: 0,
         }
     }
 
@@ -1057,6 +1058,7 @@ mod tests {
             severity: Severity::Medium,
             description: description.to_string(),
             recommended_attack: vec![],
+                    suppressed: false,
         }
     }
 

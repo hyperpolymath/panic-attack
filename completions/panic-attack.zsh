@@ -45,7 +45,6 @@ _arguments "${_arguments_options[@]}" : \
 '-o+[Output report to file]:OUTPUT:_files' \
 '--output=[Output report to file]:OUTPUT:_files' \
 '--signing-key=[Path to Ed25519 private key (32-byte seed) for signing the attestation. Requires the \`signing\` feature]:PATH:_files' \
-'--logtalk=[Export kanren logic facts as Logtalk predicates for hypatia integration]:PATH:_files' \
 '--report-view=[]:REPORT_VIEW:(summary accordion dashboard matrix)' \
 '--output-format=[]:OUTPUT_FORMAT:(json yaml nickel sarif)' \
 '--store=[]:DIR:_files' \

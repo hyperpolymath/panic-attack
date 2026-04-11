@@ -31,10 +31,26 @@ pub fn analyze_verbose<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     let analyzer = Analyzer::new_verbose(target.as_ref())?;
     let report = analyzer.analyze()?;
 
+    let active_count = report.weak_points.iter().filter(|wp| !wp.suppressed).count();
+    let suppressed_count = report.suppressed_count;
+
     println!("Assail Analysis Complete");
     println!("  Language: {:?}", report.language);
     println!("  Frameworks: {:?}", report.frameworks);
-    println!("  Weak Points: {}", report.weak_points.len());
+    // Filtered view: what CI/fleet sees (suppressed items excluded)
+    println!(
+        "  Weak Points (active): {} — these count toward CI gates and fleet dispatch",
+        active_count
+    );
+    // Unfiltered view: full scan for audit transparency
+    if suppressed_count > 0 {
+        println!(
+            "  Weak Points (total):  {} — {} additional suppressed by FP rules (suppressed = \
+             likely false positive from defensive pattern; see --show-suppressed for detail)",
+            report.weak_points.len(),
+            suppressed_count
+        );
+    }
     println!("  Recommended Attacks: {:?}", report.recommended_attacks);
 
     // Per-file breakdown sorted by risk score
@@ -73,11 +89,53 @@ pub fn analyze_verbose<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     Ok(report)
 }
 
+/// Apply context-aware FP suppression to an assail report in-place.
+///
+/// Runs the full kanren logic engine, collects every `suppressed(Category, Location)`
+/// fact derived by the 10 suppression rules, and marks the matching `WeakPoint`s
+/// with `suppressed = true`. Also writes the suppression count to
+/// `report.suppressed_count`.
+///
+/// The suppressed items remain in `weak_points` for auditability; callers
+/// (panicbot's translator, CI gates) should filter on `suppressed: false`.
+pub fn apply_suppression(report: &mut AssailReport) {
+    let db = build_logic_db(report);
+    let mut count = 0usize;
+
+    for fact in db.get_facts("suppressed") {
+        if fact.args.len() != 2 {
+            continue;
+        }
+        let category_str = match &fact.args[0] {
+            crate::kanren::core::Term::Atom(s) => s.clone(),
+            _ => continue,
+        };
+        let location_str = match &fact.args[1] {
+            crate::kanren::core::Term::Atom(s) => s.clone(),
+            _ => continue,
+        };
+
+        for wp in &mut report.weak_points {
+            if wp.suppressed {
+                continue;
+            }
+            let wp_cat = format!("{:?}", wp.category);
+            let wp_loc = wp.location.as_deref().unwrap_or("unknown");
+            if wp_cat == category_str && wp_loc == location_str {
+                wp.suppressed = true;
+                count += 1;
+                break;
+            }
+        }
+    }
+
+    report.suppressed_count = count;
+}
+
 /// Build a fully-populated kanren FactDB from an assail report.
 ///
 /// Ingest all facts (report, taint, cross-language, context) and run
 /// forward chaining including FP suppression rules.
-/// Returned DB can be used for Logtalk export or further queries.
 pub fn build_logic_db(report: &AssailReport) -> FactDB {
     let mut engine = LogicEngine::new();
     engine.ingest_report(report);

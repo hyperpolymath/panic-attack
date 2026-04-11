@@ -33,6 +33,6 @@ language-detection = "Skips external_corpora/, third_party/, and corpus/ directo
 [next-priorities]
 verisimdb-http = "Push hexads via REST (awaiting API stabilization)"
 kanren-fp-suppression = "~10 rules for false positive suppression (~8% -> ~2-3%)"
-hypatia-integration = "Export kanren facts as Logtalk predicates via PanLL"
+hypatia-integration = "JSON AssailReport consumed by Hypatia Elixir rules; Logtalk export removed 2026-04-12"
 shell-completions = "bash, zsh, fish, nushell"
 chapel-metalayer = "Distributed coforall scanning across compute clusters (future)"

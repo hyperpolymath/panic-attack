@@ -69,7 +69,7 @@ The README makes claims. This file backs them up.
 | Project | Integration |
 | **reposystem** | Feeds weak-point scores into graph aspects (security weight)
 | **proof-of-work** | Z3-verifies that assail findings are genuine vulnerabilities
-| **hypatia** | Consumes assail facts as Logtalk predicates for rule engine
+| **hypatia** | Consumes JSON AssailReport via Elixir rules for neurosymbolic reasoning
 | **januskey** | Scans operation metadata for unsafe patterns in audit trail code
 
 == Readiness

@@ -21,6 +21,7 @@ fn make_test_report() -> AssailReport {
                 file: None,
                 line: None,
                 recommended_attack: vec![AttackAxis::Memory],
+                    suppressed: false,
             },
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
@@ -30,6 +31,7 @@ fn make_test_report() -> AssailReport {
                 file: None,
                 line: None,
                 recommended_attack: vec![],
+                    suppressed: false,
             },
         ],
         statistics: ProgramStatistics::default(),
@@ -38,6 +40,7 @@ fn make_test_report() -> AssailReport {
         dependency_graph: Default::default(),
         taint_matrix: Default::default(),
         migration_metrics: None,
+            suppressed_count: 0,
     }
 }
 
@@ -146,6 +149,7 @@ fn test_sarif_empty_report() {
         dependency_graph: Default::default(),
         taint_matrix: Default::default(),
         migration_metrics: None,
+            suppressed_count: 0,
     };
 
     let json = sarif::to_sarif_json(&report).expect("SARIF conversion should succeed");

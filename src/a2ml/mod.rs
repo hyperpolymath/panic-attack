@@ -832,6 +832,7 @@ mod tests {
                 severity: Severity::Medium,
                 description: "unchecked result".to_string(),
                 recommended_attack: vec![AttackAxis::Concurrency],
+                    suppressed: false,
             }],
             statistics: ProgramStatistics {
                 total_lines: 42,
@@ -856,6 +857,7 @@ mod tests {
             dependency_graph: DependencyGraph::default(),
             taint_matrix: TaintMatrix::default(),
             migration_metrics: None,
+            suppressed_count: 0,
         }
     }
 

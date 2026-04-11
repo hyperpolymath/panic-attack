@@ -168,7 +168,7 @@ Three self-contained modes — none requires the others:
 
 1. **verisimdb HTTP API integration**: Push hexads via REST (awaiting API stabilisation)
 2. **kanren context-facts**: ~10 rules for FP suppression (~8% -> ~2-3%)
-3. **hypatia pipeline**: Export kanren facts as Logtalk predicates via PanLL
+3. **hypatia pipeline**: JSON AssailReport consumed by Hypatia Elixir rules (Logtalk export removed 2026-04-12)
 4. **Shell completions**: bash, zsh, fish, nushell
 5. **Chapel metalayer**: Distributed `coforall` scanning across compute clusters
 

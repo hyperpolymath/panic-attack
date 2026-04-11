@@ -21,6 +21,7 @@ fn make_assail_report() -> AssailReport {
                 severity: Severity::Critical,
                 description: "2 unsafe blocks in src/main.rs".to_string(),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
+                    suppressed: false,
             },
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
@@ -30,6 +31,7 @@ fn make_assail_report() -> AssailReport {
                 severity: Severity::Medium,
                 description: "5 unwrap/expect calls in src/lib.rs".to_string(),
                 recommended_attack: vec![AttackAxis::Memory],
+                    suppressed: false,
             },
         ],
         statistics: ProgramStatistics {
@@ -46,6 +48,7 @@ fn make_assail_report() -> AssailReport {
         taint_matrix: TaintMatrix { rows: vec![] },
         recommended_attacks: vec![AttackAxis::Memory, AttackAxis::Concurrency],
         migration_metrics: None,
+            suppressed_count: 0,
     }
 }
 
@@ -141,6 +144,7 @@ fn test_robustness_score_clamped_to_zero() {
             severity: Severity::Critical,
             description: format!("critical issue {}", i),
             recommended_attack: vec![],
+                    suppressed: false,
         });
     }
     let results = vec![make_attack_result(AttackAxis::Memory, false, 5)];

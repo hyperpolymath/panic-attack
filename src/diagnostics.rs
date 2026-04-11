@@ -211,6 +211,7 @@ fn check_panicbot_readiness() -> Diagnostic {
             severity: crate::types::Severity::High,
             description: "test".to_string(),
             recommended_attack: vec![],
+                    suppressed: false,
         }],
         statistics: crate::types::ProgramStatistics::default(),
         file_statistics: vec![],
@@ -218,6 +219,7 @@ fn check_panicbot_readiness() -> Diagnostic {
         dependency_graph: Default::default(),
         taint_matrix: Default::default(),
         migration_metrics: None,
+            suppressed_count: 0,
     };
 
     let json_ok = match serde_json::to_value(&test_report) {

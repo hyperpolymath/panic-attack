@@ -306,6 +306,7 @@ mod tests {
             dependency_graph: Default::default(),
             taint_matrix: Default::default(),
             migration_metrics: None,
+            suppressed_count: 0,
         };
 
         // Small, single-language, no high risk: should be DepthFirst
@@ -340,6 +341,7 @@ mod tests {
             dependency_graph: Default::default(),
             taint_matrix: Default::default(),
             migration_metrics: None,
+            suppressed_count: 0,
         };
 
         let ordered = prioritise_files(&report, SearchStrategy::RiskWeighted);

@@ -40,7 +40,6 @@ module completions {
     --verbose(-v)             # Verbose output
     --attest                  # Enable attestation chain (writes .attestation.json sidecar)
     --signing-key: path       # Path to Ed25519 private key (32-byte seed) for signing the attestation. Requires the `signing` feature
-    --logtalk: path           # Export kanren logic facts as Logtalk predicates for hypatia integration
     --report-view: string@"nu-complete panic-attack assail report_view"
     --expand-sections
     --output-format: string@"nu-complete panic-attack assail output_format"

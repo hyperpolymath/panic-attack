@@ -35,6 +35,7 @@ fn make_assault_report(
             taint_matrix: TaintMatrix { rows: vec![] },
             recommended_attacks: vec![],
             migration_metrics: None,
+            suppressed_count: 0,
         },
         attack_results,
         total_crashes: 0,
@@ -73,6 +74,7 @@ fn test_panll_export_summary_reflects_report() {
             severity: Severity::Critical,
             description: "unsafe block".to_string(),
             recommended_attack: vec![],
+                    suppressed: false,
         }],
         vec![],
     );
@@ -100,6 +102,7 @@ fn test_panll_export_constraints_from_critical_wp() {
                 severity: Severity::Critical,
                 description: "transmute usage".to_string(),
                 recommended_attack: vec![AttackAxis::Memory],
+                    suppressed: false,
             },
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
@@ -109,6 +112,7 @@ fn test_panll_export_constraints_from_critical_wp() {
                 severity: Severity::Medium,
                 description: "unwrap call".to_string(),
                 recommended_attack: vec![],
+                    suppressed: false,
             },
         ],
         vec![],

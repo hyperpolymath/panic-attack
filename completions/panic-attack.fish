@@ -72,7 +72,6 @@ complete -c panic-attack -n "__fish_panic_attack_needs_command" -f -a "temporal"
 complete -c panic-attack -n "__fish_panic_attack_needs_command" -f -a "completions" -d 'Generate shell completions for the specified shell'
 complete -c panic-attack -n "__fish_panic_attack_using_subcommand assail" -s o -l output -d 'Output report to file' -r -F
 complete -c panic-attack -n "__fish_panic_attack_using_subcommand assail" -l signing-key -d 'Path to Ed25519 private key (32-byte seed) for signing the attestation. Requires the `signing` feature' -r -F
-complete -c panic-attack -n "__fish_panic_attack_using_subcommand assail" -l logtalk -d 'Export kanren logic facts as Logtalk predicates for hypatia integration' -r -F
 complete -c panic-attack -n "__fish_panic_attack_using_subcommand assail" -l report-view -r -f -a "summary\t''
 accordion\t''
 dashboard\t''

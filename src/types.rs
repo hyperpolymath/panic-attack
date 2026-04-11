@@ -289,6 +289,16 @@ pub struct WeakPoint {
     pub severity: Severity,
     pub description: String,
     pub recommended_attack: Vec<AttackAxis>,
+    /// Set to true when context-aware FP suppression rules determine this
+    /// finding is likely a false positive. Suppressed findings are retained
+    /// in the report for audit purposes but excluded from fleet/CI counts.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub suppressed: bool,
+}
+
+/// Helper for `skip_serializing_if` — avoids serializing default false values.
+fn is_false(b: &bool) -> bool {
+    !b
 }
 
 impl WeakPoint {
@@ -407,6 +417,14 @@ pub struct AssailReport {
     /// Migration-specific metrics (populated when target is ReScript)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub migration_metrics: Option<MigrationMetrics>,
+    /// Number of weak points suppressed by context-aware FP rules.
+    /// These are still present in `weak_points` with `suppressed: true`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub suppressed_count: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

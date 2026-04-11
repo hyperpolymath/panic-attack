@@ -205,6 +205,7 @@ fn assail_report_serializes_to_json() {
         dependency_graph: Default::default(),
         taint_matrix: Default::default(),
         migration_metrics: None,
+            suppressed_count: 0,
     };
 
     let json = serde_json::to_string(&report).unwrap();
