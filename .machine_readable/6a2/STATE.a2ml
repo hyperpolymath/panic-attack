@@ -51,6 +51,11 @@ v25-complete = "All 5 v2.5.0 detection categories done: crypto_misuse, proof_dri
 shell-completions = "bash, zsh, fish, nushell, powershell — clap_complete + clap_complete_nushell, generated files in completions/"
 delta-reporting = "diff subcommand — only reports changes since last scan, src/report/diff.rs"
 
+[session-close-2026-04-12]
+action = "Verified shell completions + delta reporting both shipped; advanced STATE to v2.5.0; removed stale next-priority entries"
+commit = "4624e53"
+blocker = "none"
+
 [next-priorities]
 verisimdb-http = "Push hexads via REST (awaiting API stabilization)"
 interactive-tui = "Review findings in terminal (v2.3.0)"
