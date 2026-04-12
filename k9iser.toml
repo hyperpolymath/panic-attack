@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: PMPL-1.0-or-later
 #
 # panic-attacker: universal static analysis and bug signature detection tool
-# for 47 languages. Safety-tier "hunt" because this is a security tool whose
+# for 49 languages. Safety-tier "hunt" because this is a security tool whose
 # own configuration must be above reproach.
 
 [project]

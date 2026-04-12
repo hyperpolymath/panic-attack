@@ -144,10 +144,10 @@ crossLangAlwaysApplied : (lang : Lang) -> CrossLangChecked lang
 crossLangAlwaysApplied _ = MkCrossLangChecked
 
 -- ═══════════════════════════════════════════════════════════════════════
--- WeakPointCategory enumeration (mirrors src/types.rs, 20 categories)
+-- WeakPointCategory enumeration (mirrors src/types.rs, 23 categories)
 -- ═══════════════════════════════════════════════════════════════════════
 
-||| All 21 weak point categories detectable by the scanner.
+||| All 23 weak point categories detectable by the scanner.
 public export
 data WPCategory
   = UncheckedAllocation
@@ -174,6 +174,15 @@ data WPCategory
   ||| substituting assertions for proofs. Detected in .idr, .lean, .agda,
   ||| .thy, .v, and Julia mirror files.
   | ProofDrift
+  ||| Cryptographic primitive misuse: weak hash (MD5/SHA-1) in security
+  ||| context, constant-time comparison violation (== on secret values),
+  ||| key/nonce reuse. Detected in Rust, Python, JavaScript, Go, Elixir.
+  | CryptoMisuse
+  ||| Supply chain integrity: unpinned deps, absent lock files, unverified
+  ||| manifests. Cargo git deps without rev=, absent Cargo.lock, Julia
+  ||| Manifest.toml without hash entries, flake.nix without narHash,
+  ||| deno.json unpinned specifiers. Detected in Rust, Julia, Nix, JavaScript.
+  | SupplyChain
 
 ||| Witness that a detection rule exists for a weak point category.
 ||| Each variant names the language(s) whose analyzer detects it.
@@ -183,7 +192,7 @@ data HasDetector : WPCategory -> Type where
   DetectedBy : (langs : List Lang) -> HasDetector cat
 
 ||| Every weak point category has at least one detector.
-||| Total: Idris2 verifies all 21 constructors are covered.
+||| Total: Idris2 verifies all 23 constructors are covered.
 ||| The list of detecting languages mirrors the actual pattern
 ||| matching code in analyzer.rs.
 public export
@@ -209,6 +218,8 @@ detectorsFor UncheckedError       = DetectedBy [Go, Rust, C, Cpp]
 detectorsFor InfiniteRecursion    = DetectedBy [Haskell, PureScript, Scheme, Racket]
 detectorsFor UnsafeTypeCoercion   = DetectedBy [OCaml, Haskell, DLang, Nim]
 detectorsFor ProofDrift           = DetectedBy [Idris, Lean, Agda, Isabelle, Coq, Julia]
+detectorsFor CryptoMisuse         = DetectedBy [Rust, Python, JavaScript, Go, Elixir]
+detectorsFor SupplyChain          = DetectedBy [Rust, Julia, Nix, JavaScript]
 
 ||| Proof: every weak point category has at least one detector.
 public export

@@ -47,7 +47,7 @@ fn manifest(port: u16) -> String {
   "capabilities": {{
     "static_analysis": {{
       "type": "static-analysis",
-      "description": "Universal static analysis and logic-based bug signature detection for 47 languages",
+      "description": "Universal static analysis and logic-based bug signature detection for 49 languages",
       "protocol": "http",
       "endpoint": "/api/v1/scan",
       "requires_auth": false,

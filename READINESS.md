@@ -63,7 +63,7 @@
   9. OCaml (affinescript compiler) — functional language
   10. Haskell (a2ml-haskell) — pure functional
 - Issues fed back: framework detection false positives reported and documented
-- All 47 language analyzers validated against at least one real-world repo
+- All 49 language analyzers validated against at least one real-world repo
 
 **Known limitations:**
 - Framework detection has false positives (reports Phoenix/Ecto/OTP on pure Rust)

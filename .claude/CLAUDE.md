@@ -89,7 +89,7 @@ cp target/release/panic-attack ~/.asdf/installs/rust/nightly/bin/
 ## Key Design Decisions
 
 - **49 language analyzers**: Rust, C/C++, Go, Python, JavaScript, Ruby, Elixir, Erlang, Gleam, ReScript, OCaml, SML, Scheme, Racket, Haskell, PureScript, Idris, Lean, Agda, Isabelle, Coq, Prolog, Logtalk, Datalog, Zig, Ada, Odin, Nim, Pony, D, Nickel, Nix, Shell, Julia, Lua, + 12 nextgen DSLs
-- **21 weak point categories**: UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, AtomExhaustion, UnsafeFFI, PathTraversal, HardcodedSecret, ProofDrift, etc.
+- **23 weak point categories**: UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, AtomExhaustion, UnsafeFFI, PathTraversal, HardcodedSecret, ProofDrift, CryptoMisuse, SupplyChain, etc.
 - **Per-file language detection**: Each file analyzed with its own language-specific patterns. Skips `external_corpora/`, `third_party/`, and `corpus/` directories
 - **miniKanren logic engine**: Relational reasoning for taint analysis, cross-language vulnerability chains, and search strategy optimisation
 - **Latin-1 fallback**: Non-UTF-8 files handled gracefully
@@ -161,7 +161,7 @@ Phase 2 adds VeriSimDB hexad persistence and auto-retire on upstream fix.
 Three self-contained modes — none requires the others:
 
 1. **Standalone** (USB/laptop/air-gapped): Single binary, zero deps, `assail`/`assault` individual targets
-2. **Panicbot** (gitbot-fleet/CI): Automated JSON scanning, PA001–PA020 codes, bot directives
+2. **Panicbot** (gitbot-fleet/CI): Automated JSON scanning, PA001–PA021 codes, bot directives
 3. **Mass-panic** (assemblyline + verisimdb + Chapel): Org-scale batch scanning with incremental BLAKE3, hexad persistence, delta reporting, notifications. Chapel (planned) for distributed multi-machine orchestration.
 
 ## Planned Features (Next Priorities)
@@ -174,7 +174,7 @@ Three self-contained modes — none requires the others:
 
 ## Integration Points
 
-- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA020). Directives at `.machine_readable/bot_directives/panicbot.scm`
+- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA021). Directives at `.machine_readable/bot_directives/panicbot.scm`
 - **verisimdb**: Store scan results as hexads (document + semantic modalities). File I/O works, API planned
 - **hypatia**: Neurosymbolic rule engine processes findings. Env var watcher in diagnostics
 - **panll**: Event-chain export for three-panel visualisation. Working via `panll` subcommand. Two dedicated panels: panic-attack (single-repo) and Mass Panic (assemblyline batch GUI)

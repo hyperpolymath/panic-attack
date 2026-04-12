@@ -43,7 +43,7 @@ The README makes claims. This file backs them up.
 
 | `src/main.rs` | CLI entry: 20 subcommands (assail, assault, temporal, panll, groove, bridge, etc.)
 | `src/lib.rs` | Library API exposing all analysis engines
-| `src/assail/` | Static analysis (49 languages, 21 weak point categories)
+| `src/assail/` | Static analysis (49 languages, 23 weak point categories)
 | `src/assail/analyzer.rs` | Per-file language detection and pattern matching dispatcher
 | `src/assail/patterns.rs` | Language-specific regex patterns for weak points
 | `src/kanren/` | Logic engine (unification, fact database, taint, cross-lang)
@@ -74,4 +74,4 @@ The README makes claims. This file backs them up.
 
 == Readiness
 
-**CRG Grade:** C (Beta) - 47 languages working, miniKanren logic proven, CVE bridge tested on real Cargo.lock files, needs advanced proof integration for false-negative elimination.
+**CRG Grade:** C (Beta) - 49 languages working, miniKanren logic proven, CVE bridge tested on real Cargo.lock files, needs advanced proof integration for false-negative elimination.

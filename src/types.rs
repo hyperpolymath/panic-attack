@@ -354,6 +354,18 @@ pub enum WeakPointCategory {
     /// `Admitted`, `believe_me`, `assert_total`, `oops`, `trustMe`,
     /// `Obj.magic`) or mirror files substituting assertions for proofs.
     ProofDrift,
+    /// Cryptographic primitive misuse: weak hash algorithm in security context
+    /// (MD5/SHA1 for passwords/tokens/auth), constant-time comparison violation
+    /// (`==` on secret/password/token/key values — timing attack), key reuse
+    /// across contexts, nonce reuse in symmetric encryption, or missing
+    /// signature verification before consuming a value.
+    CryptoMisuse,
+    /// Supply chain integrity: unpinned or unverified dependencies and absent
+    /// lock files. Covers `Cargo.toml` git deps without `rev =`, absent
+    /// `Cargo.lock` for library/binary crates, Julia `Manifest.toml` without
+    /// `git-tree-sha1` hash entries, `flake.nix` inputs without `narHash`,
+    /// and `deno.json` import map entries without a pinned version.
+    SupplyChain,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

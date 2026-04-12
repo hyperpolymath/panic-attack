@@ -4,14 +4,14 @@
 
 [metadata]
 project = "panic-attacker"
-version = "2.1.0"
-last-updated = "2026-04-04"
+version = "2.2.0"
+last-updated = "2026-04-12"
 status = "active"
 
 [project-context]
 name = "panic-attacker"
-completion-percentage = 95
-phase = "CRG C (Beta) — Comprehensive testing complete"
+completion-percentage = 97
+phase = "CRG C (Beta) — v2.5.0 detection categories in progress"
 
 [testing-completion-2026-04-04]
 description = "CRG C blitz completed: unit + smoke + build + P2P + E2E + reflexive + contract + aspect + benchmarks"
@@ -21,8 +21,7 @@ e2e-tests = "12 passing (full-pipeline tests in tests/e2e_tests.rs, including se
 aspect-tests = "18 passing (error handling, performance scaling, security evasion in tests/aspect_tests.rs)"
 integration-tests = "3 passing (tests/integration.rs)"
 benchmarks = "7 criterion benchmarks (benches/scan_bench.rs with baselines)"
-total-tests = "202+ tests, all passing"
-fake-fuzz-removed = "tests/fuzz/placeholder.txt deleted (was scorecard residue, not real fuzz)"
+total-tests = "282+ tests, all passing"
 compiler-warnings = "0 in release builds"
 
 [fixes-2026-03-23]
@@ -30,9 +29,20 @@ a2ml-parser = "Now handles TOML-like format in addition to S-expression format"
 manifest-lookup = "Tries 0-AI-MANIFEST.a2ml first, then falls back to AI.a2ml"
 language-detection = "Skips external_corpora/, third_party/, and corpus/ directories during scanning"
 
+[session-2026-04-12]
+logtalk-removed = "Logtalk export removed; Hypatia now consumes JSON AssailReport via Elixir rules"
+fp-suppression = "WeakPoint.suppressed field wired; apply_suppression() runs kanren engine on every scan; panicbot filters suppressed items"
+languages = "49 languages (added Isabelle/HOL .thy and Coq/Rocq .v with dedicated analyzers)"
+categories = "23 weak point categories (added ProofDrift PA021, CryptoMisuse PA022, SupplyChain PA023)"
+proof-drift = "ProofDrift: sorry/oops/Admitted/trustMe/believe_me/assert_total/%partial across Isabelle/Coq/Lean/Agda/Idris2; Julia mirror patterns"
+crypto-misuse = "CryptoMisuse: MD5/SHA-1 in security context (Rust/Python/JS/Go/Elixir); timing-unsafe == on secret variables"
+supply-chain = "SupplyChain: Cargo.toml git-deps without rev=, absent Cargo.lock, Julia Manifest.toml without hashes, flake.nix without narHash, unpinned deno.json"
+panicbot-wired = "PA021/PA022/PA023 wired in gitbot-fleet/bots/panicbot/src/translator.rs"
+idris2-abi = "PatternCompleteness.idr updated: 49 languages, 23 categories, all proven total"
+
 [next-priorities]
 verisimdb-http = "Push hexads via REST (awaiting API stabilization)"
-kanren-fp-suppression = "~10 rules for false positive suppression (~8% -> ~2-3%)"
-hypatia-integration = "JSON AssailReport consumed by Hypatia Elixir rules; Logtalk export removed 2026-04-12"
 shell-completions = "bash, zsh, fish, nushell"
+input-boundary = "v2.5.0: unchecked CBOR/JSON/A2ML deserialization"
+mutation = "v2.5.0: mutation test coverage gaps"
 chapel-metalayer = "Distributed coforall scanning across compute clusters (future)"

@@ -147,9 +147,9 @@ panic-attacker/
 ├── src/
 │   ├── main.rs              # CLI entry point (clap) — 20 subcommands
 │   ├── lib.rs               # Library API
-│   ├── types.rs             # Core types (47 languages, 20 categories)
+│   ├── types.rs             # Core types (49 languages, 23 categories)
 │   ├── assail/              # Static analysis engine
-│   │   ├── analyzer.rs      # 47-language analyzer with per-file detection
+│   │   ├── analyzer.rs      # 49-language analyzer with per-file detection
 │   │   └── patterns.rs      # Language-specific attack patterns
 │   ├── kanren/              # miniKanren-inspired logic engine
 │   │   ├── core.rs          # Unification, substitution, fact DB

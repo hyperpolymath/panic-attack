@@ -18,7 +18,7 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 
 **Key capabilities today:**
 
-* 49-language analyzer with per-file detection and 21 weak-point categories
+* 49-language analyzer with per-file detection and 23 weak-point categories
 * miniKanren v2.0.0 logic engine (taint analysis, cross-language reasoning, search strategies)
 * Patch Bridge CVE lifecycle engine (OSV API, reachability scan, phantom dependency detection)
 * Cryptographic attestation chain (intent/evidence/seal)
@@ -113,11 +113,11 @@ VeriSimDB scan ingestion (DispatchBridge), and JSON from panic-attack itself.
 SHA-pinned GitHub Actions are covered but not Julia `Manifest.toml` hash
 verification, Nix flake input pinning, or Cargo lock coherence checks.
 
-* [ ] Flag `Manifest.toml` present without `[deps]` hash entries (Julia)
-* [ ] Flag `flake.nix` inputs without locked `narHash` (Nix)
-* [ ] Flag `Cargo.toml` git dependencies without explicit `rev =`
-* [ ] Detect `Cargo.lock` absent when `Cargo.toml` has `[lib]` or `[[bin]]`
-* [ ] Flag unpinned `deno.json` import map entries (bare specifiers without version)
+* [x] Flag `Manifest.toml` present without `[deps]` hash entries (Julia)
+* [x] Flag `flake.nix` inputs without locked `narHash` (Nix)
+* [x] Flag `Cargo.toml` git dependencies without explicit `rev =`
+* [x] Detect `Cargo.lock` absent when `Cargo.toml` has `[lib]` or `[[bin]]`
+* [x] Flag unpinned `deno.json` import map entries (bare specifiers without version)
 
 === `mutation` — Mutation and chaos coverage gaps
 
@@ -139,7 +139,7 @@ Identified as an estate-wide gap in the 2026-04-05 KRL-stack CRG blitz audit.
 
 == v3.1.0 -- Ecosystem Integration
 
-* [x] Panicbot integration (gitbot-fleet, PA001-PA020 codes)
+* [x] Panicbot integration (gitbot-fleet, PA001-PA021 codes)
 * [x] Hypatia diagnostics self-check
 * [x] PanLL event-chain export (two dedicated panels)
 * [x] Cryptographic attestation chain with optional Ed25519 signing

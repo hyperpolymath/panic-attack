@@ -21,7 +21,7 @@
                                ▼          ▼          ▼
               ┌─────────────────┐  ┌────────────┐  ┌──────────────────────┐
               │ ANALYSIS LAYER  │  │ ATTACK     │  │ INFRASTRUCTURE       │
-              │ - Assail (47L)  │  │ LAYER      │  │ - Assemblyline       │
+              │ - Assail (49L)  │  │ LAYER      │  │ - Assemblyline       │
               │ - kanren Logic  │  │ - 6-Axis   │  │ - Notify Pipeline    │
               │ - Taint/XLang   │  │ - Ambush   │  │ - Attestation Chain  │
               │ - Signatures    │  │ - Amuck    │  │ - i18n (10 langs)    │
@@ -32,7 +32,7 @@
                                 ▼                              ▼
               ┌─────────────────────────────────┐  ┌──────────────────────┐
               │       TARGET PROGRAM            │  │ FLEET INTEGRATION    │
-              │  (47 languages supported)       │  │ - Panicbot (PA001+) │
+              │  (49 languages supported)       │  │ - Panicbot (PA001+) │
               └─────────────────────────────────┘  │ - Hypatia / PanLL   │
                                                    │ - Diagnostics       │
               ┌─────────────────────────────────┐  └──────────────────────┘
@@ -55,7 +55,7 @@
 COMPONENT                          STATUS              NOTES
 ─────────────────────────────────  ──────────────────  ─────────────────────────────────
 CORE CAPABILITIES
-  Assail Static Analysis            ██████████ 100%    47 languages, 20 categories
+  Assail Static Analysis            ██████████ 100%    49 languages, 23 categories
   Multi-Axis Stress Testing         ██████████ 100%    6 axes (CPU, Mem, Disk, etc)
   miniKanren Logic Engine           ██████████ 100%    Taint, cross-lang, strategies
   Ambush / Amuck / Abduct           ██████████ 100%    Advanced workflows stable
@@ -82,7 +82,7 @@ BATCH & PIPELINE
   i18n Support (10 languages)       ██████████ 100%    ISO 639-1, compile-time safe
 
 INTEGRATION
-  Panicbot (gitbot-fleet)           ██████████ 100%    PA001–PA020, JSON contract
+  Panicbot (gitbot-fleet)           ██████████ 100%    PA001–PA021, JSON contract
   Diagnostics (self-check)          ██████████ 100%    Version, fleet, attestation
   VerisimDB Storage                 ██████░░░░  60%    File I/O works, API planned
   Hypatia Pipeline                  ████░░░░░░  40%    Env var watcher, no kanren export
@@ -90,20 +90,20 @@ INTEGRATION
 REPO INFRASTRUCTURE
   Justfile Automation               ██████████ 100%    build/test/readiness/lint/install
   .machine_readable/                ██████████ 100%    STATE/ECOSYSTEM/META + directives
-  Test Suite                        ██████████ 100%    196 tests, 0 failures
+  Test Suite                        ██████████ 100%    282 tests, 0 failures
   Readiness Tests (CRG)             ██████████ 100%    18 tests: D(4) C(10) B(4)
 
 ─────────────────────────────────────────────────────────────────────────────
-OVERALL:                            █████████░  ~97%   v2.1.0 Stable
+OVERALL:                            █████████░  ~97%   v2.2.0 Stable
 ```
 
 ## Key Dependencies
 
 ```
-Assail (47L) ───► kanren Logic ───► Taint/XLang ───► Weak Points
+Assail (49L) ───► kanren Logic ───► Taint/XLang ───► Weak Points
      │                │                                    │
      ▼                ▼                                    ▼
-Assemblyline ──► Notify Pipeline ──► GitHub Issues    Panicbot (PA001–PA020)
+Assemblyline ──► Notify Pipeline ──► GitHub Issues    Panicbot (PA001–PA021)
      │                │                                    │
      ▼                ▼                                    ▼
 BLAKE3 Cache ──► VerisimDB Store ──► PanLL Export     Fleet FindingSet

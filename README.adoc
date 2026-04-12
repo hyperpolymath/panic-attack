@@ -8,7 +8,7 @@
 image:https://img.shields.io/badge/status-active-green[Status]
 image:https://img.shields.io/badge/domain-security--analysis-blue[Domain]
 image:https://img.shields.io/badge/tests-196%20passing-brightgreen[Tests]
-image:https://img.shields.io/badge/languages-47-blue[Languages]
+image:https://img.shields.io/badge/languages-49-blue[Languages]
 
 **panic-attack** is a multi-language security analysis and stress-testing system.
 
@@ -65,8 +65,8 @@ panic-attack exists to address this by combining:
 
 panic-attack provides:
 
-* **47-language static analysis** across multiple families
-* **Weak point detection** (20 categories)
+* **49-language static analysis** across multiple families
+* **Weak point detection** (23 categories)
 * **Attack simulation (6 axes)**: CPU, memory, disk, network, concurrency, time
 * **miniKanren logic engine** for taint analysis and cross-language reasoning
 * **Signature detection** (use-after-free, deadlock, etc.)
@@ -187,7 +187,7 @@ Current state: **v2.1.0**
 * 196 tests
 * 0 warnings
 * 22 CLI subcommands
-* 47 supported languages
+* 49 supported languages
 
 See link:ROADMAP.md[ROADMAP.md] for full capability breakdown and milestones.
 

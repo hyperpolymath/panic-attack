@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.2.0] - 2026-04-12
+
+### Added
+- **SupplyChain category (PA023)**: New weak point category detecting dependency and build
+  integrity gaps: `Cargo.toml` git dependencies without `rev =`, absent `Cargo.lock` for
+  library/binary crates, Julia `Manifest.toml` without `git-tree-sha1` hash entries,
+  `flake.nix` inputs without `narHash`, and `deno.json` import map entries without a version
+  pin. Project-level manifest checks run as a synthesis stage after file analysis.
+  Confidence 0.85 — these are explicit manifest/config patterns with low false-positive rate.
+- **PA023 → panicbot**: SupplyChain mapped to fleet category `static-analysis/supply-chain`
+  with 0.85 confidence, Eliminate tier, fixable (adding pins resolves the finding).
+- **Idris2 ABI completeness**: `PatternCompleteness.idr` updated — SupplyChain added to
+  `WPCategory` with `detectorsFor` covering Rust, Julia, Nix, JavaScript.
+- **CryptoMisuse wiring completed**: CryptoMisuse (PA022) now fully wired into
+  `readiness.rs` expected categories and `translator.rs` category mapping.
+
+### Changed
+- **Category count**: 22 → 23 (added SupplyChain)
+
 ## [2.1.0] - 2026-04-12
 
 ### Added

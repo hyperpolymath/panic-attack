@@ -558,6 +558,9 @@ impl Analyzer {
             }
         }
 
+        // Project-level supply-chain integrity checks (manifest/lockfile checks).
+        self.analyze_supply_chain_manifests(&mut all_weak_points)?;
+
         // Secondary synthesis stages derive framework hints and relational overlays.
         let frameworks = self.detect_frameworks(&files)?;
         let recommended_attacks = self.generate_recommendations(&all_weak_points, &global_stats);
@@ -1049,6 +1052,88 @@ impl Analyzer {
             });
         }
 
+        // Strip line comments before crypto checks so `// md5::compute` in
+        // a comment doesn't trigger a false positive.
+        let code_only: String = content
+            .lines()
+            .map(|l| {
+                if let Some(idx) = l.find("//") {
+                    &l[..idx]
+                } else {
+                    l
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // MD5 in security context — broken hash, collision-vulnerable
+        for pattern in &["md5::compute", "Md5::new"] {
+            if let Some(pos) = code_only.find(pattern) {
+                if has_security_context(&code_only, pos) {
+                    weak_points.push(WeakPoint {
+                        file: None,
+                        line: None,
+                        category: WeakPointCategory::CryptoMisuse,
+                        location: Some(file_path.to_string()),
+                        severity: Severity::High,
+                        description: format!(
+                            "MD5 used in security context in {} — use SHA-256 or stronger",
+                            file_path
+                        ),
+                        recommended_attack: vec![AttackAxis::Network],
+                        suppressed: false,
+                    });
+                    break;
+                }
+            }
+        }
+
+        // SHA-1 in security context — broken for collision resistance
+        for pattern in &["sha1::Sha1", "Sha1::new"] {
+            if let Some(pos) = code_only.find(pattern) {
+                if has_security_context(&code_only, pos) {
+                    weak_points.push(WeakPoint {
+                        file: None,
+                        line: None,
+                        category: WeakPointCategory::CryptoMisuse,
+                        location: Some(file_path.to_string()),
+                        severity: Severity::High,
+                        description: format!(
+                            "SHA-1 used in security context in {} — use SHA-256 or stronger",
+                            file_path
+                        ),
+                        recommended_attack: vec![AttackAxis::Network],
+                        suppressed: false,
+                    });
+                    break;
+                }
+            }
+        }
+
+        // Constant-time comparison violation: == on secret/password/token/key
+        // variables is a timing side-channel — use a constant-time equality function.
+        for secret_var in &["secret", "password", "token", "key"] {
+            // Look for patterns like `secret ==` or `== secret` (with word boundary intent)
+            let pattern_lhs = format!("{} ==", secret_var);
+            let pattern_rhs = format!("== {}", secret_var);
+            if code_only.contains(&pattern_lhs) || code_only.contains(&pattern_rhs) {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::CryptoMisuse,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::Critical,
+                    description: format!(
+                        "Timing-unsafe == comparison on '{}'-named variable in {} — use constant-time comparison",
+                        secret_var, file_path
+                    ),
+                    recommended_attack: vec![AttackAxis::Network, AttackAxis::Time],
+                    suppressed: false,
+                });
+                break;
+            }
+        }
+
         Ok(())
     }
 
@@ -1103,6 +1188,49 @@ impl Analyzer {
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                     suppressed: false,
             });
+        }
+
+        // MD5/SHA-1 in security context — Go crypto/md5 and crypto/sha1
+        for pattern in &["md5.New()", "md5.Sum("] {
+            if let Some(pos) = content.find(pattern) {
+                if has_security_context(content, pos) {
+                    weak_points.push(WeakPoint {
+                        file: None,
+                        line: None,
+                        category: WeakPointCategory::CryptoMisuse,
+                        location: Some(file_path.to_string()),
+                        severity: Severity::High,
+                        description: format!(
+                            "MD5 used in security context in {} — use sha256 or stronger",
+                            file_path
+                        ),
+                        recommended_attack: vec![AttackAxis::Network],
+                        suppressed: false,
+                    });
+                    break;
+                }
+            }
+        }
+
+        for pattern in &["sha1.New()", "sha1.Sum("] {
+            if let Some(pos) = content.find(pattern) {
+                if has_security_context(content, pos) {
+                    weak_points.push(WeakPoint {
+                        file: None,
+                        line: None,
+                        category: WeakPointCategory::CryptoMisuse,
+                        location: Some(file_path.to_string()),
+                        severity: Severity::High,
+                        description: format!(
+                            "SHA-1 used in security context in {} — use sha256 or stronger",
+                            file_path
+                        ),
+                        recommended_attack: vec![AttackAxis::Network],
+                        suppressed: false,
+                    });
+                    break;
+                }
+            }
         }
 
         Ok(())
@@ -1185,6 +1313,71 @@ impl Analyzer {
                     recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                     suppressed: false,
                 });
+            }
+        }
+
+        // hashlib.md5 / hashlib.sha1 in security context
+        for pattern in &["hashlib.md5(", "hashlib.new('md5'", "hashlib.new(\"md5\""] {
+            if let Some(pos) = content.find(pattern) {
+                if has_security_context(content, pos) {
+                    weak_points.push(WeakPoint {
+                        file: None,
+                        line: None,
+                        category: WeakPointCategory::CryptoMisuse,
+                        location: Some(file_path.to_string()),
+                        severity: Severity::High,
+                        description: format!(
+                            "MD5 used in security context in {} — use hashlib.sha256 or stronger",
+                            file_path
+                        ),
+                        recommended_attack: vec![AttackAxis::Network],
+                        suppressed: false,
+                    });
+                    break;
+                }
+            }
+        }
+
+        for pattern in &["hashlib.sha1(", "hashlib.new('sha1'", "hashlib.new(\"sha1\""] {
+            if let Some(pos) = content.find(pattern) {
+                if has_security_context(content, pos) {
+                    weak_points.push(WeakPoint {
+                        file: None,
+                        line: None,
+                        category: WeakPointCategory::CryptoMisuse,
+                        location: Some(file_path.to_string()),
+                        severity: Severity::High,
+                        description: format!(
+                            "SHA-1 used in security context in {} — use hashlib.sha256 or stronger",
+                            file_path
+                        ),
+                        recommended_attack: vec![AttackAxis::Network],
+                        suppressed: false,
+                    });
+                    break;
+                }
+            }
+        }
+
+        // == comparison on secret/password/token variables — timing side-channel
+        for secret_var in &["secret", "password", "token", "key"] {
+            let pattern_lhs = format!("{} ==", secret_var);
+            let pattern_rhs = format!("== {}", secret_var);
+            if content.contains(&pattern_lhs) || content.contains(&pattern_rhs) {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::CryptoMisuse,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::Critical,
+                    description: format!(
+                        "Timing-unsafe == comparison on '{}'-named variable in {} — use hmac.compare_digest()",
+                        secret_var, file_path
+                    ),
+                    recommended_attack: vec![AttackAxis::Network, AttackAxis::Time],
+                    suppressed: false,
+                });
+                break;
             }
         }
 
@@ -1271,6 +1464,39 @@ impl Analyzer {
                 description: format!("{} JSON.parseExn calls in {}", parse_exn_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                     suppressed: false,
+            });
+        }
+
+        // crypto.createHash('md5') / crypto.createHash('sha1') — weak hash algorithms
+        if content.contains("createHash('md5')") || content.contains("createHash(\"md5\")") {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    "crypto.createHash('md5') in {} — use 'sha256' or stronger",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
+            });
+        }
+
+        if content.contains("createHash('sha1')") || content.contains("createHash(\"sha1\")") {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    "crypto.createHash('sha1') in {} — use 'sha256' or stronger",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
             });
         }
 
@@ -1420,6 +1646,41 @@ impl Analyzer {
                 description: format!("Dynamic apply/3 in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu],
                     suppressed: false,
+            });
+        }
+
+        // :crypto.hash(:md5, ...) / :crypto.hash(:sha, ...) — weak hash algorithms.
+        // Note: :crypto.mac(:hmac, :sha, ...) is acceptable (HMAC-SHA1 is not broken).
+        if content.contains(":crypto.hash(:md5,") || content.contains(":crypto.hash(:md5 ,") {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    ":crypto.hash(:md5, ...) in {} — use :sha256 or stronger",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
+            });
+        }
+
+        // :crypto.hash(:sha, ...) — SHA-1 (not to be confused with :sha256/:sha512)
+        if content.contains(":crypto.hash(:sha,") || content.contains(":crypto.hash(:sha ,") {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    ":crypto.hash(:sha, ...) (SHA-1) in {} — use :sha256 or stronger",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
             });
         }
 
@@ -2822,6 +3083,30 @@ impl Analyzer {
     ) -> Result<()> {
         // Nix-specific
         if file_path.ends_with(".nix") {
+            // supply chain: flake.nix inputs without narHash
+            // A flake.nix that declares inputs but omits narHash on any input
+            // pulls an unpinned revision on each evaluation.
+            if file_path.ends_with("flake.nix")
+                && content.contains("inputs")
+                && content.contains("url")
+                && !content.contains("narHash")
+            {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::SupplyChain,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::High,
+                    description: format!(
+                        "flake.nix declares inputs without narHash — \
+                         dependency revision is unpinned in {}",
+                        file_path
+                    ),
+                    recommended_attack: vec![],
+                    suppressed: false,
+                });
+            }
+
             // builtins.exec (arbitrary command execution)
             if content.contains("builtins.exec") {
                 weak_points.push(WeakPoint {
@@ -3225,6 +3510,136 @@ impl Analyzer {
     }
 
     // ============================================================
+    // ============================================================
+    // Supply chain integrity (project-level manifest/lockfile checks)
+    // ============================================================
+
+    /// Check project-level manifest and lock files for supply chain integrity gaps.
+    ///
+    /// Operates on the project root (self.target or its parent) rather than on
+    /// individual source files, because the relevant artefacts (Cargo.toml,
+    /// Cargo.lock, Julia Manifest.toml, deno.json) are not source files in the
+    /// language-detection sense.
+    fn analyze_supply_chain_manifests(
+        &self,
+        weak_points: &mut Vec<WeakPoint>,
+    ) -> Result<()> {
+        let project_root = if self.target.is_dir() {
+            self.target.clone()
+        } else {
+            self.target
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .to_path_buf()
+        };
+
+        // ── Cargo.toml: git deps without explicit rev= ────────────────────
+        let cargo_toml_path = project_root.join("Cargo.toml");
+        if let Ok(content) = fs::read_to_string(&cargo_toml_path) {
+            let git_dep_count = content.matches("git = \"").count()
+                + content.matches("git=\"").count();
+            let rev_count = content.matches("rev = \"").count()
+                + content.matches("rev=\"").count();
+            if git_dep_count > 0 && rev_count < git_dep_count {
+                let unpinned = git_dep_count - rev_count;
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::SupplyChain,
+                    location: Some("Cargo.toml".to_string()),
+                    severity: Severity::High,
+                    description: format!(
+                        "{} git dependency/ies in Cargo.toml without explicit `rev =` — \
+                         build is not reproducible",
+                        unpinned
+                    ),
+                    recommended_attack: vec![],
+                    suppressed: false,
+                });
+            }
+
+            // ── Cargo.lock absent when Cargo.toml declares [lib] or [[bin]] ───
+            let has_lib = content.contains("[lib]");
+            let has_bin = content.contains("[[bin]]");
+            if (has_lib || has_bin) && !project_root.join("Cargo.lock").exists() {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::SupplyChain,
+                    location: Some("Cargo.toml".to_string()),
+                    severity: Severity::High,
+                    description: "Cargo.lock is absent — dependency versions are not locked \
+                                  for a library/binary crate"
+                        .to_string(),
+                    recommended_attack: vec![],
+                    suppressed: false,
+                });
+            }
+        }
+
+        // ── Julia Manifest.toml: missing git-tree-sha1 hash entries ──────────
+        let manifest_toml_path = project_root.join("Manifest.toml");
+        if let Ok(content) = fs::read_to_string(&manifest_toml_path) {
+            // A valid v2 Manifest.toml has `git-tree-sha1` for each pinned dep.
+            // If [[deps.*]] sections are present but no git-tree-sha1 appears,
+            // the manifest is not providing cryptographic pinning.
+            let has_deps_section =
+                content.contains("[[deps.") || content.contains("[deps]");
+            let has_hash = content.contains("git-tree-sha1");
+            if has_deps_section && !has_hash {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::SupplyChain,
+                    location: Some("Manifest.toml".to_string()),
+                    severity: Severity::Medium,
+                    description: "Julia Manifest.toml has dependency entries but no \
+                                  `git-tree-sha1` hash fields — package versions are not \
+                                  cryptographically pinned"
+                        .to_string(),
+                    recommended_attack: vec![],
+                    suppressed: false,
+                });
+            }
+        }
+
+        // ── deno.json: unpinned import map entries ────────────────────────────
+        let deno_json_path = project_root.join("deno.json");
+        if let Ok(content) = fs::read_to_string(&deno_json_path) {
+            // Count import values in the "imports" section that lack a version pin.
+            // Pinned deno.land specifiers contain '@' (e.g. std@0.177.0).
+            // Pinned npm specifiers contain '@' after 'npm:' (e.g. npm:express@4).
+            // We scan lines that look like import map values.
+            let unpinned_count = content
+                .lines()
+                .filter(|line| {
+                    let t = line.trim();
+                    // Line is a JSON string value that references a package URL
+                    (t.contains("\"https://") || t.contains("\"npm:"))
+                        && !t.contains('@')
+                })
+                .count();
+            if unpinned_count > 0 {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::SupplyChain,
+                    location: Some("deno.json".to_string()),
+                    severity: Severity::Medium,
+                    description: format!(
+                        "{} import map entry/ies in deno.json without a version pin — \
+                         specifiers are not reproducibly resolved",
+                        unpinned_count
+                    ),
+                    recommended_attack: vec![],
+                    suppressed: false,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     // Generic fallback
     // ============================================================
 
@@ -3649,6 +4064,26 @@ fn count_line_pattern(content: &str, pattern: &str) -> usize {
         .lines()
         .filter(|l| l.trim_start().starts_with(pattern))
         .count()
+}
+
+/// Returns true if the ±200 character window around `pos` contains security
+/// vocabulary, indicating that a weak cryptographic primitive (MD5, SHA1) is
+/// being used in a security-sensitive context rather than for benign purposes
+/// such as file checksums or cache keys.
+fn has_security_context(content: &str, pos: usize) -> bool {
+    let lo = pos.saturating_sub(200);
+    let hi = (pos + 200).min(content.len());
+    let window = &content[lo..hi];
+    window.contains("password")
+        || window.contains("secret")
+        || window.contains("token")
+        || window.contains("auth")
+        || window.contains("key")
+        || window.contains("credential")
+        || window.contains("hash")
+        || window.contains("sign")
+        || window.contains("verify")
+        || window.contains("encrypt")
 }
 
 #[cfg(test)]

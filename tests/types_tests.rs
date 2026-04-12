@@ -6,7 +6,7 @@
 
 use panic_attack::types::*;
 
-// ─── Language Detection (47 languages) ────────────────────────────────────
+// ─── Language Detection (49 languages) ────────────────────────────────────
 
 #[test]
 fn language_detect_rust() {

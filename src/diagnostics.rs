@@ -239,7 +239,7 @@ fn check_panicbot_readiness() -> Diagnostic {
     match (has_directives, json_ok) {
         (true, true) => Diagnostic::ok(
             "panicbot integration",
-            "directives present, JSON contract verified (PA001–PA020)".to_string(),
+            "directives present, JSON contract verified (PA001–PA021)".to_string(),
         ),
         (false, true) => Diagnostic::warning(
             "panicbot integration",
