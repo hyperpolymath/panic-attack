@@ -6,7 +6,7 @@
 
 = panic-attack Roadmap
 
-_Static analysis and bug signature detection across 47 languages, used in 500+ repos._
+_Static analysis and bug signature detection across 49 languages, used in 500+ repos._
 
 toc::[]
 
@@ -18,7 +18,7 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 
 **Key capabilities today:**
 
-* 47-language analyzer with per-file detection and 20 weak-point categories
+* 49-language analyzer with per-file detection and 21 weak-point categories
 * miniKanren v2.0.0 logic engine (taint analysis, cross-language reasoning, search strategies)
 * Patch Bridge CVE lifecycle engine (OSV API, reachability scan, phantom dependency detection)
 * Cryptographic attestation chain (intent/evidence/seal)
@@ -34,8 +34,9 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 * [x] Search strategy: risk-weighted file prioritisation
 * [x] Forward chaining: derive new vulnerability facts from rules
 * [x] Backward queries: find files that could cause a vulnerability type
-* [ ] Context-facts for false-positive suppression (~10 rules, target ~8% -> ~2-3% FP rate)
-* [ ] Context-facts for Hypatia Elixir rules: export FactDB snapshot as JSON for direct consumption by Hypatia rule engine (replaces removed Logtalk export; Hypatia now consumes JSON AssailReport via Elixir rules)
+* [x] Context-facts for false-positive suppression (10 rules active, ~8% -> ~2-3% FP target; heuristics intentionally broad — tune v2.1.1)
+* [x] Hypatia integration: JSON AssailReport consumed by Elixir rules directly (Logtalk export removed 2026-04-12)
+* [x] Isabelle + Coq language support (49 languages total; `.thy` → Isabelle, `.v` → Coq)
 
 == v2.2.0 -- VeriSimDB Integration
 
@@ -90,10 +91,12 @@ The estate maintains Isabelle theories, Idris2 ABI definitions, and Lean4/Agda
 proofs alongside Julia/Rust mirrors.  Nothing currently checks that the mirrors
 stay in sync with their formal counterparts.
 
-* [ ] Detect `sorry` / `Admitted` / `believe_me` / `unsafeCoerce` / `Obj.magic` in formal files (`.thy`, `.idr`, `.lean`, `.agda`) — these are the estate's banned dangerous patterns
-* [ ] Detect `@assert` / `@test` standing in for a formally proven theorem in Julia mirror files
+* [x] Detect `sorry` / `Admitted` / `believe_me` / `oops` / `trustMe` in formal files (`.thy`, `.idr`, `.lean`, `.agda`, `.v`) — banned proof escape hatches (PA021)
+* [x] Detect `assert_total` / `%partial` in Idris2, `{-# TERMINATING #-}` / `postulate` in Agda, `axiomatization` in Isabelle, `Axiom`/`Parameter` in Coq — totality/axiom bypasses
+* [x] Detect `@test x isa Y` (no value check) standing in for a formally proven theorem in Julia mirror files
+* [x] Detect `# sorry` / `# TODO: prove` / `# admitted` comments in Julia mirror implementations
 * [ ] Flag Rust/Julia functions whose name matches an Isabelle definition but whose signature has drifted
-* [ ] Detect `# TODO: prove` / `-- sorry` comments in mirror implementations
+* [ ] Detect `Obj.magic` in Coq-extracted OCaml (upstream axiom bypass in extracted artifacts)
 
 === `input_boundary` — Structured-data parsing and deserialization
 

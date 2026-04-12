@@ -134,6 +134,7 @@ fn rule_id(category: &WeakPointCategory) -> &'static str {
         WeakPointCategory::UncheckedError => "PA018",
         WeakPointCategory::InfiniteRecursion => "PA019",
         WeakPointCategory::UnsafeTypeCoercion => "PA020",
+        WeakPointCategory::ProofDrift => "PA021",
     }
 }
 
@@ -160,6 +161,7 @@ fn rule_name(category: &WeakPointCategory) -> &'static str {
         WeakPointCategory::UncheckedError => "unchecked-error",
         WeakPointCategory::InfiniteRecursion => "infinite-recursion",
         WeakPointCategory::UnsafeTypeCoercion => "unsafe-type-coercion",
+        WeakPointCategory::ProofDrift => "proof-drift",
     }
 }
 

@@ -422,6 +422,17 @@ impl Analyzer {
                 Language::Agda => {
                     self.analyze_agda(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
+                Language::Isabelle => {
+                    self.analyze_isabelle(
+                        &content,
+                        &mut file_stats,
+                        &mut file_weak_points,
+                        &rel_path,
+                    )?;
+                }
+                Language::Coq => {
+                    self.analyze_coq(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
+                }
                 // Logic programming
                 Language::Prolog | Language::Logtalk | Language::Datalog => {
                     self.analyze_logic(
@@ -2080,22 +2091,60 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
-        // believe_me bypasses the type checker
+        // believe_me — bypasses the type checker (banned estate-wide)
         let believe_count = content.matches("believe_me").count();
         if believe_count > 0 {
             stats.unsafe_blocks += believe_count;
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
-                category: WeakPointCategory::UnsafeCode,
+                category: WeakPointCategory::ProofDrift,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
                 description: format!(
-                    "{} believe_me (type checker bypass) in {}",
+                    "{} believe_me (banned proof escape hatch — type checker bypass) in {}",
                     believe_count, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
+            });
+        }
+
+        // assert_total — silences totality checker without proof
+        let assert_total_count = content.matches("assert_total").count();
+        if assert_total_count > 0 {
+            stats.unsafe_blocks += assert_total_count;
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    "{} assert_total (banned — silence totality without proof) in {}",
+                    assert_total_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Memory],
+                suppressed: false,
+            });
+        }
+
+        // %partial — marks function as intentionally partial (totality bypass)
+        let partial_count = content.matches("%partial").count();
+        if partial_count > 0 {
+            stats.unsafe_blocks += partial_count;
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Medium,
+                description: format!(
+                    "{} %partial pragma (totality bypass) in {}",
+                    partial_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Memory],
+                suppressed: false,
             });
         }
 
@@ -2109,7 +2158,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("unsafePerformIO in {}", file_path),
                 recommended_attack: vec![AttackAxis::Concurrency],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2127,26 +2176,46 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
-        // sorry - admits unproven propositions
+        // sorry — banned proof escape hatch: admits unproven propositions
         let sorry_count = content.matches("sorry").count();
         if sorry_count > 0 {
             stats.unsafe_blocks += sorry_count;
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
-                category: WeakPointCategory::UnsafeCode,
+                category: WeakPointCategory::ProofDrift,
                 location: Some(file_path.to_string()),
-                severity: Severity::High,
+                severity: Severity::Critical,
                 description: format!(
-                    "{} sorry (unproven proposition) in {}",
+                    "{} sorry (banned proof escape hatch — admits unproven proposition) in {}",
                     sorry_count, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
-        // native_decide - can crash at runtime
+        // unsafeNativeIO — bypasses IO monad discipline
+        let unsafe_io_count = content.matches("unsafeNativeIO").count()
+            + content.matches("unsafeBaseIO").count();
+        if unsafe_io_count > 0 {
+            stats.unsafe_blocks += unsafe_io_count;
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    "{} unsafeNativeIO/unsafeBaseIO (IO discipline bypass) in {}",
+                    unsafe_io_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Concurrency],
+                suppressed: false,
+            });
+        }
+
+        // native_decide — can crash at runtime on large decidability checks
         if content.contains("native_decide") {
             weak_points.push(WeakPoint {
                 file: None,
@@ -2156,11 +2225,11 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("native_decide in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
-        // unsafe operations
+        // unsafeCast / implementedBy — unsafe type coercions
         if content.contains("unsafeCast") || content.contains("implementedBy") {
             weak_points.push(WeakPoint {
                 file: None,
@@ -2168,9 +2237,9 @@ impl Analyzer {
                 category: WeakPointCategory::UnsafeTypeCoercion,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
-                description: format!("Unsafe cast/implementedBy in {}", file_path),
+                description: format!("unsafeCast/implementedBy in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2184,18 +2253,62 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
-        // trustMe bypasses proof obligations
-        if content.contains("trustMe") || content.contains("primTrustMe") {
-            stats.unsafe_blocks += 1;
+        // trustMe / primTrustMe — banned proof escape hatches
+        let trustme_count = content.matches("trustMe").count()
+            + content.matches("primTrustMe").count();
+        if trustme_count > 0 {
+            stats.unsafe_blocks += trustme_count;
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
-                category: WeakPointCategory::UnsafeCode,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "{} trustMe/primTrustMe (banned proof escape hatch) in {}",
+                    trustme_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // {-# TERMINATING #-} / {-# NON_TERMINATING #-} — suppress termination checker
+        let termination_count = content.matches("{-# TERMINATING").count()
+            + content.matches("{-# NON_TERMINATING").count();
+        if termination_count > 0 {
+            stats.unsafe_blocks += termination_count;
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
-                description: format!("trustMe/primTrustMe (proof bypass) in {}", file_path),
+                description: format!(
+                    "{} TERMINATING/NON_TERMINATING pragma (termination checker bypass) in {}",
+                    termination_count, file_path
+                ),
                 recommended_attack: vec![AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
+            });
+        }
+
+        // Bare postulate blocks — unproven axioms that may not hold
+        let postulate_count = content.matches("\npostulate").count()
+            + content.matches("\n  postulate").count();
+        if postulate_count > 0 {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Medium,
+                description: format!(
+                    "{} postulate block(s) (unproven axiom — verify these hold) in {}",
+                    postulate_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
             });
         }
 
@@ -2203,6 +2316,163 @@ impl Analyzer {
         let compiled_count =
             content.matches("{-# COMPILED").count() + content.matches("{-# FOREIGN").count();
         stats.unsafe_blocks += compiled_count;
+
+        Ok(())
+    }
+
+    // ============================================================
+    // Proof assistants: Isabelle/HOL and Coq/Rocq
+    // ============================================================
+
+    fn analyze_isabelle(
+        &self,
+        content: &str,
+        stats: &mut ProgramStatistics,
+        weak_points: &mut Vec<WeakPoint>,
+        file_path: &str,
+    ) -> Result<()> {
+        // sorry — Isabelle's admitted-proof escape hatch (banned estate-wide)
+        let sorry_count = content.matches("sorry").count();
+        if sorry_count > 0 {
+            stats.unsafe_blocks += sorry_count;
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "{} sorry (banned — unfinished Isabelle proof admitted without verification) in {}",
+                    sorry_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // oops — abandons an unfinished proof without even admitting it
+        let oops_count = content.matches("oops").count();
+        if oops_count > 0 {
+            stats.unsafe_blocks += oops_count;
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    "{} oops (Isabelle proof abandoned mid-attempt) in {}",
+                    oops_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // axiomatization — introduces unverified axioms
+        let axiom_count = content.matches("axiomatization").count();
+        if axiom_count > 0 {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Medium,
+                description: format!(
+                    "{} axiomatization block(s) (unverified axiom — confirm soundness) in {}",
+                    axiom_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn analyze_coq(
+        &self,
+        content: &str,
+        stats: &mut ProgramStatistics,
+        weak_points: &mut Vec<WeakPoint>,
+        file_path: &str,
+    ) -> Result<()> {
+        // Admitted — closes an unfinished Coq proof as axiom (banned estate-wide)
+        let admitted_count = content.matches("Admitted").count();
+        if admitted_count > 0 {
+            stats.unsafe_blocks += admitted_count;
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "{} Admitted (banned — unfinished Coq proof accepted as axiom) in {}",
+                    admitted_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // admit tactic — same effect as Admitted mid-proof
+        let admit_count = content.matches("admit.").count()
+            + content.matches("admit ").count()
+            + content.matches("admit\n").count();
+        if admit_count > 0 {
+            stats.unsafe_blocks += admit_count;
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "{} admit tactic (proof placeholder — same effect as Admitted) in {}",
+                    admit_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // Axiom / Parameter without justification — unverified postulates
+        let axiom_count = content.matches("\nAxiom ").count()
+            + content.matches("\nParameter ").count();
+        if axiom_count > 0 {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Medium,
+                description: format!(
+                    "{} Axiom/Parameter declaration(s) (unverified postulate) in {}",
+                    axiom_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // native_cast_and_print / Obj.magic in extracted code — type safety bypass
+        if content.contains("Obj.magic") {
+            stats.unsafe_blocks += content.matches("Obj.magic").count();
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    "Obj.magic in Coq extraction artifact (type safety bypass) in {}",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Memory],
+                suppressed: false,
+            });
+        }
 
         Ok(())
     }
@@ -2701,6 +2971,56 @@ impl Analyzer {
                 description: format!("eval/Meta.parse in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                     suppressed: false,
+            });
+        }
+
+        // Proof-substitute comments — marker comments standing in for formal proofs
+        // (mirrors the estate's convention: Julia files mirror Isabelle/Idris2 definitions)
+        let proof_sub_count = count_line_pattern(content, "# sorry")
+            + count_line_pattern(content, "# TODO: prove")
+            + count_line_pattern(content, "# admitted")
+            + count_line_pattern(content, "# ADMITTED")
+            + count_line_pattern(content, "# TODO prove");
+        if proof_sub_count > 0 {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!(
+                    "{} proof-substitute comment(s) (`# sorry`/`# TODO: prove`/`# admitted`) \
+                     — mirror implementation lacks formal proof in {}",
+                    proof_sub_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // @test x isa Y patterns — type-identity assertions substituting for proven theorems
+        // Count @test lines that only contain `isa` (no value comparison)
+        let isa_only_count = content
+            .lines()
+            .filter(|l| {
+                let t = l.trim();
+                t.starts_with("@test ") && t.contains(" isa ") && !t.contains("==") && !t.contains("≈")
+            })
+            .count();
+        if isa_only_count > 0 {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::ProofDrift,
+                location: Some(file_path.to_string()),
+                severity: Severity::Medium,
+                description: format!(
+                    "{} `@test x isa Y` assertion(s) with no value check — \
+                     type-only tests may substitute for an unwritten formal theorem in {}",
+                    isa_only_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
             });
         }
 
@@ -3318,6 +3638,17 @@ impl Analyzer {
             Severity::Critical => 5.0,
         }
     }
+}
+
+/// Count occurrences of `pattern` that appear at the start of a trimmed line.
+///
+/// Used for comment-style proof-substitute detection (e.g. `# sorry`) where
+/// substring matching would produce false positives on larger identifiers.
+fn count_line_pattern(content: &str, pattern: &str) -> usize {
+    content
+        .lines()
+        .filter(|l| l.trim_start().starts_with(pattern))
+        .count()
 }
 
 #[cfg(test)]

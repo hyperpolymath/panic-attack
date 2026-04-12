@@ -1,5 +1,42 @@
 # Changelog
 
+## [2.1.0] - 2026-04-12
+
+### Added
+- **ProofDrift category (PA021)**: New weak point category detecting formal verification drift
+  across all proof assistant languages. Catches banned proof escape hatches (`sorry`, `Admitted`,
+  `believe_me`, `oops`, `trustMe`, `assert_total`, `%partial`, `{-# TERMINATING #-}`) and
+  Julia mirror files substituting `@test x isa Y` or `# sorry` comments for formal proofs.
+  Confidence 0.92 — proof escape hatches have essentially no false positives in their file types.
+- **Isabelle/HOL language support**: `.thy` files parsed with `analyze_isabelle()` detecting
+  `sorry`, `oops`, and `axiomatization` as ProofDrift findings.
+- **Coq/Rocq language support**: `.v` files parsed with `analyze_coq()` detecting `Admitted`,
+  `admit` tactic, `Axiom`/`Parameter` declarations, and `Obj.magic` in extraction artifacts.
+- **Isabelle + Coq dispatch**: Both new languages wired into `analyze_inner()` dispatch.
+- **Lean4 ProofDrift upgrade**: `sorry` upgraded from UnsafeCode → ProofDrift (Critical).
+  Added `unsafeNativeIO`/`unsafeBaseIO` as ProofDrift (IO discipline bypass).
+- **Agda ProofDrift upgrade**: `trustMe`/`primTrustMe` upgraded to ProofDrift (Critical).
+  Added `{-# TERMINATING #-}`, `{-# NON_TERMINATING #-}`, bare `postulate` as ProofDrift.
+- **Idris2 ProofDrift upgrade**: `believe_me` already ProofDrift; added `assert_total` (High)
+  and `%partial` (Medium) as ProofDrift findings.
+- **Julia mirror detection**: `# sorry`, `# TODO: prove`, `# admitted` comments and
+  `@test x isa Y` patterns (no value check) flagged as ProofDrift in Julia files.
+- **FP suppression wiring**: `apply_suppression()` now runs on every scan, marking
+  weak points `suppressed: true` when logic engine finds defensive-pattern context.
+  Suppressed items stay in report for audit transparency; filtered by panicbot and CI gates.
+- **PA021 → panicbot**: ProofDrift mapped to fleet category `static-analysis/proof-drift`
+  with 0.92 confidence and Control tier.
+- **Idris2 ABI completeness**: `PatternCompleteness.idr` updated — Isabelle, Coq added to
+  `Lang` enum; ProofDrift added to `WPCategory` with `detectorsFor` covering all new languages.
+- **Hypatia integration**: JSON AssailReport consumed by Hypatia Elixir rules. Logtalk
+  export removed 2026-04-12.
+
+### Changed
+- **Language count**: 47 → 49 (added Isabelle, Coq)
+- **Category count**: 20 → 21 (added ProofDrift)
+- **Verbose output**: Two views — filtered (active, what CI sees) and unfiltered (total,
+  audit transparency) with explicit labelling of what each count means.
+
 ## [2.0.0+] - 2026-03-23
 
 ### Fixed

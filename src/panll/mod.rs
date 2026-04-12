@@ -322,6 +322,7 @@ fn category_label(cat: WeakPointCategory) -> &'static str {
         WeakPointCategory::UncheckedError => "unchecked-error",
         WeakPointCategory::InfiniteRecursion => "infinite-recursion",
         WeakPointCategory::UnsafeTypeCoercion => "unsafe-coercion",
+        WeakPointCategory::ProofDrift => "proof-drift",
     }
 }
 

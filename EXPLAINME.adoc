@@ -7,7 +7,7 @@ The README makes claims. This file backs them up.
 
 == Claims Substantiation
 
-=== Claim 1: "47-language static analysis across multiple families"
+=== Claim 1: "49-language static analysis across multiple families"
 
 **How it works:** The `src/assail/analyzer.rs` module implements a per-file language detector that identifies file extension and shebang, dispatching to language-specific pattern matchers in `src/assail/patterns.rs`. Each language family (C/C++, Python, JavaScript, Rust, Go, etc.) has dedicated regex-based weak point detectors (unwrap, panic, unsafe blocks, expect, eval, hardcoded secrets). The analyzer processes 47 distinct language patterns without requiring external parsers—pattern-based shallow analysis enables fast scanning across heterogeneous codebases.
 
@@ -43,7 +43,7 @@ The README makes claims. This file backs them up.
 
 | `src/main.rs` | CLI entry: 20 subcommands (assail, assault, temporal, panll, groove, bridge, etc.)
 | `src/lib.rs` | Library API exposing all analysis engines
-| `src/assail/` | Static analysis (47 languages, 20 weak point categories)
+| `src/assail/` | Static analysis (49 languages, 21 weak point categories)
 | `src/assail/analyzer.rs` | Per-file language detection and pattern matching dispatcher
 | `src/assail/patterns.rs` | Language-specific regex patterns for weak points
 | `src/kanren/` | Logic engine (unification, fact database, taint, cross-lang)

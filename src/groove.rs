@@ -9,7 +9,7 @@
 //! on port 7600.
 //!
 //! panic-attacker works standalone as a CLI tool. When groove consumers
-//! connect, they gain access to the 47-language static analysis engine,
+//! connect, they gain access to the 49-language static analysis engine,
 //! the miniKanren logic engine, and the 20-category weak point detection.
 //!
 //! The groove connector types are formally verified in Gossamer's Groove.idr:
@@ -24,7 +24,7 @@
 //!
 //! ## Capabilities Offered
 //!
-//! - `static-analysis` — 47-language static analysis with 20 weak point categories
+//! - `static-analysis` — 49-language static analysis with 21 weak point categories
 //!
 //! ## Capabilities Consumed (enhanced when available)
 //!

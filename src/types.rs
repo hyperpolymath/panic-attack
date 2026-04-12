@@ -48,6 +48,8 @@ pub enum Language {
     Idris,
     Lean,
     Agda,
+    Isabelle,
+    Coq,
 
     // === Logic programming ===
     Prolog,
@@ -129,6 +131,9 @@ impl Language {
             "idr" | "ipkg" => Language::Idris,
             "lean" => Language::Lean,
             "agda" | "lagda" => Language::Agda,
+            "thy" => Language::Isabelle,
+            // .v = Coq/Rocq proof files (V-lang banned estate-wide; .v in estate = Coq)
+            "v" => Language::Coq,
 
             // Logic programming
             "pl" | "pro" | "P" => Language::Prolog,
@@ -177,7 +182,8 @@ impl Language {
             Language::ReScript | Language::OCaml | Language::StandardML => "ml",
             Language::Scheme | Language::Racket => "lisp",
             Language::Haskell | Language::PureScript => "functional",
-            Language::Idris | Language::Lean | Language::Agda => "proof",
+            Language::Idris | Language::Lean | Language::Agda
+            | Language::Isabelle | Language::Coq => "proof",
             Language::Prolog | Language::Logtalk | Language::Datalog => "logic",
             Language::Zig
             | Language::Ada
@@ -344,6 +350,10 @@ pub enum WeakPointCategory {
     UncheckedError,
     InfiniteRecursion,
     UnsafeTypeCoercion,
+    /// Formal-verification drift: banned proof escape hatches (`sorry`,
+    /// `Admitted`, `believe_me`, `assert_total`, `oops`, `trustMe`,
+    /// `Obj.magic`) or mirror files substituting assertions for proofs.
+    ProofDrift,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

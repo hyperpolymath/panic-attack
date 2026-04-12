@@ -21,7 +21,7 @@ module PanicAttack.ABI.PatternCompleteness
 -- Language enumeration (mirrors src/types.rs Language enum, 47 variants)
 -- ═══════════════════════════════════════════════════════════════════════
 
-||| All 47 programming languages supported by the scanner.
+||| All 49 programming languages supported by the scanner.
 ||| This MUST stay in sync with src/types.rs Language enum.
 public export
 data Lang
@@ -35,7 +35,7 @@ data Lang
   -- Functional
   | Haskell | PureScript
   -- Proof assistants
-  | Idris | Lean | Agda
+  | Idris | Lean | Agda | Isabelle | Coq
   -- Logic programming
   | Prolog | Logtalk | Datalog
   -- Systems languages
@@ -90,6 +90,8 @@ analyzerFor PureScript    = SpecificAnalyzer
 analyzerFor Idris         = SpecificAnalyzer
 analyzerFor Lean          = SpecificAnalyzer
 analyzerFor Agda          = SpecificAnalyzer
+analyzerFor Isabelle      = SpecificAnalyzer
+analyzerFor Coq           = SpecificAnalyzer
 analyzerFor Prolog        = SpecificAnalyzer
 analyzerFor Logtalk       = SpecificAnalyzer
 analyzerFor Datalog       = SpecificAnalyzer
@@ -145,7 +147,7 @@ crossLangAlwaysApplied _ = MkCrossLangChecked
 -- WeakPointCategory enumeration (mirrors src/types.rs, 20 categories)
 -- ═══════════════════════════════════════════════════════════════════════
 
-||| All 20 weak point categories detectable by the scanner.
+||| All 21 weak point categories detectable by the scanner.
 public export
 data WPCategory
   = UncheckedAllocation
@@ -168,6 +170,10 @@ data WPCategory
   | UncheckedError
   | InfiniteRecursion
   | UnsafeTypeCoercion
+  ||| Formal verification drift: banned proof escape hatches or mirror files
+  ||| substituting assertions for proofs. Detected in .idr, .lean, .agda,
+  ||| .thy, .v, and Julia mirror files.
+  | ProofDrift
 
 ||| Witness that a detection rule exists for a weak point category.
 ||| Each variant names the language(s) whose analyzer detects it.
@@ -177,7 +183,7 @@ data HasDetector : WPCategory -> Type where
   DetectedBy : (langs : List Lang) -> HasDetector cat
 
 ||| Every weak point category has at least one detector.
-||| Total: Idris2 verifies all 20 constructors are covered.
+||| Total: Idris2 verifies all 21 constructors are covered.
 ||| The list of detecting languages mirrors the actual pattern
 ||| matching code in analyzer.rs.
 public export
@@ -202,6 +208,7 @@ detectorsFor HardcodedSecret      = DetectedBy [Rust, C, Cpp, Go, Python, JavaSc
 detectorsFor UncheckedError       = DetectedBy [Go, Rust, C, Cpp]
 detectorsFor InfiniteRecursion    = DetectedBy [Haskell, PureScript, Scheme, Racket]
 detectorsFor UnsafeTypeCoercion   = DetectedBy [OCaml, Haskell, DLang, Nim]
+detectorsFor ProofDrift           = DetectedBy [Idris, Lean, Agda, Isabelle, Coq, Julia]
 
 ||| Proof: every weak point category has at least one detector.
 public export

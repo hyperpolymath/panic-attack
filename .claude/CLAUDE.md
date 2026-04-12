@@ -24,7 +24,7 @@ src/
 ├── types.rs             # Core types (AssailReport, WeakPoint, etc.)
 ├── assail/              # Static analysis engine
 │   ├── mod.rs           # Public API: analyze(), analyze_verbose()
-│   ├── analyzer.rs      # 47-language analyzer with per-file detection
+│   ├── analyzer.rs      # 49-language analyzer with per-file detection
 │   └── patterns.rs      # Language-specific attack patterns
 ├── kanren/              # miniKanren-inspired logic engine (v2.0.0)
 │   ├── mod.rs           # Module entry, re-exports
@@ -88,8 +88,8 @@ cp target/release/panic-attack ~/.asdf/installs/rust/nightly/bin/
 
 ## Key Design Decisions
 
-- **47 language analyzers**: Rust, C/C++, Go, Python, JavaScript, Ruby, Elixir, Erlang, Gleam, ReScript, OCaml, SML, Scheme, Racket, Haskell, PureScript, Idris, Lean, Agda, Prolog, Logtalk, Datalog, Zig, Ada, Odin, Nim, Pony, D, Nickel, Nix, Shell, Julia, Lua, + 12 nextgen DSLs
-- **20 weak point categories**: UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, AtomExhaustion, UnsafeFFI, PathTraversal, HardcodedSecret, etc.
+- **49 language analyzers**: Rust, C/C++, Go, Python, JavaScript, Ruby, Elixir, Erlang, Gleam, ReScript, OCaml, SML, Scheme, Racket, Haskell, PureScript, Idris, Lean, Agda, Isabelle, Coq, Prolog, Logtalk, Datalog, Zig, Ada, Odin, Nim, Pony, D, Nickel, Nix, Shell, Julia, Lua, + 12 nextgen DSLs
+- **21 weak point categories**: UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, AtomExhaustion, UnsafeFFI, PathTraversal, HardcodedSecret, ProofDrift, etc.
 - **Per-file language detection**: Each file analyzed with its own language-specific patterns. Skips `external_corpora/`, `third_party/`, and `corpus/` directories
 - **miniKanren logic engine**: Relational reasoning for taint analysis, cross-language vulnerability chains, and search strategy optimisation
 - **Latin-1 fallback**: Non-UTF-8 files handled gracefully
