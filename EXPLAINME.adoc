@@ -66,11 +66,28 @@ The README makes claims. This file backs them up.
 
 == Dogfooted Across The Account
 
-| Project | Integration |
-| **reposystem** | Feeds weak-point scores into graph aspects (security weight)
-| **proof-of-work** | Z3-verifies that assail findings are genuine vulnerabilities
-| **hypatia** | Consumes JSON AssailReport via Elixir rules for neurosymbolic reasoning
-| **januskey** | Scans operation metadata for unsafe patterns in audit trail code
+[cols="1,2", options="header"]
+|===
+| Project | Integration
+
+| **hypatia**
+| Consumes JSON AssailReport via Elixir rules; pattern_registry.ex deduplicates findings into 46 canonical recipes; re-scan verification confirms fixes removed weak points
+
+| **gitbot-fleet / panicbot**
+| panicbot wraps the `panic-attack assail --output-format json` CLI; translates WeakPoints to Findings (PA001-PA025); bot directives at `.machine_readable/bot_directives/panicbot.scm`
+
+| **verisimdb**
+| Scan results stored as hexad entities (Document + Semantic + Temporal modalities); ScanIngester module ingests JSON output; PatternQuery cross-repo analytics built on top
+
+| **panll**
+| `panll` subcommand exports event chains for two dedicated panels: panic-attack (single-repo) and Mass Panic (assemblyline batch GUI); timeline and risk-map views
+
+| **assemblyline**
+| Batch scanning of entire repo directories with Rayon parallelism and BLAKE3 fingerprinting; delta reporting via `diff` subcommand (only changes since last scan)
+
+| **attestation chain**
+| Every scan optionally sealed via Ed25519 cryptographic chain (intent → evidence → seal) — used by NAFA ambient context and audit-trail consumers
+|===
 
 == Readiness
 
