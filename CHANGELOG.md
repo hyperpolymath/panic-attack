@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.3.0] - 2026-04-12
+
+### Added
+- **CryptoMisuse category (PA022)**: New weak point category detecting cryptographic primitive
+  misuse across five languages. Context-window heuristic (±200 chars) restricts MD5/SHA-1
+  findings to security-sensitive usage — MD5 for file checksums is not flagged.
+  - **Rust**: `md5::compute`/`Md5::new` and `sha1::Sha1`/`Sha1::new` in security context (High);
+    `==` comparison on `secret`/`password`/`token`/`key` variables (Critical — timing attack).
+  - **Python**: `hashlib.md5()`/`hashlib.sha1()` in security context (High);
+    `==` on secret-named variables — use `hmac.compare_digest()` instead (Critical).
+  - **JavaScript**: `crypto.createHash('md5')` and `crypto.createHash('sha1')` (High);
+    `crypto.createHash('sha256')` is fine and not flagged.
+  - **Go**: `md5.New()`/`md5.Sum()` and `sha1.New()`/`sha1.Sum()` in security context (High).
+  - **Elixir**: `:crypto.hash(:md5, ...)` and `:crypto.hash(:sha, ...)` (High);
+    `:crypto.mac(:hmac, :sha, ...)` is acceptable (HMAC-SHA1 is not broken) and not flagged.
+  - Key-reuse and nonce-reuse deferred — not reliably detectable statically.
+- **has_security_context() helper**: Module-level helper function checks ±200 char window
+  around a pattern match for security vocabulary (password, secret, token, auth, key,
+  credential, hash, sign, verify, encrypt) to reduce false positives on benign MD5/SHA-1 use.
+- **PA022 → panicbot**: CryptoMisuse mapped to fleet category `static-analysis/crypto-misuse`
+  with 0.75 confidence, Eliminate tier, Partial fixability. Confidence is honest — the context
+  window has a modest false-positive rate when security vocabulary appears for unrelated reasons.
+- **Idris2 ABI completeness**: `PatternCompleteness.idr` updated — CryptoMisuse added to
+  `WPCategory` with `detectorsFor` covering Rust, Python, JavaScript, Go, Elixir.
+
 ## [2.2.0] - 2026-04-12
 
 ### Added
@@ -13,8 +38,6 @@
   with 0.85 confidence, Eliminate tier, fixable (adding pins resolves the finding).
 - **Idris2 ABI completeness**: `PatternCompleteness.idr` updated — SupplyChain added to
   `WPCategory` with `detectorsFor` covering Rust, Julia, Nix, JavaScript.
-- **CryptoMisuse wiring completed**: CryptoMisuse (PA022) now fully wired into
-  `readiness.rs` expected categories and `translator.rs` category mapping.
 
 ### Changed
 - **Category count**: 22 → 23 (added SupplyChain)

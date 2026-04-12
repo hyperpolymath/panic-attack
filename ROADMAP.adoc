@@ -79,10 +79,10 @@ The estate uses SHA, Sodium, Ed25519, CBOR proofs, and hash-chain integrity
 throughout VerisimCore, Hypatia attestations, and the Patch Bridge.  Current
 coverage: none beyond `unsafe_blocks` (too blunt).
 
-* [ ] Detect weak-hash-for-security patterns (MD5/SHA1 in security contexts)
-* [ ] Detect constant-time comparison violations (using `==` on secret values)
-* [ ] Detect key-reuse patterns across contexts
-* [ ] Detect nonce reuse in symmetric encryption
+* [x] Detect weak-hash-for-security patterns (MD5/SHA1 in security contexts) — PA022, Rust/Python/JS/Go/Elixir
+* [x] Detect constant-time comparison violations (using `==` on secret values) — PA022, Rust/Python
+* [ ] Detect key-reuse patterns across contexts (not reliably detectable statically — deferred)
+* [ ] Detect nonce reuse in symmetric encryption (not reliably detectable statically — deferred)
 * [ ] Detect missing signature verification before use
 
 === `proof_drift` — Formal verification drift
