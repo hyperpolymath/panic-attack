@@ -4,14 +4,14 @@
 
 [metadata]
 project = "panic-attacker"
-version = "2.3.0"
+version = "2.5.0"
 last-updated = "2026-04-12"
 status = "active"
 
 [project-context]
 name = "panic-attacker"
-completion-percentage = 98
-phase = "CRG C (Beta) — v2.5.0 detection categories complete; v2.3.0 shell completions + TUI next"
+completion-percentage = 99
+phase = "CRG C (Beta) — v2.5.0 complete: 25 detection categories + shell completions (bash/zsh/fish/nushell/powershell) + delta reporting"
 
 [testing-completion-2026-04-04]
 description = "CRG C blitz completed: unit + smoke + build + P2P + E2E + reflexive + contract + aspect + benchmarks"
@@ -47,7 +47,11 @@ panicbot-wired = "PA024/PA025 wired in gitbot-fleet/bots/panicbot/src/translator
 categories = "25 weak point categories total (v2.5.0 complete)"
 v25-complete = "All 5 v2.5.0 detection categories done: crypto_misuse, proof_drift, supply_chain, input_boundary, mutation"
 
+[shipped-v250]
+shell-completions = "bash, zsh, fish, nushell, powershell — clap_complete + clap_complete_nushell, generated files in completions/"
+delta-reporting = "diff subcommand — only reports changes since last scan, src/report/diff.rs"
+
 [next-priorities]
 verisimdb-http = "Push hexads via REST (awaiting API stabilization)"
-shell-completions = "bash, zsh, fish, nushell"
+interactive-tui = "Review findings in terminal (v2.3.0)"
 chapel-metalayer = "Distributed coforall scanning across compute clusters (future)"
