@@ -134,23 +134,20 @@ pub fn query_osv_batch(deps: &[LockedDependency]) -> Result<Vec<Vulnerability>> 
                 .collect(),
         };
 
-        let body = serde_json::to_string(&request)?;
+        let body_bytes = serde_json::to_vec(&request)?;
 
-        let resp = match ureq::post("https://api.osv.dev/v1/querybatch")
-            .set("Content-Type", "application/json")
-            .send_string(&body)
-        {
-            Ok(resp) => resp,
-            Err(ureq::Error::Status(code, resp)) => {
-                let body_text = resp.into_string().unwrap_or_default();
-                anyhow::bail!("OSV API returned HTTP {}: {}", code, body_text);
-            }
-            Err(e) => {
-                anyhow::bail!("OSV API request failed: {}", e);
-            }
-        };
+        let mut resp = ureq::post("https://api.osv.dev/v1/querybatch")
+            .header("Content-Type", "application/json")
+            .send(&body_bytes[..])
+            .map_err(|e| anyhow::anyhow!("OSV API request failed: {}", e))?;
 
-        let response_text = resp.into_string()?;
+        let status = resp.status().as_u16();
+        if !(200..300).contains(&status) {
+            let buf = resp.body_mut().read_to_string().unwrap_or_default();
+            anyhow::bail!("OSV API returned HTTP {}: {}", status, buf);
+        }
+
+        let response_text = resp.body_mut().read_to_string()?;
         let response: OsvBatchResponse = serde_json::from_str(&response_text)?;
 
         // Map OSV results back to dependencies

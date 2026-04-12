@@ -5,10 +5,9 @@
 //! Two storage modes:
 //! - **Filesystem**: Writes reports to timestamped files in a local directory.
 //!   Supports multiple output formats (JSON, YAML, Nickel, SARIF).
-//! - **VerisimDb**: Wraps reports in VerisimDB hexad format and writes them
-//!   to a local directory structure matching the planned VerisimDB API layout.
-//!   Currently file-based only — HTTP API integration is planned for when
-//!   VerisimDB's REST endpoint stabilises.
+//! - **VerisimDb**: Wraps reports in VerisimDB hexad format. When the `http`
+//!   feature is enabled and `VERISIMDB_URL` is set, pushes to `POST /octads`
+//!   on a verisim-api instance. Falls back to local filesystem otherwise.
 //!
 //! Both modes create parent directories as needed and return the paths of
 //! all files written.
@@ -209,17 +208,39 @@ pub fn persist_report(
     }
 
     if modes.contains(&StorageMode::VerisimDb) {
-        let base_dir = directory
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
-        let hexad_dir = base_dir.join("hexads");
-        fs::create_dir_all(&hexad_dir)?;
-
         let hexad = build_hexad(report)?;
-        let path = hexad_dir.join(format!("{}.json", hexad.id));
-        let payload = serde_json::to_string_pretty(&hexad)?;
-        fs::write(&path, payload)?;
-        stored.push(path);
+
+        // HTTP push when VERISIMDB_URL is configured; filesystem fallback otherwise.
+        #[cfg(feature = "http")]
+        {
+            if std::env::var("VERISIMDB_URL").is_ok() {
+                let base_dir = directory
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+                let mut http_paths = push_hexad_with_fallback(&hexad, &base_dir)?;
+                stored.append(&mut http_paths);
+            } else {
+                let base_dir = directory
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+                let hexad_dir = base_dir.join("hexads");
+                fs::create_dir_all(&hexad_dir)?;
+                let path = hexad_dir.join(format!("{}.json", hexad.id));
+                fs::write(&path, serde_json::to_string_pretty(&hexad)?)?;
+                stored.push(path);
+            }
+        }
+        #[cfg(not(feature = "http"))]
+        {
+            let base_dir = directory
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+            let hexad_dir = base_dir.join("hexads");
+            fs::create_dir_all(&hexad_dir)?;
+            let path = hexad_dir.join(format!("{}.json", hexad.id));
+            fs::write(&path, serde_json::to_string_pretty(&hexad)?)?;
+            stored.push(path);
+        }
     }
 
     Ok(stored)
@@ -308,63 +329,142 @@ pub fn persist_assemblyline_report(
     }
 
     if modes.contains(&StorageMode::VerisimDb) {
-        let base_dir = directory
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
-        let hexad_dir = base_dir.join("hexads");
-        fs::create_dir_all(&hexad_dir)?;
-
         let hexad = build_assemblyline_hexad(report)?;
-        let path = hexad_dir.join(format!("{}.json", hexad.id));
-        let payload = serde_json::to_string_pretty(&hexad)?;
-        fs::write(&path, payload)?;
-        stored.push(path);
+
+        #[cfg(feature = "http")]
+        {
+            if std::env::var("VERISIMDB_URL").is_ok() {
+                let base_dir = directory
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+                let mut http_paths = push_hexad_with_fallback(&hexad, &base_dir)?;
+                stored.append(&mut http_paths);
+            } else {
+                let base_dir = directory
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+                let hexad_dir = base_dir.join("hexads");
+                fs::create_dir_all(&hexad_dir)?;
+                let path = hexad_dir.join(format!("{}.json", hexad.id));
+                fs::write(&path, serde_json::to_string_pretty(&hexad)?)?;
+                stored.push(path);
+            }
+        }
+        #[cfg(not(feature = "http"))]
+        {
+            let base_dir = directory
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
+            let hexad_dir = base_dir.join("hexads");
+            fs::create_dir_all(&hexad_dir)?;
+            let path = hexad_dir.join(format!("{}.json", hexad.id));
+            fs::write(&path, serde_json::to_string_pretty(&hexad)?)?;
+            stored.push(path);
+        }
     }
 
     Ok(stored)
 }
 
 // ---------------------------------------------------------------------------
-// VeriSimDB HTTP API integration (via V-lang gateway on port 9090)
+// VeriSimDB HTTP API integration (direct verisim-api, port 8080)
 // ---------------------------------------------------------------------------
 
-/// Push a hexad to the VeriSimDB V-lang API gateway via REST.
+/// Map a `PanicAttackHexad` to the verisim-api `OctadRequest` JSON shape.
 ///
-/// Endpoint: POST http://{host}:{port}/api/v1/hexads
-/// The V-lang gateway proxies to the Rust core on port 8080.
+/// Field mapping:
+/// - `title`: "panic-attack scan: {path} @ {created_at}"
+/// - `body`: JSON-serialised document facet
+/// - `types`: `["http://hyperpolymath.dev/panic-attack/AssailReport"]`
+/// - `metadata`: semantic fields (counts, score, categories) as string values
+/// - `provenance`: tool/version → actor, program_path → source
+#[cfg(feature = "http")]
+fn hexad_to_octad_request(hexad: &PanicAttackHexad) -> serde_json::Value {
+    let mut metadata = std::collections::HashMap::new();
+    metadata.insert(
+        "total_weak_points".to_string(),
+        hexad.semantic.total_weak_points.to_string(),
+    );
+    metadata.insert(
+        "critical_count".to_string(),
+        hexad.semantic.critical_count.to_string(),
+    );
+    metadata.insert(
+        "high_count".to_string(),
+        hexad.semantic.high_count.to_string(),
+    );
+    metadata.insert(
+        "robustness_score".to_string(),
+        format!("{:.4}", hexad.semantic.robustness_score),
+    );
+    metadata.insert(
+        "categories".to_string(),
+        hexad.semantic.categories.join(","),
+    );
+    metadata.insert("tool_version".to_string(), hexad.provenance.version.clone());
+    metadata.insert("language".to_string(), hexad.provenance.language.clone());
+
+    let body = serde_json::to_string(&hexad.document).unwrap_or_default();
+    let title = format!(
+        "panic-attack scan: {} @ {}",
+        hexad.provenance.program_path, hexad.created_at
+    );
+    let description = format!(
+        "panic-attack {} scan of {} — {} weak points ({} critical, {} high)",
+        hexad.provenance.version,
+        hexad.provenance.program_path,
+        hexad.semantic.total_weak_points,
+        hexad.semantic.critical_count,
+        hexad.semantic.high_count,
+    );
+
+    serde_json::json!({
+        "title": title,
+        "body": body,
+        "types": ["http://hyperpolymath.dev/panic-attack/AssailReport"],
+        "metadata": metadata,
+        "provenance": {
+            "event_type": "created",
+            "actor": format!("panic-attack/{}", hexad.provenance.version),
+            "source": hexad.provenance.program_path,
+            "description": description,
+        }
+    })
+}
+
+/// Push a hexad to the verisim-api directly via REST.
+///
+/// Endpoint: POST http://{verisimdb_url}/octads
 ///
 /// Requires the `http` feature flag: `cargo build --features http`
 #[cfg(feature = "http")]
 #[allow(dead_code)]
 pub fn push_hexad_http(hexad: &PanicAttackHexad, gateway_url: &str) -> Result<String> {
-    let url = format!("{}/api/v1/hexads", gateway_url.trim_end_matches('/'));
-    let payload = serde_json::to_string(hexad)?;
+    let url = format!("{}/octads", gateway_url.trim_end_matches('/'));
+    let payload_bytes = serde_json::to_vec(&hexad_to_octad_request(hexad))?;
 
-    let response = attach_auth(ureq::post(&url))
-        .set("Content-Type", "application/json")
-        .send_string(&payload)
-        .map_err(|e| anyhow!("VeriSimDB gateway error: {}", e))?;
+    let mut builder = ureq::post(&url).header("Content-Type", "application/json");
+    if let Some(token) = auth_token() {
+        builder = builder.header("Authorization", format!("Bearer {}", token));
+    }
+    let response = builder
+        .send(&payload_bytes[..])
+        .map_err(|e| anyhow!("VeriSimDB push error: {}", e))?;
 
-    let status = response.status();
-    let body = response
-        .into_string()
-        .unwrap_or_else(|_| String::from("(no body)"));
+    let status = response.status().as_u16();
+    let body = read_body(response);
 
     if status >= 200 && status < 300 {
         Ok(body)
     } else {
-        Err(anyhow!(
-            "VeriSimDB gateway returned {}: {}",
-            status,
-            body
-        ))
+        Err(anyhow!("VeriSimDB returned {}: {}", status, body))
     }
 }
 
-/// Push a hexad via HTTP, falling back to filesystem if the gateway is unavailable.
+/// Push a hexad via HTTP, falling back to filesystem if the API is unavailable.
 ///
-/// Uses VERISIM_GATEWAY_URL env var (default: http://localhost:9090).
-/// Checks gateway health (cached for 30s) before attempting HTTP push.
+/// Uses VERISIMDB_URL env var (default: http://localhost:8080).
+/// Checks API health (cached for 30s) before attempting HTTP push.
 /// Retries with exponential backoff (3 attempts: 1s, 2s, 4s) before falling back.
 #[cfg(feature = "http")]
 #[allow(dead_code)]
@@ -372,8 +472,8 @@ pub fn push_hexad_with_fallback(
     hexad: &PanicAttackHexad,
     fallback_dir: &Path,
 ) -> Result<Vec<PathBuf>> {
-    let gateway_url = std::env::var("VERISIM_GATEWAY_URL")
-        .unwrap_or_else(|_| "http://localhost:9090".to_string());
+    let gateway_url = std::env::var("VERISIMDB_URL")
+        .unwrap_or_else(|_| "http://localhost:8080".to_string());
 
     // Skip HTTP entirely if gateway is known-down (cached health check)
     if !check_gateway(&gateway_url) {
@@ -435,15 +535,16 @@ pub fn persist_assemblyline_report_http(
 
 // ---------------------------------------------------------------------------
 // VeriSimDB HTTP API — retry, auth, batch, query, health check
+// (ureq v3 API: builders, http::StatusCode, body via Read trait)
 // ---------------------------------------------------------------------------
 
-/// Cached gateway health state: stores (is_healthy, timestamp_secs).
-/// Used to avoid repeated HTTP attempts against a known-down gateway.
+/// Cached API health state: stores (is_healthy, timestamp_secs).
+/// Used to avoid repeated HTTP attempts against a known-down API.
 #[cfg(feature = "http")]
 static GATEWAY_HEALTH: std::sync::OnceLock<std::sync::Mutex<(bool, u64)>> =
     std::sync::OnceLock::new();
 
-/// Duration (in seconds) to cache a gateway health check result.
+/// Duration (in seconds) to cache an API health check result.
 #[cfg(feature = "http")]
 const HEALTH_CACHE_TTL_SECS: u64 = 30;
 
@@ -456,18 +557,21 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-/// Build a ureq::Request with optional Bearer token from `VERISIM_API_TOKEN`.
-///
-/// If the environment variable is set and non-empty the `Authorization` header
-/// is attached; otherwise the request is sent unauthenticated.
+/// Return the Bearer token from `VERISIM_API_TOKEN` env var, if set.
 #[cfg(feature = "http")]
-fn attach_auth(request: ureq::Request) -> ureq::Request {
+fn auth_token() -> Option<String> {
     match std::env::var("VERISIM_API_TOKEN") {
-        Ok(token) if !token.is_empty() => {
-            request.set("Authorization", &format!("Bearer {}", token))
-        }
-        _ => request,
+        Ok(t) if !t.is_empty() => Some(t),
+        _ => None,
     }
+}
+
+/// Read an ureq v3 response body as a String.
+///
+/// ureq v3: `response.body_mut().read_to_string()` returns `Result<String>`.
+#[cfg(feature = "http")]
+fn read_body(mut response: ureq::http::Response<ureq::Body>) -> String {
+    response.body_mut().read_to_string().unwrap_or_default()
 }
 
 /// Push a single hexad with exponential-backoff retry.
@@ -505,11 +609,10 @@ pub fn push_hexad_http_with_retry(
 
 /// Push a batch of hexads to the VeriSimDB batch endpoint.
 ///
-/// Endpoint: POST `{gateway_url}/api/v1/hexads/batch`
+/// Endpoint: POST `{verisimdb_url}/octads/batch`
 ///
-/// If the batch endpoint returns HTTP 404 (not implemented on the gateway),
-/// falls back to pushing each hexad individually via [`push_hexad_http_with_retry`].
-/// Auth token from `VERISIM_API_TOKEN` is attached when present.
+/// If the batch endpoint returns HTTP 404 (not yet implemented), falls back to
+/// pushing each hexad individually via [`push_hexad_http_with_retry`].
 #[cfg(feature = "http")]
 #[allow(dead_code)]
 pub fn push_hexads_batch(
@@ -520,61 +623,65 @@ pub fn push_hexads_batch(
         return Ok(Vec::new());
     }
 
-    let url = format!("{}/api/v1/hexads/batch", gateway_url.trim_end_matches('/'));
-    let payload = serde_json::to_string(hexads)?;
+    let url = format!("{}/octads/batch", gateway_url.trim_end_matches('/'));
+    let payloads: Vec<serde_json::Value> = hexads
+        .iter()
+        .map(hexad_to_octad_request)
+        .collect();
+    let payload_bytes = serde_json::to_vec(&payloads)?;
 
-    let request = attach_auth(ureq::post(&url))
-        .set("Content-Type", "application/json");
+    let mut builder = ureq::post(&url).header("Content-Type", "application/json");
+    if let Some(token) = auth_token() {
+        builder = builder.header("Authorization", format!("Bearer {}", token));
+    }
 
-    match request.send_string(&payload) {
+    match builder.send(&payload_bytes[..]) {
         Ok(response) => {
-            let status = response.status();
-            let body = response
-                .into_string()
-                .unwrap_or_else(|_| String::from("(no body)"));
-            if status >= 200 && status < 300 {
-                Ok(vec![body])
+            let status = response.status().as_u16();
+            if status == 404 {
+                // Batch endpoint not yet implemented — push individually
+                let mut results = Vec::with_capacity(hexads.len());
+                for hexad in hexads {
+                    let body = push_hexad_http_with_retry(hexad, gateway_url)?;
+                    results.push(body);
+                }
+                Ok(results)
+            } else if status >= 200 && status < 300 {
+                Ok(vec![read_body(response)])
             } else {
+                let body = read_body(response);
                 Err(anyhow!("VeriSimDB batch returned {}: {}", status, body))
             }
-        }
-        Err(ureq::Error::Status(404, _)) => {
-            // Batch endpoint not available — push individually
-            let mut results = Vec::with_capacity(hexads.len());
-            for hexad in hexads {
-                let body = push_hexad_http_with_retry(hexad, gateway_url)?;
-                results.push(body);
-            }
-            Ok(results)
         }
         Err(e) => Err(anyhow!("VeriSimDB batch request failed: {}", e)),
     }
 }
 
-/// Query hexads from the VeriSimDB gateway for temporal diff comparison.
+/// Query octads from VeriSimDB for temporal diff comparison.
 ///
-/// Endpoint: GET `{gateway_url}/api/v1/hexads?tool=panic-attack&limit={limit}`
+/// Endpoint: GET `{verisimdb_url}/octads?tool=panic-attack&limit={limit}`
 ///
-/// Returns parsed hexads from the gateway. Useful for comparing current scan
+/// Returns parsed hexads from the API. Useful for comparing current scan
 /// results against previous scans stored in VeriSimDB.
 #[cfg(feature = "http")]
 #[allow(dead_code)]
 pub fn query_hexads(gateway_url: &str, limit: usize) -> Result<Vec<PanicAttackHexad>> {
     let url = format!(
-        "{}/api/v1/hexads?tool=panic-attack&limit={}",
+        "{}/octads?tool=panic-attack&limit={}",
         gateway_url.trim_end_matches('/'),
         limit,
     );
 
-    let request = attach_auth(ureq::get(&url));
-    let response = request
+    let mut builder = ureq::get(&url);
+    if let Some(token) = auth_token() {
+        builder = builder.header("Authorization", format!("Bearer {}", token));
+    }
+    let response = builder
         .call()
         .map_err(|e| anyhow!("VeriSimDB query failed: {}", e))?;
 
-    let status = response.status();
-    let body = response
-        .into_string()
-        .unwrap_or_else(|_| String::from("[]"));
+    let status = response.status().as_u16();
+    let body = read_body(response);
 
     if status >= 200 && status < 300 {
         let hexads: Vec<PanicAttackHexad> = serde_json::from_str(&body)
@@ -585,20 +692,20 @@ pub fn query_hexads(gateway_url: &str, limit: usize) -> Result<Vec<PanicAttackHe
     }
 }
 
-/// Check whether the VeriSimDB gateway is reachable.
+/// Check whether the VeriSimDB API is reachable.
 ///
-/// Endpoint: GET `{gateway_url}/api/v1/health`
+/// Endpoint: GET `{verisimdb_url}/health`
 ///
 /// Results are cached for 30 seconds via a static `OnceLock<Mutex<...>>` to
-/// avoid hammering a down gateway on every push call.  Returns `true` if the
-/// gateway responded 2xx within the cache window, `false` otherwise.
+/// avoid hammering a down API on every push call. Returns `true` if the API
+/// responded 2xx within the cache window, `false` otherwise.
 #[cfg(feature = "http")]
 #[allow(dead_code)]
 pub fn check_gateway(gateway_url: &str) -> bool {
     let mutex = GATEWAY_HEALTH.get_or_init(|| std::sync::Mutex::new((false, 0)));
     let now = now_secs();
 
-    // Check cached result
+    // Return cached result if still fresh
     if let Ok(guard) = mutex.lock() {
         let (healthy, checked_at) = *guard;
         if now.saturating_sub(checked_at) < HEALTH_CACHE_TTL_SECS {
@@ -607,10 +714,16 @@ pub fn check_gateway(gateway_url: &str) -> bool {
     }
 
     // Cache expired or first call — perform live check
-    let url = format!("{}/api/v1/health", gateway_url.trim_end_matches('/'));
-    let request = attach_auth(ureq::get(&url));
-    let is_healthy = match request.call() {
-        Ok(resp) => resp.status() >= 200 && resp.status() < 300,
+    let url = format!("{}/health", gateway_url.trim_end_matches('/'));
+    let mut builder = ureq::get(&url);
+    if let Some(token) = auth_token() {
+        builder = builder.header("Authorization", format!("Bearer {}", token));
+    }
+    let is_healthy = match builder.call() {
+        Ok(resp) => {
+            let s = resp.status().as_u16();
+            s >= 200 && s < 300
+        }
         Err(_) => false,
     };
 

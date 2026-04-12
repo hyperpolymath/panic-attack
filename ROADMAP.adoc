@@ -41,10 +41,11 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 == v2.2.0 -- VeriSimDB Integration
 
 * [x] Filesystem persistence for scan results
-* [ ] VeriSimDB HTTP API integration: push hexads via REST
+* [x] VeriSimDB HTTP API integration: push octads via REST (ureq v3; VERISIMDB_URL env var; http feature; filesystem fallback)
+* [x] Per-project VeriSimDB instance: `deploy/panic-attack/fly.toml` for `verisim-panic-api` (6PN internal, lhr)
 * [ ] Delta reporting: only report changes since last scan
 * [ ] Hexad persistence for Patch Bridge mitigation registry (currently JSON file)
-* [ ] Historical trend queries via VQL-UT
+* [ ] Historical trend queries via VCL
 
 == v2.3.0 -- Shell and UX
 
@@ -83,7 +84,7 @@ coverage: none beyond `unsafe_blocks` (too blunt).
 * [x] Detect constant-time comparison violations (using `==` on secret values) — PA022, Rust/Python
 * [ ] Detect key-reuse patterns across contexts (not reliably detectable statically — deferred)
 * [ ] Detect nonce reuse in symmetric encryption (not reliably detectable statically — deferred)
-* [ ] Detect missing signature verification before use
+* [x] Detect JWT signature verification bypass — `dangerous_insecure_decode` (Rust/jsonwebtoken), `jwt.decode()` without `jwt.verify()` / `decodeJwt()` without `jwtVerify()` (JS/jose), `jwt.ParseUnverified()` (Go), `verify_signature: False` / `algorithms=["none"]` (Python/PyJWT)
 
 === `proof_drift` — Formal verification drift
 
@@ -96,7 +97,7 @@ stay in sync with their formal counterparts.
 * [x] Detect `@test x isa Y` (no value check) standing in for a formally proven theorem in Julia mirror files
 * [x] Detect `# sorry` / `# TODO: prove` / `# admitted` comments in Julia mirror implementations
 * [ ] Flag Rust/Julia functions whose name matches an Isabelle definition but whose signature has drifted
-* [ ] Detect `Obj.magic` in Coq-extracted OCaml (upstream axiom bypass in extracted artifacts)
+* [x] Detect `Obj.magic` in Coq-extracted OCaml (upstream axiom bypass in extracted artifacts) — distinguished from hand-written OCaml via `type __ = Obj.t` extraction marker
 
 === `input_boundary` — Structured-data parsing and deserialization
 
