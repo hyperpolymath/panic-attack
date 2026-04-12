@@ -105,3 +105,4 @@ htmlcov/
 *.bak
 # asdf version manager
 .tool-versions
+chapel/mass-panic
