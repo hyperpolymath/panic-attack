@@ -133,6 +133,27 @@ build-riscv:
 	@echo "Building for RISC-V..."
 	cross build --target riscv64gc-unknown-linux-gnu
 
+# Build Chapel mass-panic distributed scanner (requires Chapel 2.8.0+)
+# On Fedora Atomic, run inside toolbox: toolbox run --container chapel-dev just chapel-build
+chapel-build:
+    cd chapel && chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o mass-panic
+
+# Build inside the chapel-dev toolbox container (Fedora Atomic host)
+chapel-build-toolbox:
+    toolbox run --container chapel-dev bash -c "cd $(pwd)/chapel && chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o mass-panic"
+
+# Clean Chapel build artefacts
+chapel-clean:
+    rm -f chapel/mass-panic
+
+# Scan local repo tree with mass-panic (Chapel single-locale)
+chapel-scan dir=env("HOME") + "/Documents/hyperpolymath-repos":
+    ./chapel/mass-panic --repoDirectory={{dir}}
+
+# Diff the two most recent mass-panic temporal snapshots
+chapel-diff:
+    ./chapel/mass-panic --subcommand=diff
+
 # Run panic-attacker pre-commit scan
 assail:
     @command -v panic-attack >/dev/null 2>&1 && panic-attack assail . || echo "panic-attack not found — install from https://github.com/hyperpolymath/panic-attacker"

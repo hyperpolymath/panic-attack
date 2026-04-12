@@ -62,6 +62,18 @@ module MassPanic {
     config const quiet: bool = false;
     config const findingsOnly: bool = false;
 
+    // Top-level subcommand: "scan" (default) or "diff"
+    // diff: compare two temporal snapshots and print a delta report
+    config const subcommand: string = "scan";
+
+    // diff subcommand options:
+    //   --diffFrom=snap-1   snapshot ID from temporal index (default: second-to-last)
+    //   --diffTo=snap-2     snapshot ID from temporal index (default: latest)
+    //   --diffOutput=path   write diff JSON to file instead of stdout
+    config const diffFrom: string = "";
+    config const diffTo: string = "";
+    config const diffOutput: string = "";
+
     // Operation mode: which panic-attack functions to run per repo
     // "assail"      — static analysis only (default, fastest)
     // "assault"     — full stress test (assail + attack)
@@ -87,6 +99,12 @@ module MassPanic {
     // ---------------------------------------------------------------------------
 
     proc main() {
+        // Route to diff subcommand before doing any scanning
+        if subcommand == "diff" {
+            runDiff();
+            return;
+        }
+
         const startTime = timeSinceEpoch().totalSeconds();
 
         // Discover repositories
@@ -128,14 +146,33 @@ module MassPanic {
         var results = allResults[0..#actualCount];
         sort(results, comparator=new ResultComparator());
 
+        // Filter to only repos with findings if --findingsOnly
+        var filteredResults = results;
+        if findingsOnly {
+            var kept: list(RepoResult);
+            for r in results {
+                if r.weakPointCount > 0 || r.error != "" then
+                    kept.pushBack(r);
+            }
+            filteredResults = kept.toArray();
+        }
+
         // Build system image
-        var image = buildSystemImage(results, repos.size);
+        var image = buildSystemImage(filteredResults, repos.size);
+
+        // Populate timestamp and surface fields before any output
+        const nowStr = dateString();
+        image.generatedAt = nowStr;
+        image.scanSurface = if repoDirectory != "" then repoDirectory
+                            else if repoManifest != "" then "manifest:" + repoManifest
+                            else "unknown";
 
         // Build assemblyline-compatible report
-        var report = buildReport(results, repos.size, repoDirectory, startTime);
+        var report = buildReport(filteredResults, repos.size, repoDirectory, startTime);
+        report.createdAt = nowStr;
 
         // Write outputs
-        writeOutputs(report, image, results);
+        writeOutputs(report, image, filteredResults);
 
         // Take temporal snapshot
         if verisimdbDir != "" {
@@ -144,6 +181,159 @@ module MassPanic {
 
         if !quiet then
             printSummary(report, image);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Diff subcommand — compare two temporal snapshots
+    // ---------------------------------------------------------------------------
+
+    proc runDiff() {
+        const indexPath = joinPath(verisimdbDir, "temporal-index.json");
+        var snapshots = loadSnapshotSummaries(indexPath);
+
+        if snapshots.size == 0 {
+            writeln("mass-panic diff: no temporal snapshots found in ", indexPath);
+            writeln("  Run a scan first: ./mass-panic --repoDirectory=<path>");
+            return;
+        }
+
+        if snapshots.size < 2 {
+            writeln("mass-panic diff: need at least 2 snapshots to diff (found ", snapshots.size, ")");
+            return;
+        }
+
+        // Resolve --diffFrom and --diffTo (default: last two snapshots)
+        var fromSnap: TemporalSnapshot;
+        var toSnap: TemporalSnapshot;
+        var fromFound = false;
+        var toFound = false;
+
+        if diffFrom == "" && diffTo == "" {
+            // Default: diff latest two
+            fromSnap = snapshots[snapshots.size - 2];
+            toSnap   = snapshots[snapshots.size - 1];
+            fromFound = true;
+            toFound   = true;
+        } else {
+            for snap in snapshots {
+                if !fromFound && (diffFrom == "" || snap.id == diffFrom || snap.sequenceNumber:string == diffFrom) {
+                    fromSnap   = snap;
+                    fromFound  = true;
+                }
+                if !toFound && (diffTo == "" || snap.id == diffTo || snap.sequenceNumber:string == diffTo) {
+                    toSnap  = snap;
+                    toFound = true;
+                }
+            }
+            // If only one side was specified, fall back to adjacent defaults
+            if fromFound && !toFound then { toSnap = snapshots[snapshots.size - 1]; toFound = true; }
+            if toFound && !fromFound then { fromSnap = snapshots[0]; fromFound = true; }
+        }
+
+        if !fromFound || !toFound {
+            writeln("mass-panic diff: could not resolve snapshot IDs");
+            writeln("  --diffFrom=", diffFrom, "  --diffTo=", diffTo);
+            writeln("  Available: ");
+            for snap in snapshots {
+                writeln("    ", snap.id, "  seq=", snap.sequenceNumber,
+                        "  ts=", snap.timestamp,
+                        if snap.tag != "" then "  label=" + snap.tag else "");
+            }
+            return;
+        }
+
+        // Build minimal SystemImage objects from snapshot summaries —
+        // global metrics are accurate; per-node breakdown is not available
+        // without loading the full image JSON.
+        var olderImg: SystemImage;
+        olderImg.generatedAt    = fromSnap.timestamp;
+        olderImg.globalHealth   = fromSnap.globalHealth;
+        olderImg.globalRisk     = fromSnap.globalRisk;
+        olderImg.totalWeakPoints= fromSnap.totalWeakPoints;
+        olderImg.totalCritical  = fromSnap.totalCritical;
+        olderImg.reposScanned   = fromSnap.reposScanned;
+        olderImg.nodeCount      = fromSnap.nodeCount;
+
+        var newerImg: SystemImage;
+        newerImg.generatedAt    = toSnap.timestamp;
+        newerImg.globalHealth   = toSnap.globalHealth;
+        newerImg.globalRisk     = toSnap.globalRisk;
+        newerImg.totalWeakPoints= toSnap.totalWeakPoints;
+        newerImg.totalCritical  = toSnap.totalCritical;
+        newerImg.reposScanned   = toSnap.reposScanned;
+        newerImg.nodeCount      = toSnap.nodeCount;
+
+        const diff = diffSnapshots(olderImg, newerImg, fromSnap.tag, toSnap.tag);
+
+        // Output
+        if diffOutput != "" {
+            try {
+                var f = open(diffOutput, ioMode.cw);
+                var w = f.writer(locking=false);
+                writeDiffJson(w, diff);
+                if !quiet then
+                    writeln("mass-panic diff: wrote ", diffOutput);
+            } catch e: Error {
+                writeln("mass-panic diff: cannot write output: ", e.message());
+            }
+        } else {
+            printDiff(diff, fromSnap, toSnap);
+        }
+    }
+
+    proc printDiff(diff: TemporalDiff, from: TemporalSnapshot, to: TemporalSnapshot) {
+        const arrow = if diff.healthDelta >= 0 then "▲" else "▼";
+        writeln();
+        writeln("=== MASS-PANIC TEMPORAL DIFF ===");
+        writeln("From: ", from.id,
+                if from.tag != "" then " (" + from.tag + ")" else "",
+                "  ", from.timestamp);
+        writeln("To:   ", to.id,
+                if to.tag != "" then " (" + to.tag + ")" else "",
+                "  ", to.timestamp);
+        writeln();
+        writeln("Health:      ", arrow, " ", formatDelta(diff.healthDelta * 100.0), "%");
+        writeln("Risk:        ", if diff.riskDelta <= 0 then "▼" else "▲",
+                " ", formatDelta(diff.riskDelta * 100.0), "%");
+        writeln("Weak points: ", formatDeltaInt(diff.weakPointDelta));
+        writeln("Critical:    ", formatDeltaInt(diff.criticalDelta));
+        if diff.newNodes.size > 0 then
+            writeln("New repos:   +", diff.newNodes.size);
+        if diff.removedNodes.size > 0 then
+            writeln("Gone repos:  -", diff.removedNodes.size);
+        if diff.improvedNodes.size > 0 then
+            writeln("Improved:    ", diff.improvedNodes.size, " repos");
+        if diff.degradedNodes.size > 0 then
+            writeln("Degraded:    ", diff.degradedNodes.size, " repos");
+        writeln();
+    }
+
+    proc writeDiffJson(writer, diff: TemporalDiff) throws {
+        writer.writeln("{");
+        writer.writeln("  \"format\": \"", diff.format, "\",");
+        writer.writeln("  \"from_timestamp\": \"", diff.fromTimestamp, "\",");
+        writer.writeln("  \"to_timestamp\": \"", diff.toTimestamp, "\",");
+        writer.writeln("  \"from_label\": \"", diff.fromLabel, "\",");
+        writer.writeln("  \"to_label\": \"", diff.toLabel, "\",");
+        writer.writeln("  \"health_delta\": ", diff.healthDelta, ",");
+        writer.writeln("  \"risk_delta\": ", diff.riskDelta, ",");
+        writer.writeln("  \"weak_point_delta\": ", diff.weakPointDelta, ",");
+        writer.writeln("  \"critical_delta\": ", diff.criticalDelta, ",");
+        writer.writeln("  \"new_repos\": ", diff.newNodes.size, ",");
+        writer.writeln("  \"removed_repos\": ", diff.removedNodes.size, ",");
+        writer.writeln("  \"improved_repos\": ", diff.improvedNodes.size, ",");
+        writer.writeln("  \"degraded_repos\": ", diff.degradedNodes.size, ",");
+        writer.writeln("  \"unchanged_repos\": ", diff.unchangedCount);
+        writer.writeln("}");
+    }
+
+    proc formatDelta(v: real): string {
+        const s = (abs(v)):string;
+        return if v > 0 then "+" + s else if v < 0 then "-" + s else "0";
+    }
+
+    proc formatDeltaInt(v: int): string {
+        return if v > 0 then "+" + v:string else v:string;
     }
 
     // ---------------------------------------------------------------------------
@@ -173,7 +363,7 @@ module MassPanic {
             for entry in listDir(repoDirectory, dirs=true, files=false) {
                 const fullPath = joinPath(repoDirectory, entry);
                 const gitDir = joinPath(fullPath, ".git");
-                if isDir(gitDir) {
+                if safeIsDir(gitDir) {
                     repos.pushBack(fullPath);
                 }
             }
@@ -209,7 +399,7 @@ module MassPanic {
         // Invoke panic-attack with mode-specific arguments
         try {
             var sub = spawn(
-                cmdArgs,
+                cmdArgs.toArray(),
                 stdout=pipeStyle.pipe,
                 stderr=pipeStyle.pipe
             );
@@ -432,27 +622,6 @@ module MassPanic {
         return adjResult;
     }
 
-    /// Extract a quoted string value following a JSON key.
-    /// Given jsonStr containing "key":"value", returns "value".
-    proc extractQuotedString(json: string, key: string): string {
-        const idx = json.find(key);
-        if idx == -1 then return "";
-        const afterKey = json[idx + key.size..];
-        // Skip whitespace to find opening quote
-        var pos = 0;
-        while pos < afterKey.size && (afterKey[pos] == " " || afterKey[pos] == "\t") {
-            pos += 1;
-        }
-        if pos >= afterKey.size || afterKey[pos] != "\"" then return "";
-        pos += 1; // skip opening quote
-        var result: string;
-        while pos < afterKey.size && afterKey[pos] != "\"" {
-            result += afterKey[pos];
-            pos += 1;
-        }
-        return result;
-    }
-
     // ---------------------------------------------------------------------------
     // Output writing
     // ---------------------------------------------------------------------------
@@ -551,19 +720,28 @@ module MassPanic {
     }
 
     proc dateString(): string {
-        // ISO-8601 date component for filenames
-        const now = timeSinceEpoch().totalSeconds(): int;
-        // Use epoch seconds as a simple timestamp for filenames
-        return now: string;
+        // ISO-8601 timestamp via system date command (sortable, human-readable)
+        try {
+            var sub = spawn(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"],
+                            stdout=pipeStyle.pipe,
+                            stderr=pipeStyle.close);
+            var result: string;
+            sub.stdout.readLine(result, stripNewline=true);
+            sub.wait();
+            if sub.exitCode == 0 then return result.strip();
+        } catch { }
+        // Fallback: epoch seconds (always available)
+        return timeSinceEpoch().totalSeconds(): int: string;
     }
 
     // ---------------------------------------------------------------------------
     // Result sorting comparator
     // ---------------------------------------------------------------------------
 
-    record ResultComparator {}
-    proc ResultComparator.compare(a: RepoResult, b: RepoResult): int {
-        // Descending by weak point count
-        return b.weakPointCount - a.weakPointCount;
+    record ResultComparator: relativeComparator {
+        proc compare(a: RepoResult, b: RepoResult): int {
+            // Descending by weak point count
+            return b.weakPointCount - a.weakPointCount;
+        }
     }
 }

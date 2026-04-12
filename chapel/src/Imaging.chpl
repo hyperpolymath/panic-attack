@@ -30,6 +30,7 @@ module Imaging {
     use IO;
     use List;
     use Map;
+    use Math;
     use Sort;
     use Protocol;
 
@@ -203,26 +204,28 @@ module Imaging {
 
         // Risk proximity edges: connect repos with similar risk profiles
         for i in 0..#nodes.size {
-            if nodes[i].skipped || nodes[i].error != "" then continue;
-            for j in (i+1)..#nodes.size {
-                if nodes[j].skipped || nodes[j].error != "" then continue;
+            const ni = try! nodes[i];
+            if ni.skipped || ni.error != "" then continue;
+            for j in (i+1)..<nodes.size {
+                const nj = try! nodes[j];
+                if nj.skipped || nj.error != "" then continue;
 
                 // Connect repos with similar risk intensity (within 0.15)
-                const riskDelta = abs(nodes[i].riskIntensity - nodes[j].riskIntensity);
-                if riskDelta < 0.15 && nodes[i].riskIntensity > 0.3 {
+                const riskDelta = abs(ni.riskIntensity - nj.riskIntensity);
+                if riskDelta < 0.15 && ni.riskIntensity > 0.3 {
                     var edge: ImageEdge;
-                    edge.fromNode = nodes[i].id;
-                    edge.toNode = nodes[j].id;
+                    edge.fromNode = ni.id;
+                    edge.toNode = nj.id;
                     edge.edgeType = "risk_proximity";
                     edge.weight = 1.0 - riskDelta / 0.15;
                     edges.pushBack(edge);
                 }
 
                 // Connect repos that share dominant vulnerability categories
-                if sharesDominantCategory(nodes[i], nodes[j]) {
+                if sharesDominantCategory(ni, nj) {
                     var edge: ImageEdge;
-                    edge.fromNode = nodes[i].id;
-                    edge.toNode = nodes[j].id;
+                    edge.fromNode = ni.id;
+                    edge.toNode = nj.id;
                     edge.edgeType = "shared_pattern";
                     edge.weight = 0.8;
                     edges.pushBack(edge);
@@ -260,7 +263,7 @@ module Imaging {
     // Risk classification
     // ---------------------------------------------------------------------------
 
-    proc ref classifyRisk(ref dist: RiskDistribution, risk: real) {
+    proc classifyRisk(ref dist: RiskDistribution, risk: real) {
         if risk < 0.2 then dist.healthy += 1;
         else if risk < 0.4 then dist.low += 1;
         else if risk < 0.6 then dist.moderate += 1;

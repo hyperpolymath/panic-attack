@@ -14,6 +14,15 @@ module Protocol {
     use Map;
     use List;
     use FileSystem;
+    use Path;
+
+    // Safe wrappers around throwing FileSystem procs
+    proc safeIsFile(path: string): bool {
+        try { return isFile(path); } catch { return false; }
+    }
+    proc safeIsDir(path: string): bool {
+        try { return isDir(path); } catch { return false; }
+    }
 
     // ---------------------------------------------------------------------------
     // RepoResult — outcome of scanning a single repository
@@ -70,7 +79,7 @@ module Protocol {
 
         proc get(repoPath: string): string {
             if fingerprints.contains(repoPath) then
-                return fingerprints[repoPath];
+                return try! fingerprints[repoPath];
             return "";
         }
 
@@ -103,27 +112,35 @@ module Protocol {
     proc extractInt(json: string, key: string): int {
         const idx = json.find(key);
         if idx == -1 then return 0;
-        const afterKey = json[idx + key.size..];
+        // Scan past the key, then collect digits — avoids byteIndex arithmetic
+        var afterKey: string;
+        try { afterKey = json[idx..]; } catch { return 0; }
+        var skipped = 0;
         var numStr: string;
         for ch in afterKey {
+            skipped += 1;
+            if skipped <= key.size then continue;
             if ch >= "0" && ch <= "9" then
                 numStr += ch;
             else if numStr.size > 0 then
                 break;
         }
-        if numStr.size > 0 then return numStr: int;
+        if numStr.size > 0 {
+            try { return numStr: int; } catch { return 0; }
+        }
         return 0;
     }
 
     proc countSeverity(json: string, severity: string): int {
+        // Slice-and-search: advance through the string by taking suffixes.
+        const searchStr = "\"severity\":\"" + severity + "\"";
         var count = 0;
-        var searchStr = "\"severity\":\"" + severity + "\"";
-        var pos = 0;
-        while true {
-            const idx = json.find(searchStr, pos);
+        var remaining = json;
+        while remaining.size > 0 {
+            const idx = remaining.find(searchStr);
             if idx == -1 then break;
             count += 1;
-            pos = idx + searchStr.size;
+            remaining = try! (try! remaining[idx..])[searchStr.size..];
         }
         return count;
     }
@@ -147,71 +164,55 @@ module Protocol {
 
     // Load fingerprint cache from a file path. Parses the JSON format:
     //   {"fingerprints":{"repo/path":"blake3hash",...}}
-    // Uses hand-rolled string matching consistent with the rest of Protocol.
+    // Processes line by line; each entry line is: "key": "value",
+    // Extracts using extractQuotedString with marker built from the known
+    // prefix "fingerprints" key — avoids byteIndex arithmetic entirely.
     proc loadFingerprintCacheFromFile(path: string): FingerprintCache {
         var cache: FingerprintCache;
-        if path == "" || !isFile(path) then return cache;
+        if path == "" || !safeIsFile(path) then return cache;
 
         try {
             var f = open(path, ioMode.r);
             var reader = f.reader(locking=false);
-            var contents: string;
+            var inFingerprints = false;
             var line: string;
             while reader.readLine(line, stripNewline=true) {
-                contents += line;
-            }
-
-            // Find the "fingerprints" object within the JSON
-            const fpKey = "\"fingerprints\"";
-            const fpIdx = contents.find(fpKey);
-            if fpIdx == -1 then return cache;
-
-            // Locate the opening brace of the fingerprints object
-            const afterKey = contents[fpIdx + fpKey.size..];
-            const braceIdx = afterKey.find("{");
-            if braceIdx == -1 then return cache;
-
-            // Extract the inner object content between { and matching }
-            const innerStart = braceIdx + 1;
-            var depth = 1;
-            var innerEnd = innerStart;
-            for i in innerStart + 1..afterKey.size - 1 {
-                if afterKey[i] == "{" then depth += 1;
-                else if afterKey[i] == "}" then depth -= 1;
-                if depth == 0 {
-                    innerEnd = i;
-                    break;
+                const trimmed = line.strip();
+                if trimmed.startsWith("\"fingerprints\"") then {
+                    inFingerprints = true;
+                    continue;
                 }
+                if inFingerprints && trimmed == "}" then break;
+                if !inFingerprints then continue;
+                // Each entry is: "repo/path": "blake3hash",
+                // Scan for first "..." then ": " then second "..."
+                var inKey = false;
+                var inVal = false;
+                var sawColon = false;
+                var k2: string;
+                var v2: string;
+                for ch in trimmed {
+                    if ch == "\"" && !inKey && !sawColon && k2 == "" {
+                        inKey = true;
+                    } else if ch == "\"" && inKey && !sawColon {
+                        inKey = false;
+                    } else if inKey {
+                        k2 += ch;
+                    } else if ch == ":" && k2 != "" && !sawColon {
+                        sawColon = true;
+                    } else if ch == "\"" && sawColon && !inVal {
+                        inVal = true;
+                    } else if ch == "\"" && inVal {
+                        inVal = false;
+                        break;
+                    } else if inVal {
+                        v2 += ch;
+                    }
+                }
+                if k2 != "" && v2 != "" then
+                    cache.fingerprints[k2] = v2;
             }
-
-            const inner = afterKey[innerStart..innerEnd - 1];
-
-            // Parse key-value pairs: "path":"hash"
-            // Walk through the inner string looking for quoted strings
-            var pos = 0;
-            while pos < inner.size {
-                // Find next key (quoted string)
-                const keyStart = inner.find("\"", pos);
-                if keyStart == -1 then break;
-                const keyEnd = inner.find("\"", keyStart + 1);
-                if keyEnd == -1 then break;
-                const key = inner[keyStart + 1..keyEnd - 1];
-
-                // Find colon after key
-                const colonIdx = inner.find(":", keyEnd + 1);
-                if colonIdx == -1 then break;
-
-                // Find value (quoted string after colon)
-                const valStart = inner.find("\"", colonIdx + 1);
-                if valStart == -1 then break;
-                const valEnd = inner.find("\"", valStart + 1);
-                if valEnd == -1 then break;
-                const val = inner[valStart + 1..valEnd - 1];
-
-                cache.fingerprints[key] = val;
-                pos = valEnd + 1;
-            }
-        } catch e: Error {
+        } catch {
             // Cache is optional — if parsing fails, return empty cache
         }
 
@@ -222,6 +223,35 @@ module Protocol {
     // loadFingerprintCacheFromFile with the configured path instead).
     proc loadFingerprintCache(): FingerprintCache {
         return loadFingerprintCacheFromFile("");
+    }
+
+    // Extract a quoted string value following a JSON key, e.g. "key":"value".
+    // Uses character iteration to avoid byteIndex arithmetic entirely.
+    proc extractQuotedString(json: string, key: string): string {
+        const idx = json.find(key);
+        if idx == -1 then return "";
+        // Get the substring starting at the key match
+        var afterKey: string;
+        try { afterKey = json[idx..]; } catch { return ""; }
+        // Scan character by character: find the quoted value after the key
+        var inValue = false;
+        var result: string;
+        // Skip key.size characters first (the key itself), then find "..."
+        var skipped = 0;
+        for ch in afterKey {
+            skipped += 1;
+            if skipped <= key.size then continue;
+            // Now past the key — look for the opening quote of the value
+            if ch == "\"" && !inValue {
+                inValue = true;
+                continue;
+            }
+            if ch == "\"" && inValue {
+                break; // closing quote
+            }
+            if inValue then result += ch;
+        }
+        return result;
     }
 
     proc buildReport(results: [] RepoResult, totalRepos: int,
@@ -246,9 +276,4 @@ module Protocol {
         return report;
     }
 
-    proc basename(path: string): string {
-        const idx = path.rfind("/");
-        if idx == -1 then return path;
-        return path[idx+1..];
-    }
 }

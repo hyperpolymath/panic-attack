@@ -3,7 +3,7 @@
 [brick]
 name = "mass-panic"
 version = "0.1.0"
-chplVersion = "2.3.0"
+chplVersion = "2.8.0"
 authors = ["Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"]
 license = "PMPL-1.0-or-later"
 

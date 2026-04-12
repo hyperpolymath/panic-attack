@@ -29,6 +29,7 @@ module Temporal {
     use IO;
     use FileSystem;
     use List;
+    use Map;
     use Path;
     use Imaging;
     use Protocol;
@@ -40,7 +41,7 @@ module Temporal {
     record TemporalSnapshot {
         var id: string;
         var timestamp: string;
-        var label: string;          // user-provided label (e.g. "pre-refactor")
+        var tag: string;          // user-provided label (e.g. "pre-refactor")
         var sequenceNumber: int;
         var imagePath: string;      // path to SystemImage JSON
         var hexadPath: string;      // path to VeriSimDB hexad
@@ -99,11 +100,14 @@ module Temporal {
     // ---------------------------------------------------------------------------
 
     proc takeSnapshot(image: SystemImage, report: AssemblylineReport,
-                      verisimdbDir: string, label: string) {
+                      verisimdbDir: string, snapTag: string) {
         const indexPath = joinPath(verisimdbDir, "temporal-index.json");
-        var index = loadTemporalIndex(indexPath);
 
-        const seq = index.snapshotCount + 1;
+        // Read existing state without losing prior entries
+        const existingCount = loadSnapshotCount(indexPath);
+        const existingEntries = loadRawSnapshots(indexPath);
+
+        const seq = existingCount + 1;
         const snapshotId = "snap-" + seq: string;
 
         // Write the system image as a VeriSimDB hexad
@@ -113,7 +117,7 @@ module Temporal {
         try {
             var f = open(hexadPath, ioMode.cw);
             var w = f.writer(locking=false);
-            writeTemporalHexad(w, image, snapshotId, seq, label);
+            writeTemporalHexad(w, image, snapshotId, seq, snapTag);
         } catch e: Error {
             writeln("temporal: cannot write hexad: ", e.message());
             return;
@@ -131,11 +135,11 @@ module Temporal {
             writeln("temporal: cannot write image: ", e.message());
         }
 
-        // Update the temporal index
+        // Build the new snapshot entry
         var snapshot: TemporalSnapshot;
         snapshot.id = snapshotId;
         snapshot.timestamp = image.generatedAt;
-        snapshot.label = label;
+        snapshot.tag = snapTag;
         snapshot.sequenceNumber = seq;
         snapshot.imagePath = imagePath;
         snapshot.hexadPath = hexadPath;
@@ -146,11 +150,8 @@ module Temporal {
         snapshot.reposScanned = image.reposScanned;
         snapshot.nodeCount = image.nodeCount;
 
-        index.snapshots.pushBack(snapshot);
-        index.snapshotCount = index.snapshots.size;
-        index.lastUpdated = image.generatedAt;
-
-        saveTemporalIndex(index, indexPath);
+        // Write index, preserving all existing entries
+        saveTemporalIndex(indexPath, existingEntries, snapshot, seq);
     }
 
     // ---------------------------------------------------------------------------
@@ -171,12 +172,12 @@ module Temporal {
         diff.criticalDelta = newer.totalCritical - older.totalCritical;
 
         // Build lookup maps for node comparison
-        var olderNodes: map(string, ImageNode);
+        var olderNodes = new map(string, ImageNode);
         for node in older.nodes {
             olderNodes[node.id] = node;
         }
 
-        var newerNodes: map(string, ImageNode);
+        var newerNodes = new map(string, ImageNode);
         for node in newer.nodes {
             newerNodes[node.id] = node;
         }
@@ -186,7 +187,7 @@ module Temporal {
             if !olderNodes.contains(node.id) {
                 diff.newNodes.pushBack(node.id);
             } else {
-                const oldNode = olderNodes[node.id];
+                const oldNode = try! olderNodes[node.id];
                 if node.skipped || oldNode.skipped then continue;
 
                 const healthChange = node.healthScore - oldNode.healthScore;
@@ -226,12 +227,95 @@ module Temporal {
     // Temporal index I/O
     // ---------------------------------------------------------------------------
 
-    proc loadTemporalIndex(path: string): TemporalIndex {
-        var index: TemporalIndex;
-        // If no index exists, return empty
-        if !isFile(path) then return index;
+    // Parse all snapshot summary entries from the temporal index.
+    // Returns a list of TemporalSnapshot records with key metrics populated.
+    // saveTemporalIndex writes each entry as a single line: "    {...}\n"
+    // so we process line-by-line — no positional string arithmetic needed.
+    proc loadSnapshotSummaries(path: string): list(TemporalSnapshot) {
+        var results: list(TemporalSnapshot);
+        if !safeIsFile(path) then return results;
 
-        // Minimal parsing — extract snapshot count and last updated
+        var inSnapshots = false;
+        try {
+            var f = open(path, ioMode.r);
+            var reader = f.reader(locking=false);
+            var line: string;
+            while reader.readLine(line, stripNewline=true) {
+                const trimmed = line.strip();
+
+                // Enter/exit the snapshots array based on surrounding context
+                if trimmed.startsWith("\"snapshots\": [") {
+                    inSnapshots = true;
+                    continue;
+                }
+                if inSnapshots && trimmed == "]" {
+                    inSnapshots = false;
+                    continue;
+                }
+
+                if !inSnapshots then continue;
+
+                // Each non-empty, non-bracket line inside "snapshots" is one entry
+                if trimmed == "" || trimmed == "[" || trimmed == "]" ||
+                   trimmed == "," then continue;
+
+                // Strip trailing comma if present (from the write loop)
+                var obj = if trimmed.endsWith(",") then trimmed[..trimmed.size - 2] else trimmed;
+
+                if !obj.startsWith("{") then continue;
+
+                var snap: TemporalSnapshot;
+                snap.id              = extractQuotedString(obj, "\"id\":");
+                snap.timestamp       = extractQuotedString(obj, "\"timestamp\":");
+                snap.tag             = extractQuotedString(obj, "\"label\":");
+                snap.sequenceNumber  = extractInt(obj, "\"sequence\":");
+                snap.globalHealth    = extractReal(obj, "\"health\":");
+                snap.globalRisk      = extractReal(obj, "\"risk\":");
+                snap.totalWeakPoints = extractInt(obj, "\"weak_points\":");
+                snap.totalCritical   = extractInt(obj, "\"critical\":");
+                snap.reposScanned    = extractInt(obj, "\"repos\":");
+                snap.nodeCount       = extractInt(obj, "\"nodes\":");
+
+                if snap.id != "" then results.pushBack(snap);
+            }
+        } catch { }
+
+        return results;
+    }
+
+    // Extract a real (floating-point) value following a JSON key.
+    proc extractReal(json: string, key: string): real {
+        const idx = json.find(key);
+        if idx == -1 then return 0.0;
+        // Scan past the key then collect digits/dot — avoids byteIndex arithmetic
+        var afterKey: string;
+        try { afterKey = json[idx..]; } catch { return 0.0; }
+        var skipped = 0;
+        var numStr: string;
+        var seenDot = false;
+        for ch in afterKey {
+            skipped += 1;
+            if skipped <= key.size then continue;
+            if (ch >= "0" && ch <= "9") || (ch == "." && !seenDot) {
+                if ch == "." then seenDot = true;
+                numStr += ch;
+            } else if ch == "-" && numStr.size == 0 {
+                numStr += ch;
+            } else if numStr.size > 0 {
+                break;
+            }
+        }
+        if numStr.size > 0 {
+            try { return numStr: real; } catch { return 0.0; }
+        }
+        return 0.0;
+    }
+
+    // Returns the current snapshot count by reading the on-disk index.
+    // Does NOT attempt to parse the full snapshots array — we preserve those
+    // as a raw string and splice the new entry in during save.
+    proc loadSnapshotCount(path: string): int {
+        if !safeIsFile(path) then return 0;
         try {
             var f = open(path, ioMode.r);
             var reader = f.reader(locking=false);
@@ -240,37 +324,73 @@ module Temporal {
             while reader.readLine(line, stripNewline=true) {
                 content += line;
             }
-            index.snapshotCount = extractInt(content, "\"snapshot_count\":");
+            return extractInt(content, "\"snapshot_count\":");
         } catch { }
-
-        return index;
+        return 0;
     }
 
-    proc saveTemporalIndex(index: TemporalIndex, path: string) {
+    // Read the raw snapshot entries from an existing temporal index.
+    // Collects all lines between "snapshots": [ and the closing ], stripped of
+    // the surrounding brackets, so they can be spliced into the new index file.
+    proc loadRawSnapshots(path: string): string {
+        if !safeIsFile(path) then return "";
+        var collected: string;
+        var inSnapshots = false;
+        try {
+            var f = open(path, ioMode.r);
+            var reader = f.reader(locking=false);
+            var line: string;
+            while reader.readLine(line, stripNewline=true) {
+                const trimmed = line.strip();
+                if trimmed.startsWith("\"snapshots\": [") {
+                    inSnapshots = true;
+                    continue;
+                }
+                if inSnapshots && trimmed == "]" {
+                    break;
+                }
+                if inSnapshots && trimmed != "" {
+                    if collected != "" then collected += "\n";
+                    collected += line;
+                }
+            }
+        } catch { }
+        return collected.strip();
+    }
+
+    // Write the temporal index to disk, preserving all existing snapshot entries
+    // from the raw string plus appending the new entry.
+    proc saveTemporalIndex(path: string, existingEntries: string,
+                           newSnap: TemporalSnapshot, newCount: int) {
         try {
             var f = open(path, ioMode.cw);
             var w = f.writer(locking=false);
             w.writeln("{");
-            w.writeln("  \"format\": \"", index.format, "\",");
-            w.writeln("  \"last_updated\": \"", index.lastUpdated, "\",");
-            w.writeln("  \"snapshot_count\": ", index.snapshotCount, ",");
+            w.writeln("  \"format\": \"panic-attack.temporal-index.v1\",");
+            w.writeln("  \"last_updated\": \"", newSnap.timestamp, "\",");
+            w.writeln("  \"snapshot_count\": ", newCount, ",");
             w.writeln("  \"snapshots\": [");
-            for (snap, idx) in zip(index.snapshots, 0..) {
-                if idx > 0 then w.writeln(",");
-                w.write("    {");
-                w.write("\"id\": \"", snap.id, "\", ");
-                w.write("\"timestamp\": \"", snap.timestamp, "\", ");
-                w.write("\"label\": \"", snap.label, "\", ");
-                w.write("\"sequence\": ", snap.sequenceNumber, ", ");
-                w.write("\"health\": ", snap.globalHealth, ", ");
-                w.write("\"risk\": ", snap.globalRisk, ", ");
-                w.write("\"weak_points\": ", snap.totalWeakPoints, ", ");
-                w.write("\"critical\": ", snap.totalCritical, ", ");
-                w.write("\"repos\": ", snap.reposScanned, ", ");
-                w.write("\"nodes\": ", snap.nodeCount);
-                w.write("}");
+
+            // Splice in all prior entries followed by the new one
+            if existingEntries != "" {
+                w.writeln(existingEntries, ",");
             }
-            w.writeln("\n  ]");
+
+            // New snapshot entry
+            w.write("    {");
+            w.write("\"id\": \"", newSnap.id, "\", ");
+            w.write("\"timestamp\": \"", newSnap.timestamp, "\", ");
+            w.write("\"label\": \"", newSnap.tag, "\", ");
+            w.write("\"sequence\": ", newSnap.sequenceNumber, ", ");
+            w.write("\"health\": ", newSnap.globalHealth, ", ");
+            w.write("\"risk\": ", newSnap.globalRisk, ", ");
+            w.write("\"weak_points\": ", newSnap.totalWeakPoints, ", ");
+            w.write("\"critical\": ", newSnap.totalCritical, ", ");
+            w.write("\"repos\": ", newSnap.reposScanned, ", ");
+            w.write("\"nodes\": ", newSnap.nodeCount);
+            w.writeln("}");
+
+            w.writeln("  ]");
             w.writeln("}");
         } catch e: Error {
             writeln("temporal: cannot save index: ", e.message());
@@ -282,7 +402,7 @@ module Temporal {
     // ---------------------------------------------------------------------------
 
     proc writeTemporalHexad(writer, image: SystemImage, snapshotId: string,
-                            seq: int, label: string) throws {
+                            seq: int, snapTag: string) throws {
         writer.writeln("{");
         writer.writeln("  \"schema\": \"verisimdb.hexad.v1\",");
         writer.writeln("  \"id\": \"", snapshotId, "\",");
@@ -300,7 +420,7 @@ module Temporal {
         writer.writeln("  \"temporal\": {");
         writer.writeln("    \"timestamp\": \"", image.generatedAt, "\",");
         writer.writeln("    \"sequence_number\": ", seq, ",");
-        writer.writeln("    \"label\": \"", label, "\"");
+        writer.writeln("    \"label\": \"", snapTag, "\"");
         writer.writeln("  },");
 
         // Semantic facet
