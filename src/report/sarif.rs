@@ -137,6 +137,8 @@ fn rule_id(category: &WeakPointCategory) -> &'static str {
         WeakPointCategory::ProofDrift => "PA021",
         WeakPointCategory::CryptoMisuse => "PA022",
         WeakPointCategory::SupplyChain => "PA023",
+        WeakPointCategory::InputBoundary => "PA024",
+        WeakPointCategory::MutationGap => "PA025",
     }
 }
 
@@ -166,6 +168,8 @@ fn rule_name(category: &WeakPointCategory) -> &'static str {
         WeakPointCategory::ProofDrift => "proof-drift",
         WeakPointCategory::CryptoMisuse => "crypto-misuse",
         WeakPointCategory::SupplyChain => "supply-chain",
+        WeakPointCategory::InputBoundary => "input-boundary",
+        WeakPointCategory::MutationGap => "mutation-gap",
     }
 }
 

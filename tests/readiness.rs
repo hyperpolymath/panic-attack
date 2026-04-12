@@ -471,7 +471,7 @@ fn readiness_b_panicbot_json_contract() {
         sev
     );
 
-    // All 23 WeakPointCategory variants must map to PA001–PA023
+    // All 25 WeakPointCategory variants must map to PA001–PA025
     // Verify the category enum values match panicbot's expected strings
     let expected_categories = [
         "UncheckedAllocation", "UnboundedLoop", "BlockingIO", "UnsafeCode",
@@ -480,6 +480,7 @@ fn readiness_b_panicbot_json_contract() {
         "UnsafeFFI", "AtomExhaustion", "InsecureProtocol", "ExcessivePermissions",
         "PathTraversal", "HardcodedSecret", "UncheckedError", "InfiniteRecursion",
         "UnsafeTypeCoercion", "ProofDrift", "CryptoMisuse", "SupplyChain",
+        "InputBoundary", "MutationGap",
     ];
     for variant_name in &expected_categories {
         let variant_json = format!("\"{}\"", variant_name);

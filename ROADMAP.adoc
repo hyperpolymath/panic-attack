@@ -103,10 +103,10 @@ stay in sync with their formal counterparts.
 Unvalidated deserialization paths at CBOR proof blobs, A2ML manifest parsing,
 VeriSimDB scan ingestion (DispatchBridge), and JSON from panic-attack itself.
 
-* [ ] Detect unchecked CBOR / MessagePack deserialization (`serde` without validation)
-* [ ] Detect A2ML parsing without `try`/`catch` boundary
-* [ ] Detect `JSON.parse` / `JSON3.read` calls not wrapped in error-handling
-* [ ] Track taint from external file reads to trust-sensitive sinks (store operations, proof evaluation)
+* [x] Detect unchecked CBOR / MessagePack deserialization (`serde_cbor`/`ciborium`/`rmp_serde` in Rust) — PA024
+* [ ] Detect A2ML parsing without `try`/`catch` boundary (deferred — requires cross-file taint)
+* [x] Detect `JSON.parse` / `JSON3.read` calls not wrapped in error-handling (JS/Julia) — PA024
+* [ ] Track taint from external file reads to trust-sensitive sinks (kanren-phase, deferred)
 
 === `supply_chain` — Dependency and build integrity
 
@@ -123,10 +123,10 @@ verification, Nix flake input pinning, or Cargo lock coherence checks.
 
 Identified as an estate-wide gap in the 2026-04-05 KRL-stack CRG blitz audit.
 
-* [ ] Detect test suites with zero mutation-test configuration (no `cargo-mutants`, `mutagen`, etc.)
-* [ ] Flag `@testset` blocks with no assertion diversity (all `@test x isa Y` style, no value checks)
-* [ ] Detect Elixir test suites without `ExUnitProperties` or StreamData for property-based testing
-* [ ] Emit `mutation_gap` weak-point for any module with >80% line coverage but zero mutation score
+* [x] Detect test suites with zero mutation-test configuration (no `cargo-mutants` in Rust) — PA025
+* [x] Flag `@testset` blocks with no assertion diversity (all `@test x isa Y`, no value checks) — PA025
+* [x] Detect Elixir test suites without `ExUnitProperties` or StreamData for property-based testing — PA025
+* [ ] Emit `mutation_gap` weak-point for any module with >80% line coverage but zero mutation score (requires runtime coverage data — deferred)
 
 == v3.0.0 -- Distributed Scanning
 

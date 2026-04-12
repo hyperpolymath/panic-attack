@@ -366,6 +366,19 @@ pub enum WeakPointCategory {
     /// `git-tree-sha1` hash entries, `flake.nix` inputs without `narHash`,
     /// and `deno.json` import map entries without a pinned version.
     SupplyChain,
+    /// Structured-data parsing boundary: unchecked deserialization of CBOR,
+    /// MessagePack, JSON, or A2ML data at trust boundaries.  Covers `serde_cbor`
+    /// and `ciborium` CBOR calls, `rmp_serde` MessagePack calls (Rust),
+    /// `JSON.parse` without try-catch (JavaScript), and `JSON3.read` /
+    /// `JSON.parse` without error-handling (Julia).
+    InputBoundary,
+    /// Mutation and chaos coverage gap: test suites that lack mutation-test
+    /// tooling or have insufficient assertion diversity.  Covers projects with
+    /// test infrastructure but no `cargo-mutants`/`.cargo-mutants.toml` config,
+    /// Julia test files where all `@test` assertions are type-only (`isa` with no
+    /// value check), and Elixir test files without `ExUnitProperties` or
+    /// `StreamData` for property-based testing.
+    MutationGap,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

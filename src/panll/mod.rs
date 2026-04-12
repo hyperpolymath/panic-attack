@@ -325,6 +325,8 @@ fn category_label(cat: WeakPointCategory) -> &'static str {
         WeakPointCategory::ProofDrift => "proof-drift",
         WeakPointCategory::CryptoMisuse => "crypto-misuse",
         WeakPointCategory::SupplyChain => "supply-chain",
+        WeakPointCategory::InputBoundary => "input-boundary",
+        WeakPointCategory::MutationGap => "mutation-gap",
     }
 }
 

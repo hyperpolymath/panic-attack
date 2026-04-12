@@ -561,6 +561,9 @@ impl Analyzer {
         // Project-level supply-chain integrity checks (manifest/lockfile checks).
         self.analyze_supply_chain_manifests(&mut all_weak_points)?;
 
+        // Project-level mutation coverage gap checks (tooling presence, not coverage %).
+        self.analyze_mutation_gaps(&mut all_weak_points)?;
+
         // Secondary synthesis stages derive framework hints and relational overlays.
         let frameworks = self.detect_frameworks(&files)?;
         let recommended_attacks = self.generate_recommendations(&all_weak_points, &global_stats);
@@ -1134,6 +1137,57 @@ impl Analyzer {
             }
         }
 
+        // ── InputBoundary: unchecked CBOR / MessagePack deserialization ───────
+        // serde_cbor (legacy) and ciborium (modern) CBOR deserialization calls
+        // without a visible validation wrapper are unvalidated trust boundaries.
+        for pattern in &[
+            "serde_cbor::from_slice",
+            "serde_cbor::from_reader",
+            "ciborium::de::from_reader",
+            "ciborium::from_reader",
+        ] {
+            if code_only.contains(pattern) {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::InputBoundary,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::High,
+                    description: format!(
+                        "Unchecked CBOR deserialization ({}) in {} — validate schema before trusting decoded value",
+                        pattern, file_path
+                    ),
+                    recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
+                    suppressed: false,
+                });
+                break;
+            }
+        }
+
+        // rmp_serde / rmpv — MessagePack deserialization
+        for pattern in &[
+            "rmp_serde::from_slice",
+            "rmp_serde::from_read",
+            "rmpv::decode::read_value",
+        ] {
+            if code_only.contains(pattern) {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::InputBoundary,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::High,
+                    description: format!(
+                        "Unchecked MessagePack deserialization ({}) in {} — validate schema before trusting decoded value",
+                        pattern, file_path
+                    ),
+                    recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
+                    suppressed: false,
+                });
+                break;
+            }
+        }
+
         Ok(())
     }
 
@@ -1500,6 +1554,30 @@ impl Analyzer {
             });
         }
 
+        // ── InputBoundary: JSON.parse without error-handling context ──────────
+        // JSON.parse throws SyntaxError on malformed input; callers that don't
+        // wrap it in a try-catch expose an unhandled exception boundary.
+        // Heuristic: flag files where JSON.parse call count exceeds try-block count
+        // (more parses than guarded scopes).
+        let json_parse_count = content.matches("JSON.parse(").count();
+        let try_count = content.matches("try {").count() + content.matches("try{").count();
+        if json_parse_count > 0 && json_parse_count > try_count {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::InputBoundary,
+                location: Some(file_path.to_string()),
+                severity: Severity::Medium,
+                description: format!(
+                    "{} JSON.parse call(s) with {} try block(s) in {} — \
+                     JSON.parse throws SyntaxError on malformed input; wrap in try-catch",
+                    json_parse_count, try_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
         Ok(())
     }
 
@@ -1680,6 +1758,33 @@ impl Analyzer {
                     file_path
                 ),
                 recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
+            });
+        }
+
+        // ── MutationGap: Elixir test files without property-based testing ─────
+        // Test files using ExUnit.Case that never reach for ExUnitProperties or
+        // StreamData cannot discover emergent edge-case regressions; mutation
+        // testing will find surviving mutants that example-based tests miss.
+        let is_test_file = file_path.ends_with("_test.exs")
+            || content.contains("use ExUnit.Case");
+        let has_property_testing = content.contains("use ExUnitProperties")
+            || content.contains("use StreamData")
+            || content.contains("ExUnitProperties")
+            || content.contains("StreamData");
+        if is_test_file && !has_property_testing {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::MutationGap,
+                location: Some(file_path.to_string()),
+                severity: Severity::Low,
+                description: format!(
+                    "Elixir test file {} uses ExUnit.Case but has no ExUnitProperties/StreamData — \
+                     add property-based tests to improve mutation coverage",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
             });
         }
@@ -3309,6 +3414,70 @@ impl Analyzer {
             });
         }
 
+        // ── InputBoundary: JSON3.read / JSON.parse without error handling ────────
+        // Both throw on malformed input. Heuristic: flag files where the combined
+        // call count exceeds the number of try-catch blocks.
+        let json_read_count = content.matches("JSON3.read(").count()
+            + content.matches("JSON.parse(").count();
+        let julia_try_count = content.matches("try\n").count()
+            + content.matches("try ").count()
+            + content.matches("try{").count();
+        if json_read_count > 0 && json_read_count > julia_try_count {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::InputBoundary,
+                location: Some(file_path.to_string()),
+                severity: Severity::Medium,
+                description: format!(
+                    "{} JSON3.read/JSON.parse call(s) with {} try block(s) in {} — \
+                     these throw on malformed input; wrap in try/catch",
+                    json_read_count, julia_try_count, file_path
+                ),
+                recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // ── MutationGap: @testset with no assertion diversity ──────────────────
+        // If the file has @testset blocks and every @test assertion is type-only
+        // (only `@test x isa Y` with no == / ≈ / @test_throws), the test suite
+        // cannot detect value-level regressions and will pass mutation tests trivially.
+        let has_testset = content.contains("@testset");
+        if has_testset {
+            let total_tests = content
+                .lines()
+                .filter(|l| l.trim_start().starts_with("@test "))
+                .count();
+            let value_tests = content
+                .lines()
+                .filter(|l| {
+                    let t = l.trim_start();
+                    t.starts_with("@test ")
+                        && (t.contains("==")
+                            || t.contains("≈")
+                            || t.contains("@test_throws")
+                            || t.contains("@test_nowarn"))
+                })
+                .count();
+            if total_tests > 0 && value_tests == 0 {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::MutationGap,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::Medium,
+                    description: format!(
+                        "{} @test assertion(s) in {} are all type-only (no value/equality checks) — \
+                         mutation tests will pass trivially; add @test x == expected assertions",
+                        total_tests, file_path
+                    ),
+                    recommended_attack: vec![AttackAxis::Cpu],
+                    suppressed: false,
+                });
+            }
+        }
+
         // ccall / @ccall (FFI)
         let ccall_count = content.matches("ccall(").count() + content.matches("@ccall").count();
         stats.unsafe_blocks += ccall_count;
@@ -3634,6 +3803,65 @@ impl Analyzer {
                     recommended_attack: vec![],
                     suppressed: false,
                 });
+            }
+        }
+
+        Ok(())
+    }
+
+    // ============================================================
+    // ============================================================
+    // Mutation coverage gap (project-level tooling presence)
+    // ============================================================
+
+    /// Check whether the project has mutation-test tooling configured.
+    ///
+    /// Static analysis cannot measure a coverage percentage, but it can detect
+    /// the absence of any mutation-test harness.  A Rust project with a test
+    /// suite but no `cargo-mutants` config and no mutagen/mutation entries in
+    /// Cargo.toml is flagged as a mutation gap.
+    fn analyze_mutation_gaps(
+        &self,
+        weak_points: &mut Vec<WeakPoint>,
+    ) -> Result<()> {
+        let project_root = if self.target.is_dir() {
+            self.target.clone()
+        } else {
+            self.target
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .to_path_buf()
+        };
+
+        // ── Rust: Cargo.toml with [dev-dependencies] / [[bin]] but no mutation tool ──
+        let cargo_toml_path = project_root.join("Cargo.toml");
+        if let Ok(content) = fs::read_to_string(&cargo_toml_path) {
+            // Only check projects that have a test infrastructure (dev-deps present
+            // or test directories present).
+            let has_test_infrastructure = content.contains("[dev-dependencies]")
+                || project_root.join("tests").is_dir();
+            if has_test_infrastructure {
+                // Mutation tooling: cargo-mutants config file OR mutagen in dev-deps
+                let has_mutants_config = project_root.join(".cargo-mutants.toml").exists()
+                    || project_root.join("mutants.toml").exists();
+                let has_mutation_dep = content.contains("cargo-mutants")
+                    || content.contains("mutagen")
+                    || content.contains("mutation_test");
+                if !has_mutants_config && !has_mutation_dep {
+                    weak_points.push(WeakPoint {
+                        file: None,
+                        line: None,
+                        category: WeakPointCategory::MutationGap,
+                        location: Some("Cargo.toml".to_string()),
+                        severity: Severity::Low,
+                        description: "Rust project has test infrastructure but no mutation-test \
+                                      configuration (cargo-mutants/.cargo-mutants.toml) — \
+                                      add `cargo mutants` to verify test suite kills mutations"
+                            .to_string(),
+                        recommended_attack: vec![],
+                        suppressed: false,
+                    });
+                }
             }
         }
 

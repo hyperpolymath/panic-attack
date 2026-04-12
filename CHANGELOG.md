@@ -1,5 +1,41 @@
 # Changelog
 
+## [2.5.0] - 2026-04-12
+
+### Added
+- **InputBoundary category (PA024)**: New weak point category detecting unguarded structured-data
+  parsing at trust boundaries.
+  - **Rust**: `serde_cbor::from_slice`/`from_reader`, `ciborium::de::from_reader`,
+    `rmp_serde::from_slice`/`from_read` — CBOR/MessagePack deserialization without a
+    validation layer (Medium). All five crate patterns flagged.
+  - **JavaScript/ReScript**: `JSON.parse(` in files without any `try`/`catch` context (High).
+    Files that do wrap their JSON.parse in try/catch are not flagged.
+  - **Julia**: `JSON3.read(` and `JSON.parse(` without error handling context (High).
+  - Taint tracking from external reads to trust-sensitive sinks deferred to kanren phase.
+  - A2ML boundary detection deferred — requires cross-file analysis.
+- **PA024 → panicbot**: InputBoundary mapped to `static-analysis/input-boundary`, 0.72
+  confidence, Control tier, Partial fixability.
+- **MutationGap category (PA025)**: New weak point category detecting mutation and chaos
+  coverage gaps in test suites.
+  - **Rust** (project-level): Tests present (`mod tests` / `#[cfg(test)]`) but no
+    `cargo-mutants` config in `Cargo.toml` or `mutants.toml` — mutation tooling absent (Low).
+  - **Julia** (per-file): `@testset` blocks where every `@test` is a type-check assertion
+    (`@test … isa …`) with no value assertions — no assertion diversity (Medium).
+  - **Elixir** (per-file): Test files using `ExUnit.Case` without importing `ExUnitProperties`
+    or `StreamData` for property-based testing (Low).
+  - Coverage-plus-mutation-score check deferred — requires runtime coverage data.
+- **PA025 → panicbot**: MutationGap mapped to `static-analysis/mutation-gap`, 0.80
+  confidence, Substitute tier, Partial fixability.
+- **Idris2 ABI completeness**: `PatternCompleteness.idr` updated — InputBoundary (Rust/JS/Julia)
+  and MutationGap (Rust/Julia/Elixir) added to `WPCategory` with `detectorsFor` entries.
+
+### Changed
+- **Category count**: 23 → 25 (added InputBoundary, MutationGap)
+- **v2.5.0 milestone**: All tractable items complete. Two deferred items each for
+  `input_boundary` (taint+A2ML) and `mutation` (coverage-score), and three for
+  `crypto_misuse` (key-reuse, nonce-reuse, sig-verify) marked as statically undetectable
+  or requiring runtime data.
+
 ## [2.3.0] - 2026-04-12
 
 ### Added
