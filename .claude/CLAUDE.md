@@ -174,8 +174,8 @@ Three self-contained modes — none requires the others:
 ## v2.5.0 Detection Categories (COMPLETE — 25 categories total)
 
 All five detection categories shipped in v2.5.0 (2026-04-12):
-- **ProofDrift (PA021)**: Proof escape hatches in Isabelle/Coq/Lean/Agda/Idris2; Julia mirror patterns
-- **CryptoMisuse (PA022)**: Weak hash (MD5/SHA-1) in security context; timing-unsafe == on secrets
+- **ProofDrift (PA021)**: Proof escape hatches in Isabelle/Coq/Lean/Agda/Idris2; Julia mirror patterns; Obj.magic in Coq-extracted OCaml (distinguished from hand-written via `type __ = Obj.t` marker)
+- **CryptoMisuse (PA022)**: Weak hash (MD5/SHA-1) in security context; timing-unsafe == on secrets; JWT sig bypass — `dangerous_insecure_decode` (Rust), `ParseUnverified` (Go), `verify_signature:False`/`algorithms=["none"]` (Python), `jwt.decode` without `jwt.verify` / `decodeJwt` without `jwtVerify` (JS)
 - **SupplyChain (PA023)**: Unpinned deps, absent lock files, unverified manifests
 - **InputBoundary (PA024)**: Unchecked CBOR/MessagePack (Rust), JSON.parse without try-catch (JS/Julia)
 - **MutationGap (PA025)**: No cargo-mutants config (Rust), all-type-only assertions (Julia), no property testing (Elixir)
