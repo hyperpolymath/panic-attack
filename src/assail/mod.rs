@@ -21,7 +21,9 @@ pub use analyzer::Analyzer;
 pub fn analyze<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     // Non-verbose mode keeps stdout clean for automation pipelines.
     let analyzer = Analyzer::new(target.as_ref())?;
-    analyzer.analyze()
+    let mut report = analyzer.analyze()?;
+    apply_suppression(&mut report);
+    Ok(report)
 }
 
 /// Run Assail analysis with verbose output including per-file breakdown
@@ -29,7 +31,8 @@ pub fn analyze<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
 pub fn analyze_verbose<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     // Verbose mode is operator-facing and intentionally prints prioritization context.
     let analyzer = Analyzer::new_verbose(target.as_ref())?;
-    let report = analyzer.analyze()?;
+    let mut report = analyzer.analyze()?;
+    apply_suppression(&mut report);
 
     let active_count = report.weak_points.iter().filter(|wp| !wp.suppressed).count();
     let suppressed_count = report.suppressed_count;
@@ -92,10 +95,11 @@ pub fn analyze_verbose<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
 /// Apply context-aware FP suppression to an assail report in-place.
 ///
 /// Runs the full kanren logic engine, collects every `suppressed(Category, Location)`
-/// fact derived by the 10 suppression rules, and marks the matching `WeakPoint`s
+/// fact derived by the 12 suppression rules, and marks the matching `WeakPoint`s
 /// with `suppressed = true`. Also writes the suppression count to
 /// `report.suppressed_count`.
 ///
+/// Called automatically by `analyze()` and `analyze_verbose()`.
 /// The suppressed items remain in `weak_points` for auditability; callers
 /// (panicbot's translator, CI gates) should filter on `suppressed: false`.
 pub fn apply_suppression(report: &mut AssailReport) {

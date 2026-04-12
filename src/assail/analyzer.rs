@@ -841,6 +841,30 @@ impl Analyzer {
             });
         }
 
+        // ── CryptoMisuse: jsonwebtoken::dangerous_insecure_decode ────────────
+        // This Rust function explicitly skips ALL JWT verification (signature,
+        // expiry, audience, issuer).  Its name documents the risk; any call
+        // site is a CryptoMisuse finding regardless of context.
+        // Uses `content` directly — this identifier never appears inside a
+        // string literal, so string-stripping would only produce false negatives.
+        if content.contains("dangerous_insecure_decode") {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "dangerous_insecure_decode in {} — skips all JWT verification \
+                     (signature, expiry, audience); use jsonwebtoken::decode with \
+                     a proper Validation struct",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
+            });
+        }
+
         Ok(())
     }
 
@@ -1287,6 +1311,27 @@ impl Analyzer {
             }
         }
 
+        // ── CryptoMisuse: JWT signature verification bypass ───────────────────
+        // jwt.ParseUnverified explicitly skips signature verification.  Any call
+        // site accepts tokens regardless of whether they were signed by the
+        // expected key — a complete authentication bypass.
+        if content.contains("ParseUnverified(") {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "jwt.ParseUnverified in {} — skips JWT signature verification; \
+                     use jwt.Parse with a key function that validates the signing key",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
+            });
+        }
+
         Ok(())
     }
 
@@ -1435,6 +1480,46 @@ impl Analyzer {
             }
         }
 
+        // ── CryptoMisuse: PyJWT signature verification bypass ─────────────────
+        // options={"verify_signature": False} explicitly disables signature
+        // checking; algorithms=["none"] selects the unsecured JWT algorithm.
+        // Both patterns accept forged tokens regardless of signing key.
+        if content.contains("\"verify_signature\": False")
+            || content.contains("'verify_signature': False")
+        {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "jwt.decode with verify_signature=False in {} — \
+                     signature verification disabled; any token is accepted",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
+            });
+        }
+
+        if content.contains("algorithms=[\"none\"]") || content.contains("algorithms=['none']") {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "jwt.decode with algorithms=[\"none\"] in {} — \
+                     unsecured JWT algorithm accepted; any unsigned token is valid",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
+            });
+        }
+
         Ok(())
     }
 
@@ -1574,6 +1659,51 @@ impl Analyzer {
                     json_parse_count, try_count, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
+
+        // ── CryptoMisuse: JWT signature verification bypass ───────────────────
+        // jwt.decode() (jsonwebtoken library) explicitly skips signature
+        // verification — it exists solely for inspecting the payload without
+        // trusting it.  Files that call decode() without a corresponding verify()
+        // have no authentication layer and accept any token including forged ones.
+        //
+        // jose library equivalent: decodeJwt() without jwtVerify().
+        let has_jwt_decode = content.contains("jwt.decode(");
+        let has_jwt_verify = content.contains("jwt.verify(");
+        if has_jwt_decode && !has_jwt_verify {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "jwt.decode() without jwt.verify() in {} — \
+                     decode() skips signature verification; use verify() to authenticate tokens",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
+                suppressed: false,
+            });
+        }
+
+        let has_jose_decode = content.contains("decodeJwt(");
+        let has_jose_verify = content.contains("jwtVerify(");
+        if has_jose_decode && !has_jose_verify {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CryptoMisuse,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!(
+                    "jose decodeJwt() without jwtVerify() in {} — \
+                     decodeJwt() does not verify the signature; use jwtVerify() instead",
+                    file_path
+                ),
+                recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
             });
         }
@@ -2150,19 +2280,46 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
-        // Unsafe operations
+        // Unsafe operations — Obj.magic is either a hand-written unsafe coercion
+        // (UnsafeTypeCoercion) OR an upstream axiom bypass introduced by Coq
+        // extraction (ProofDrift).  The canonical Coq extraction marker is
+        // `type __ = Obj.t` — every extraction artifact that uses type-erased
+        // universals emits this typedef.  When it is present the Obj.magic usage
+        // originates in the proof system, not in hand-written OCaml, so the
+        // correct category is ProofDrift: the proof's type safety guarantee does
+        // not transfer to the extracted code.
         if content.contains("Obj.magic") {
             stats.unsafe_blocks += content.matches("Obj.magic").count();
-            weak_points.push(WeakPoint {
-                file: None,
-                line: None,
-                category: WeakPointCategory::UnsafeTypeCoercion,
-                location: Some(file_path.to_string()),
-                severity: Severity::Critical,
-                description: format!("Obj.magic (unsafe type coercion) in {}", file_path),
-                recommended_attack: vec![AttackAxis::Memory],
+            let is_coq_extraction_artifact = content.contains("type __ = Obj.t")
+                || content.contains("let __ = let rec f _ = Obj.repr f");
+            if is_coq_extraction_artifact {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::ProofDrift,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::High,
+                    description: format!(
+                        "Obj.magic in Coq extraction artifact in {} — type safety \
+                         guarantee from the proof does not transfer to extracted OCaml; \
+                         review original theorem for unsafe axioms or admitted lemmas",
+                        file_path
+                    ),
+                    recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-            });
+                });
+            } else {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: None,
+                    category: WeakPointCategory::UnsafeTypeCoercion,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::Critical,
+                    description: format!("Obj.magic (unsafe type coercion) in {}", file_path),
+                    recommended_attack: vec![AttackAxis::Memory],
+                    suppressed: false,
+                });
+            }
         }
 
         if content.contains("Obj.repr") {
@@ -4646,6 +4803,283 @@ fn few_unwraps() {
         assert!(
             panic_points.is_empty(),
             "Should NOT trigger PanicPath when unwrap count is <= 5"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // CryptoMisuse: missing signature verification (new patterns)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_rust_detects_dangerous_insecure_decode() {
+        // Test directly against the method: bypass file I/O to isolate the
+        // pattern detection from the directory-walking / file-reading path.
+        let analyzer = Analyzer {
+            target: std::path::PathBuf::from("auth.rs"),
+            language: crate::types::Language::Rust,
+            verbose: false,
+        };
+        let content = r#"
+use jsonwebtoken::{dangerous_insecure_decode, DecodingKey, TokenData};
+
+fn inspect_token(token: &str) -> TokenData<Claims> {
+    dangerous_insecure_decode::<Claims>(token).expect("decode failed")
+}
+"#;
+        let mut stats = ProgramStatistics {
+            total_lines: 0, unsafe_blocks: 0, panic_sites: 0, unwrap_calls: 0,
+            allocation_sites: 0, io_operations: 0, threading_constructs: 0,
+        };
+        let mut weak_points = Vec::new();
+        analyzer.analyze_rust(content, &mut stats, &mut weak_points, "auth.rs").unwrap();
+
+        let hits: Vec<_> = weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
+            .collect();
+        assert!(!hits.is_empty(), "Should flag dangerous_insecure_decode as CryptoMisuse");
+        assert!(
+            hits[0].severity == Severity::Critical,
+            "dangerous_insecure_decode should be Critical"
+        );
+    }
+
+    #[test]
+    fn analyze_go_detects_parse_unverified() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("auth.go");
+        fs::write(
+            &f,
+            r#"
+package main
+
+import "github.com/golang-jwt/jwt/v5"
+
+func inspectToken(tokenStr string) jwt.MapClaims {
+    token, _, _ := jwt.ParseUnverified(tokenStr, jwt.MapClaims{})
+    return token.Claims.(jwt.MapClaims)
+}
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&f).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let hits: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
+            .collect();
+        assert!(!hits.is_empty(), "Should flag jwt.ParseUnverified as CryptoMisuse");
+        assert!(
+            hits[0].severity == Severity::Critical,
+            "ParseUnverified should be Critical"
+        );
+    }
+
+    #[test]
+    fn analyze_python_detects_jwt_verify_signature_false() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("auth.py");
+        fs::write(
+            &f,
+            r#"
+import jwt
+
+def decode_token(token):
+    return jwt.decode(token, options={"verify_signature": False})
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&f).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let hits: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
+            .collect();
+        assert!(!hits.is_empty(), "Should flag verify_signature=False as CryptoMisuse");
+        assert!(
+            hits[0].severity == Severity::Critical,
+            "verify_signature=False should be Critical"
+        );
+    }
+
+    #[test]
+    fn analyze_python_detects_jwt_algorithms_none() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("auth.py");
+        fs::write(
+            &f,
+            r#"
+import jwt
+
+def decode_token(token, secret):
+    return jwt.decode(token, secret, algorithms=["none"])
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&f).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let hits: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
+            .collect();
+        assert!(!hits.is_empty(), "Should flag algorithms=[\"none\"] as CryptoMisuse");
+    }
+
+    #[test]
+    fn analyze_javascript_detects_jwt_decode_without_verify() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("auth.js");
+        fs::write(
+            &f,
+            r#"
+const jwt = require('jsonwebtoken');
+
+function inspectToken(token) {
+    // WARNING: this skips signature verification
+    return jwt.decode(token);
+}
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&f).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let hits: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
+            .collect();
+        assert!(!hits.is_empty(), "Should flag jwt.decode() without jwt.verify() as CryptoMisuse");
+        assert!(
+            hits[0].severity == Severity::Critical,
+            "jwt.decode without verify should be Critical"
+        );
+    }
+
+    #[test]
+    fn analyze_javascript_no_flag_when_jwt_verify_present() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("auth.js");
+        fs::write(
+            &f,
+            r#"
+const jwt = require('jsonwebtoken');
+
+function validateToken(token, secret) {
+    return jwt.verify(token, secret);
+}
+
+function inspectToken(token) {
+    // decode() used only for logging; verify() is the auth gate
+    const payload = jwt.decode(token);
+    console.log('iss:', payload.iss);
+}
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&f).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let hits: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse
+                && wp.description.contains("jwt.decode"))
+            .collect();
+        assert!(
+            hits.is_empty(),
+            "Should NOT flag jwt.decode when jwt.verify is also present in the file"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // ProofDrift: Obj.magic in Coq extraction artifacts
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_ocaml_detects_obj_magic_in_coq_artifact_as_proof_drift() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("extracted.ml");
+        fs::write(
+            &f,
+            r#"
+(* This file was automatically generated by the Coq system *)
+
+type __ = Obj.t
+let __ = let rec f _ = Obj.repr f in Obj.repr f
+
+let coq_MyTheorem_rect f1 f2 v =
+  Obj.magic (match Obj.magic v with
+    | Coq_left x -> Obj.magic (f1 x)
+    | Coq_right x -> Obj.magic (f2 x))
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&f).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let proof_drift: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::ProofDrift)
+            .collect();
+        let unsafe_coercion: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnsafeTypeCoercion)
+            .collect();
+
+        assert!(!proof_drift.is_empty(), "Coq extraction artifact with Obj.magic should be ProofDrift");
+        assert!(
+            unsafe_coercion.is_empty(),
+            "Coq extraction Obj.magic should NOT also be UnsafeTypeCoercion"
+        );
+    }
+
+    #[test]
+    fn analyze_ocaml_detects_obj_magic_in_hand_written_code_as_unsafe_coercion() {
+        let dir = TempDir::new().unwrap();
+        let f = dir.path().join("unsafe_hack.ml");
+        fs::write(
+            &f,
+            r#"
+(* Hand-written OCaml with an unsafe cast *)
+let force_cast (x : 'a) : 'b = Obj.magic x
+"#,
+        )
+        .unwrap();
+
+        let analyzer = Analyzer::new(&f).unwrap();
+        let report = analyzer.analyze().unwrap();
+
+        let unsafe_coercion: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnsafeTypeCoercion)
+            .collect();
+        let proof_drift: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::ProofDrift
+                && wp.description.contains("extraction"))
+            .collect();
+
+        assert!(!unsafe_coercion.is_empty(), "Hand-written Obj.magic should be UnsafeTypeCoercion");
+        assert!(
+            proof_drift.is_empty(),
+            "Hand-written Obj.magic (no Coq markers) should NOT be ProofDrift"
         );
     }
 }
