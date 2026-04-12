@@ -89,7 +89,7 @@ cp target/release/panic-attack ~/.asdf/installs/rust/nightly/bin/
 ## Key Design Decisions
 
 - **49 language analyzers**: Rust, C/C++, Go, Python, JavaScript, Ruby, Elixir, Erlang, Gleam, ReScript, OCaml, SML, Scheme, Racket, Haskell, PureScript, Idris, Lean, Agda, Isabelle, Coq, Prolog, Logtalk, Datalog, Zig, Ada, Odin, Nim, Pony, D, Nickel, Nix, Shell, Julia, Lua, + 12 nextgen DSLs
-- **23 weak point categories**: UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, AtomExhaustion, UnsafeFFI, PathTraversal, HardcodedSecret, ProofDrift, CryptoMisuse, SupplyChain, etc.
+- **25 weak-point categories** (PA001–PA025): UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, AtomExhaustion, UnsafeFFI, PathTraversal, HardcodedSecret, ProofDrift (PA021), CryptoMisuse (PA022), SupplyChain (PA023), InputBoundary (PA024), MutationGap (PA025), etc.
 - **Per-file language detection**: Each file analyzed with its own language-specific patterns. Skips `external_corpora/`, `third_party/`, and `corpus/` directories
 - **miniKanren logic engine**: Relational reasoning for taint analysis, cross-language vulnerability chains, and search strategy optimisation
 - **Latin-1 fallback**: Non-UTF-8 files handled gracefully
@@ -161,20 +161,28 @@ Phase 2 adds VeriSimDB hexad persistence and auto-retire on upstream fix.
 Three self-contained modes — none requires the others:
 
 1. **Standalone** (USB/laptop/air-gapped): Single binary, zero deps, `assail`/`assault` individual targets
-2. **Panicbot** (gitbot-fleet/CI): Automated JSON scanning, PA001–PA021 codes, bot directives
+2. **Panicbot** (gitbot-fleet/CI): Automated JSON scanning, PA001–PA025 codes, bot directives
 3. **Mass-panic** (assemblyline + verisimdb + Chapel): Org-scale batch scanning with incremental BLAKE3, hexad persistence, delta reporting, notifications. Chapel (planned) for distributed multi-machine orchestration.
 
 ## Planned Features (Next Priorities)
 
 1. **verisimdb HTTP API integration**: Push hexads via REST (awaiting API stabilisation)
-2. **kanren context-facts**: ~10 rules for FP suppression (~8% -> ~2-3%)
-3. **hypatia pipeline**: JSON AssailReport consumed by Hypatia Elixir rules (Logtalk export removed 2026-04-12)
-4. **Shell completions**: bash, zsh, fish, nushell
-5. **Chapel metalayer**: Distributed `coforall` scanning across compute clusters
+2. **Shell completions**: bash, zsh, fish, nushell (v2.3.0)
+3. **Interactive TUI mode**: Review findings in terminal (v2.3.0)
+4. **Chapel metalayer**: Distributed `coforall` scanning across compute clusters (v3.0.0)
+
+## v2.5.0 Detection Categories (COMPLETE — 25 categories total)
+
+All five detection categories shipped in v2.5.0 (2026-04-12):
+- **ProofDrift (PA021)**: Proof escape hatches in Isabelle/Coq/Lean/Agda/Idris2; Julia mirror patterns
+- **CryptoMisuse (PA022)**: Weak hash (MD5/SHA-1) in security context; timing-unsafe == on secrets
+- **SupplyChain (PA023)**: Unpinned deps, absent lock files, unverified manifests
+- **InputBoundary (PA024)**: Unchecked CBOR/MessagePack (Rust), JSON.parse without try-catch (JS/Julia)
+- **MutationGap (PA025)**: No cargo-mutants config (Rust), all-type-only assertions (Julia), no property testing (Elixir)
 
 ## Integration Points
 
-- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA021). Directives at `.machine_readable/bot_directives/panicbot.scm`
+- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA025). Directives at `.machine_readable/bot_directives/panicbot.scm`
 - **verisimdb**: Store scan results as hexads (document + semantic modalities). File I/O works, API planned
 - **hypatia**: Neurosymbolic rule engine processes findings. Env var watcher in diagnostics
 - **panll**: Event-chain export for three-panel visualisation. Working via `panll` subcommand. Two dedicated panels: panic-attack (single-repo) and Mass Panic (assemblyline batch GUI)

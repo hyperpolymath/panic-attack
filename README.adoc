@@ -66,7 +66,7 @@ panic-attack exists to address this by combining:
 panic-attack provides:
 
 * **49-language static analysis** across multiple families
-* **Weak point detection** (23 categories)
+* **Weak point detection** (25 categories)
 * **Attack simulation (6 axes)**: CPU, memory, disk, network, concurrency, time
 * **miniKanren logic engine** for taint analysis and cross-language reasoning
 * **Signature detection** (use-after-free, deadlock, etc.)

@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: PMPL-1.0-or-later -->
 <!-- TOPOLOGY.md — Project architecture map and completion dashboard -->
-<!-- Last updated: 2026-03-07 -->
+<!-- Last updated: 2026-04-12 -->
 
 # panic-attack — Project Topology
 
@@ -55,7 +55,7 @@
 COMPONENT                          STATUS              NOTES
 ─────────────────────────────────  ──────────────────  ─────────────────────────────────
 CORE CAPABILITIES
-  Assail Static Analysis            ██████████ 100%    49 languages, 23 categories
+  Assail Static Analysis            ██████████ 100%    49 languages, 25 categories
   Multi-Axis Stress Testing         ██████████ 100%    6 axes (CPU, Mem, Disk, etc)
   miniKanren Logic Engine           ██████████ 100%    Taint, cross-lang, strategies
   Ambush / Amuck / Abduct           ██████████ 100%    Advanced workflows stable
@@ -82,7 +82,7 @@ BATCH & PIPELINE
   i18n Support (10 languages)       ██████████ 100%    ISO 639-1, compile-time safe
 
 INTEGRATION
-  Panicbot (gitbot-fleet)           ██████████ 100%    PA001–PA021, JSON contract
+  Panicbot (gitbot-fleet)           ██████████ 100%    PA001–PA025, JSON contract
   Diagnostics (self-check)          ██████████ 100%    Version, fleet, attestation
   VerisimDB Storage                 ██████░░░░  60%    File I/O works, API planned
   Hypatia Pipeline                  ████░░░░░░  40%    Env var watcher, no kanren export
@@ -94,7 +94,7 @@ REPO INFRASTRUCTURE
   Readiness Tests (CRG)             ██████████ 100%    18 tests: D(4) C(10) B(4)
 
 ─────────────────────────────────────────────────────────────────────────────
-OVERALL:                            █████████░  ~97%   v2.2.0 Stable
+OVERALL:                            █████████░  ~98%   v2.3.0 Stable
 ```
 
 ## Key Dependencies
@@ -103,7 +103,7 @@ OVERALL:                            █████████░  ~97%   v2.2.
 Assail (49L) ───► kanren Logic ───► Taint/XLang ───► Weak Points
      │                │                                    │
      ▼                ▼                                    ▼
-Assemblyline ──► Notify Pipeline ──► GitHub Issues    Panicbot (PA001–PA021)
+Assemblyline ──► Notify Pipeline ──► GitHub Issues    Panicbot (PA001–PA025)
      │                │                                    │
      ▼                ▼                                    ▼
 BLAKE3 Cache ──► VerisimDB Store ──► PanLL Export     Fleet FindingSet

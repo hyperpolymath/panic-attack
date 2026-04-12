@@ -4,14 +4,14 @@
 
 [metadata]
 project = "panic-attacker"
-version = "2.2.0"
+version = "2.3.0"
 last-updated = "2026-04-12"
 status = "active"
 
 [project-context]
 name = "panic-attacker"
-completion-percentage = 97
-phase = "CRG C (Beta) — v2.5.0 detection categories in progress"
+completion-percentage = 98
+phase = "CRG C (Beta) — v2.5.0 detection categories complete; v2.3.0 shell completions + TUI next"
 
 [testing-completion-2026-04-04]
 description = "CRG C blitz completed: unit + smoke + build + P2P + E2E + reflexive + contract + aspect + benchmarks"
@@ -33,16 +33,21 @@ language-detection = "Skips external_corpora/, third_party/, and corpus/ directo
 logtalk-removed = "Logtalk export removed; Hypatia now consumes JSON AssailReport via Elixir rules"
 fp-suppression = "WeakPoint.suppressed field wired; apply_suppression() runs kanren engine on every scan; panicbot filters suppressed items"
 languages = "49 languages (added Isabelle/HOL .thy and Coq/Rocq .v with dedicated analyzers)"
-categories = "23 weak point categories (added ProofDrift PA021, CryptoMisuse PA022, SupplyChain PA023)"
+categories = "23 weak point categories as of 2026-04-12 (ProofDrift PA021, CryptoMisuse PA022, SupplyChain PA023); InputBoundary PA024 + MutationGap PA025 added same session → 25 total"
 proof-drift = "ProofDrift: sorry/oops/Admitted/trustMe/believe_me/assert_total/%partial across Isabelle/Coq/Lean/Agda/Idris2; Julia mirror patterns"
 crypto-misuse = "CryptoMisuse: MD5/SHA-1 in security context (Rust/Python/JS/Go/Elixir); timing-unsafe == on secret variables"
 supply-chain = "SupplyChain: Cargo.toml git-deps without rev=, absent Cargo.lock, Julia Manifest.toml without hashes, flake.nix without narHash, unpinned deno.json"
 panicbot-wired = "PA021/PA022/PA023 wired in gitbot-fleet/bots/panicbot/src/translator.rs"
-idris2-abi = "PatternCompleteness.idr updated: 49 languages, 23 categories, all proven total"
+idris2-abi = "PatternCompleteness.idr updated: 49 languages, 25 categories, all proven total"
+
+[session-2026-04-12b]
+input-boundary = "InputBoundary PA024: CBOR/MessagePack (serde_cbor/ciborium/rmp_serde) in Rust, JSON.parse without try-catch in JS, JSON3.read/JSON.parse in Julia"
+mutation-gap = "MutationGap PA025: Cargo.toml with test infra but no cargo-mutants config (Rust, project-level), @testset all-type-only assertions (Julia), ExUnit without ExUnitProperties/StreamData (Elixir)"
+panicbot-wired = "PA024/PA025 wired in gitbot-fleet/bots/panicbot/src/translator.rs"
+categories = "25 weak point categories total (v2.5.0 complete)"
+v25-complete = "All 5 v2.5.0 detection categories done: crypto_misuse, proof_drift, supply_chain, input_boundary, mutation"
 
 [next-priorities]
 verisimdb-http = "Push hexads via REST (awaiting API stabilization)"
 shell-completions = "bash, zsh, fish, nushell"
-input-boundary = "v2.5.0: unchecked CBOR/JSON/A2ML deserialization"
-mutation = "v2.5.0: mutation test coverage gaps"
 chapel-metalayer = "Distributed coforall scanning across compute clusters (future)"
