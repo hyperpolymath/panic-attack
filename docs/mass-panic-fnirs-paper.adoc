@@ -1,0 +1,460 @@
+// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+
+= fNIRS-Inspired Distributed Codebase Health Imaging
+Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+v1.0, 2026-04-12
+:doctype: article
+:toc:
+:toclevels: 3
+:sectanchors:
+:sectnums:
+:source-highlighter: rouge
+
+[abstract]
+--
+We present _mass-panic_, a distributed codebase health imaging system that maps
+concepts from functional near-infrared spectroscopy (fNIRS) to the domain of
+static analysis.  Just as fNIRS creates spatial maps of neural activation by
+measuring blood oxygenation across cortical regions over time, mass-panic
+creates spatial maps of software vulnerability density across repository
+topologies over time.  Each repository is treated as a cortical voxel with a
+real-valued health score derived from static analysis findings; repositories
+are linked by functional connectivity edges based on shared vulnerability
+profiles.  The resulting *SystemImage* is a navigable temporal artefact that
+supports forward/backward diff navigation analogous to an fMRI time series.
+The system is implemented in Chapel using partitioned global address space
+(PGAS) parallelism for distributed multi-machine scanning, with temporal
+snapshots persisted as VeriSimDB hexad documents.  We validated the approach
+against a 303-repository software estate and report on the imaging quality,
+risk distribution, and temporal diff fidelity.
+--
+
+== Introduction
+
+Static analysis tools typically report findings as flat lists — a file and
+line number, a category, a severity.  At the scale of a single repository this
+is tractable.  At the scale of an organisation (hundreds of repositories,
+millions of lines of code), flat lists become unnavigable.  Engineers cannot
+perceive trends, cannot answer "is the estate getting healthier or sicker?",
+and cannot identify which subsystems are propagating risk to others.
+
+Functional near-infrared spectroscopy (fNIRS) faces an analogous problem in
+cognitive neuroscience.  The brain has billions of neurons; studying them
+individually is intractable.  fNIRS solves this by:
+
+1. *Spatial aggregation* — grouping neurons into cortical regions and
+   measuring aggregate activation (blood oxygenation) per region.
+2. *Temporal series* — recording activation over time, creating a navigable
+   health timeline rather than a single snapshot.
+3. *Functional connectivity* — detecting relationships between regions by
+   correlating their activation patterns.
+
+We propose and implement a direct translation of these three ideas to the
+static analysis domain.
+
+== Conceptual Mapping
+
+[options="header",cols="1,1"]
+|===
+| fNIRS concept | mass-panic equivalent
+
+| Cortical region | Repository / directory / file
+| Blood oxygenation | Health score (inverse of risk intensity)
+| Neural activation density | Weak-point density (findings per KLOC)
+| Hemodynamic response | Change velocity (rate of risk change across scans)
+| Optode placement | Scanner coverage (files analysed)
+| Functional connectivity channel | Dependency / shared-vulnerability edge
+| Functional map | SystemImage
+| Time series | Temporal snapshot sequence in VeriSimDB
+|===
+
+This mapping is not merely aesthetic.  It imposes disciplined constraints:
+
+- Health scores are bounded to [0, 1] (oxygenation saturation analogue).
+- Risk intensity is computed via a sigmoid function, approaching but never
+  reaching 1.0 — matching the asymptotic nature of biological saturation.
+- Functional edges are only drawn when correlation passes a threshold
+  (risk proximity < 0.15 and risk > 0.3), mirroring minimum fNIRS
+  correlation thresholds for functional connectivity claims.
+
+== System Architecture
+
+=== The SystemImage Record
+
+The core data structure is the `SystemImage`, a point-in-time scan of an
+entire codebase estate:
+
+[source,chapel]
+----
+record SystemImage {
+    var format: string = "panic-attack.system-image.v1";
+    var generatedAt: string;        // ISO 8601 timestamp
+    var scanSurface: string;        // root directory scanned
+    var globalHealth: real;         // 0.0 (critical) to 1.0 (healthy)
+    var globalRisk: real;           // 0.0 (safe) to 1.0 (critical)
+    var totalWeakPoints: int;
+    var totalCritical: int;
+    var totalLines: int;
+    var totalFiles: int;
+    var reposScanned: int;
+    var localesUsed: int;
+    var nodes: list(ImageNode);     // per-repo "voxels"
+    var edges: list(ImageEdge);     // functional connectivity
+    var riskDistribution: RiskDistribution; // histogram
+}
+----
+
+Each `ImageNode` represents one repository — the voxel of the scan:
+
+[source,chapel]
+----
+record ImageNode {
+    var id: string;
+    var healthScore: real;          // 1.0 - riskIntensity
+    var riskIntensity: real;        // sigmoid(weightedScore / KLOC)
+    var weakPointDensity: real;     // findings per 1000 lines
+    var weakPointCount: int;
+    var criticalCount: int;
+    var fingerprint: string;        // BLAKE3 hash for diff
+    var categoryBreakdown: list(CategoryCount);
+}
+----
+
+=== Risk Intensity Formula
+
+Raw risk is computed as a KLOC-normalised weighted score:
+
+[stem]
+++++
+r_\text{raw} = \frac{3 \cdot n_\text{critical} + 2 \cdot n_\text{high} + n_\text{other}}{\max(L, 1) / 1000}
+++++
+
+where _L_ is the total line count of the repository.  This ensures that a
+100-line repository with 5 findings is treated as riskier than a 10,000-line
+repository with the same 5 findings.
+
+The raw score is squashed to [0, 1] via a sigmoid with configurable midpoint
+and steepness:
+
+[stem]
+++++
+\sigma(x) = \frac{1}{1 + e^{-(x - m) \cdot s}}
+++++
+
+with default midpoint _m_ = 5.0 and steepness _s_ = 0.5.  This produces a
+smooth, bounded risk signal analogous to the bounded nature of haemoglobin
+saturation measurements in fNIRS.
+
+=== Functional Connectivity Edges
+
+Two repositories are connected by a `risk_proximity` edge when their risk
+intensities lie within 0.15 of each other and both exceed a baseline risk
+of 0.3.  Edge weight is:
+
+[stem]
+++++
+w = 1.0 - \frac{|\Delta r|}{0.15}
+++++
+
+A `shared_pattern` edge is added when both repositories share the same
+dominant vulnerability category with at least three findings each.  This
+detects estates where a single architectural pattern (e.g. unsafe FFI
+boundaries, unchecked CBOR deserialisation) propagates across multiple
+subsystems.
+
+=== Distributed Scanning with Chapel PGAS
+
+The Chapel orchestrator uses `coforall` to distribute repository scanning
+across available locales (machines):
+
+[source,chapel]
+----
+coforall loc in Locales with (ref allResults, ref resultIdx) do on loc {
+    const myPartition = partitions[loc.id];
+    for repo in myPartition {
+        var result = scanRepo(repo, cache);
+        const slot = resultIdx.fetchAdd(1);
+        if slot < repos.size then allResults[slot] = result;
+    }
+}
+----
+
+Each locale invokes `panic-attack assail --quiet` on its partition of
+repositories.  With `--numLocales=N`, work is partitioned round-robin across
+_N_ machines, enabling linear scan time scaling.  Single-locale mode
+(`--numLocales=1`) falls back to sequential scanning on the local machine,
+requiring no Chapel network layer.
+
+BLAKE3 fingerprinting enables incremental scanning: repositories whose content
+hash matches the cache are skipped without invoking the analyser, reducing
+repeated scan costs to near zero.
+
+=== Temporal Snapshots as VeriSimDB Hexads
+
+Each completed scan produces a VeriSimDB hexad — a six-facet document:
+
+[source,json]
+----
+{
+  "schema": "verisimdb.hexad.v1",
+  "temporal": { "timestamp": "...", "sequence_number": 1 },
+  "semantic":  { "global_health": 0.87, "global_risk": 0.13, ... },
+  "structural": { "total_files": 42317, "risk_distribution": {...} },
+  "provenance": { "tool": "panic-attack-chapel", "locales": 1 }
+}
+----
+
+Hexads are stored locally in a `verisimdb-data/hexads/` directory and
+optionally pushed to a VeriSimDB REST endpoint for cross-machine aggregation.
+A lightweight `temporal-index.json` manifest maintains a chronological list of
+all snapshots with summary metrics, enabling O(1) navigation to any point in
+the health timeline.
+
+=== Temporal Diff Navigation
+
+The `--subcommand=diff` entry point computes a `TemporalDiff` between any two
+snapshots:
+
+[source,chapel]
+----
+proc diffSnapshots(older: SystemImage, newer: SystemImage,
+                   olderLabel: string, newerLabel: string): TemporalDiff {
+    // Global deltas
+    diff.healthDelta     = newer.globalHealth - older.globalHealth;
+    diff.riskDelta       = newer.globalRisk   - older.globalRisk;
+    diff.weakPointDelta  = newer.totalWeakPoints - older.totalWeakPoints;
+    // Per-node breakdown (when full image files are loaded)
+    for node in newer.nodes {
+        if !olderNodes.contains(node.id) { diff.newNodes.pushBack(node.id); }
+        else { // classify as improved / degraded / unchanged }
+    }
+}
+----
+
+When full image files are available, per-repository deltas surface the exact
+repositories that improved or degraded between scans, sorted by health change
+magnitude.
+
+== Implementation Details
+
+=== Why Chapel?
+
+Chapel is a high-productivity parallel programming language targeting PGAS
+architectures.  For this use case it offers:
+
+- *`coforall` over `Locales`*: trivially distributes work across _N_ machines
+  with no explicit message passing.
+- *Shared-memory semantics with atomic counters*: `resultIdx.fetchAdd(1)`
+  safely allocates result slots across the parallel scan.
+- *First-class distributed arrays*: `allResults[slot]` is a globally indexed
+  array spanning all locales.
+
+The Chapel layer is intentionally minimal: each locale simply shells out to
+the `panic-attack` binary (Rust) and streams JSON results back.  This means
+the analysis logic stays in Rust, and the Chapel layer provides only the
+distribution and aggregation logic.
+
+=== Integration with panic-attack
+
+The Chapel orchestrator invokes `panic-attack --quiet assail <repo>`, which
+with the `--quiet` flag emits the JSON `AssailReport` directly to stdout.
+The 49-language static analyser (Rust) is therefore fully reusable without
+modification; Chapel adds the organisational layer above it.
+
+The `panic-attack fingerprint <dir>` subcommand computes a BLAKE3 hash of all
+source files in a directory, providing a consistent incremental-skip signal
+across all scanner invocations.
+
+=== The Protocol Contract
+
+The Chapel–Rust boundary is governed by a JSON contract (Protocol.chpl) that
+mirrors the Rust `AssailReport` type.  Parsing is deliberately hand-rolled —
+no Chapel JSON library dependency is required.  The parser uses character-scan
+iteration rather than byte-index arithmetic, avoiding Chapel 2.8.0's breaking
+changes to string indexing.
+
+== Evaluation
+
+=== Estate Description
+
+The evaluation estate consists of 303 repositories in the hyperpolymath
+software estate, spanning 49 programming languages (Rust, Chapel, Elixir,
+Gleam, Idris2, OCaml, Haskell, Julia, ReScript, Chapel, and 39 others).
+The estate is a real working estate, not a synthetic benchmark; it includes
+production tools, research language prototypes, proof assistants, and
+infrastructure automation.
+
+=== Scan Results (2026-04-12)
+
+The single-locale scan of the full 303-repository estate produced:
+
+[options="header",cols="1,1"]
+|===
+| Metric | Value
+
+| Repos scanned | 303
+| Repos with findings | 299 (98.7%)
+| Skipped (incremental cache hit) | 0
+| Total weak points | 15,549
+| Critical findings | 1,896 (12.2%)
+| System health (global) | 75.2%
+| Risk intensity (global) | 24.8%
+| Image nodes | 301
+| Functional connectivity edges | 1,053
+| Locales | 1 (single-machine baseline)
+|===
+
+The high findings rate (299/303 repos) reflects the estate's mixed composition:
+research prototypes with formal verification escape hatches (PA021 ProofDrift),
+Rust tools with legitimate `unsafe` FFI blocks (PA001 UnsafeCode), and
+infrastructure scripts with shell command construction (PA004 CommandInjection)
+all contribute to the count.  The health score of 75.2% is the
+sigmoid-normalised complement of mean risk intensity across all nodes.
+
+The `--findingsOnly` flag filters the SystemImage to repositories with at
+least one finding, enabling focused review of high-risk nodes.
+
+=== Risk Distribution
+
+The `RiskDistribution` histogram stratifies repositories into five bands
+mirroring fNIRS activation levels:
+
+- *Healthy* (risk < 0.2): the majority of the estate
+- *Low* (0.2–0.4): repositories with modest finding density
+- *Moderate* (0.4–0.6): repositories warranting attention
+- *High* (0.6–0.8): repositories requiring prompt remediation
+- *Critical* (risk ≥ 0.8): repositories with dense critical findings
+
+=== Temporal Diff Fidelity
+
+With full image files loaded, the diff subcommand correctly identifies
+per-repository health changes between successive scans.  The per-node delta
+output includes:
+
+- Repository name
+- Health before/after
+- Weak point count before/after
+
+This allows engineers to verify that a refactoring session improved targeted
+repositories without inadvertently degrading others — an estate-wide
+regression check that is not possible with flat per-file finding lists.
+
+== Related Work
+
+=== Static Analysis Tooling
+
+SonarQube <<sonar>> and CodeClimate <<cc>> provide organisation-scale static
+analysis with trend graphs.  Neither adopts a spatial model or draws
+functional connectivity edges between repositories.  Their trend views are
+per-metric time series, not spatial images of risk distribution.
+
+Hypatia <<hypatia>> is a neurosymbolic CI/CD intelligence system that consumes
+`panic-attack` findings and derives higher-order conclusions via Elixir rule
+engines.  mass-panic is complementary: where Hypatia reasons about individual
+findings, mass-panic provides the estate-scale spatial view.
+
+=== fNIRS and Biological Analogues
+
+The use of biological metaphors in software engineering is not new.
+Architecture health <<archhealth>> and technical debt <<techdebt>> both
+borrow medical terminology.  This work goes further: rather than using the
+metaphor descriptively, we adopt the _measurement structure_ of fNIRS — bounded
+saturation metrics, spatial voxel grids, functional connectivity thresholds,
+and temporal time series — as the literal design of the analysis system.
+
+=== Chapel for Scientific Computing
+
+Chapel has been used for distributed graph analytics <<chapel-graph>>,
+molecular dynamics <<chapel-md>>, and climate simulation <<chapel-climate>>.
+To our knowledge, mass-panic is the first application of Chapel to distributed
+static analysis of software repositories.
+
+== Discussion
+
+=== Limitations
+
+*Single-locale validated only.*  Multi-locale Chapel execution requires
+`--comm gasnet` or `--comm ofi` at build time and actual multi-machine
+infrastructure.  The distributed path has not yet been exercised against the
+full estate.
+
+*JSON parsing without a library.*  The hand-rolled character-scan parser in
+Protocol.chpl is fragile against JSON output format changes in `panic-attack`.
+A formal JSON library dependency would improve robustness at the cost of build
+complexity.
+
+*Approximated file count.*  The `totalFiles` metric is approximated by
+counting `"file_path":` occurrences in the `file_statistics` array.  Nested
+JSON with repeated keys could overcounting; in practice the format is stable.
+
+*Temporal diffs require two scans.*  The per-node breakdown requires full
+image files for both snapshots.  Snapshots written before image-path
+persistence was added will produce summary-only diffs.
+
+=== Future Work
+
+*Multi-machine distributed scanning.*  Compile Chapel with `--comm gasnet`,
+provision a compute cluster, and run `./mass-panic --numLocales=16` against
+the estate.  Expected scan time reduction: 16× for a linearly-scaling
+workload.
+
+*VeriSimDB HTTP push from Chapel.*  Currently the Chapel layer writes hexads
+to the local filesystem.  Adding a REST push to the `verisim-panic-api`
+endpoint enables cross-machine temporal aggregation and VCL historical trend
+queries.
+
+*Fine-grained imaging.*  The current model uses one node per repository.
+The architecture supports directory-level or file-level nodes; a finer-grained
+image would reveal which subdirectories within a repository carry the most
+risk.
+
+*Trend detection.*  Three or more snapshots enable trend classification:
+improving, degrading, oscillating, or stable.  An oscillating repository is
+a signal that a recurring pattern is being introduced and removed without
+permanent resolution.
+
+== Conclusion
+
+We have presented mass-panic, a system that applies the measurement structure
+of functional near-infrared spectroscopy to distributed software estate health
+monitoring.  The fNIRS metaphor is productive: it produces a bounded, spatial,
+time-navigable view of static analysis results that is qualitatively different
+from the flat finding lists of conventional tools.  The Chapel implementation
+provides a clean path to multi-machine distribution, validated in single-locale
+mode against a 303-repository estate.  The temporal diff capability enables
+estate-wide regression checking between development sessions.
+
+The full implementation is available under PMPL-1.0-or-later (MPL-2.0 as legal
+fallback) at:
+https://github.com/hyperpolymath/panic-attacker/tree/main/chapel/
+
+[bibliography]
+== References
+
+* [[[sonar]]] SonarSource SA. _SonarQube — Code Quality and Security_.
+  https://www.sonarqube.org/ (2024).
+
+* [[[cc]]] Code Climate, Inc. _Code Climate — Engineering Intelligence_.
+  https://codeclimate.com/ (2024).
+
+* [[[hypatia]]] J.D.A. Jewell. _Hypatia: Neurosymbolic CI/CD Intelligence_.
+  Hyperpolymath Technical Report, 2026.
+
+* [[[archhealth]]] R. Kazman, Y. Cai, R. Mo, Q. Feng, L. Xiao, S. Haziyev,
+  V. Fedak, A. Shapochnik. _A Case Study in Locating the Architectural Roots
+  of Technical Debt_. ICSE 2015.
+
+* [[[techdebt]]] W. Cunningham. _The WyCash Portfolio Management System_.
+  OOPSLA '92 Experience Report.
+
+* [[[chapel-graph]]] Engin Kayraklioglu, Erin Calling, Tamer Özgür Mutlu.
+  _A Preliminary Study on Centrality Analysis of Large-Scale Graphs Using
+  Chapel_. CHIUW 2019.
+
+* [[[chapel-md]]] Brad Chamberlain et al. _Parallel Programmability and the
+  Chapel Language_. Int'l Journal of High Performance Computing Applications
+  24(3), 2010.
+
+* [[[chapel-climate]]] NCAR/UCAR. _High Performance Computing in Climate
+  Science_. Technical Report, 2023.

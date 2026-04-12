@@ -275,12 +275,76 @@ module Temporal {
                 snap.totalCritical   = extractInt(obj, "\"critical\":");
                 snap.reposScanned    = extractInt(obj, "\"repos\":");
                 snap.nodeCount       = extractInt(obj, "\"nodes\":");
+                snap.imagePath       = extractQuotedString(obj, "\"image_path\":");
 
                 if snap.id != "" then results.pushBack(snap);
             }
         } catch { }
 
         return results;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Full image node loading — enables per-node diff
+    // ---------------------------------------------------------------------------
+
+    // Load the node list from a saved SystemImage JSON file.
+    // The image JSON contains a "nodes" array where each entry is a single-line
+    // JSON object as written by writeNodeJson in Imaging.chpl.
+    // Returns an empty list if the file is missing, unreadable, or has no nodes.
+    proc loadImageNodes(imagePath: string): list(ImageNode) {
+        var nodes: list(ImageNode);
+        if imagePath == "" || !safeIsFile(imagePath) then return nodes;
+
+        var inNodes = false;
+        try {
+            var f = open(imagePath, ioMode.r);
+            var reader = f.reader(locking=false);
+            var line: string;
+            while reader.readLine(line, stripNewline=true) {
+                const trimmed = line.strip();
+
+                if trimmed.startsWith("\"nodes\"") {
+                    inNodes = true;
+                    continue;
+                }
+                // The edges array follows nodes — stop when we hit it
+                if inNodes && trimmed.startsWith("\"edges\"") {
+                    break;
+                }
+                if inNodes && trimmed.startsWith("]") {
+                    inNodes = false;
+                    continue;
+                }
+
+                if !inNodes then continue;
+                if trimmed == "" || trimmed == "[" then continue;
+
+                // Strip trailing comma if present
+                var obj = if trimmed.endsWith(",") then trimmed[..trimmed.size - 2] else trimmed;
+                if !obj.startsWith("{") then continue;
+
+                var node: ImageNode;
+                node.id             = extractQuotedString(obj, "\"id\":");
+                node.name           = extractQuotedString(obj, "\"name\":");
+                node.level          = extractQuotedString(obj, "\"level\":");
+                node.healthScore    = extractReal(obj, "\"health_score\":");
+                node.riskIntensity  = extractReal(obj, "\"risk_intensity\":");
+                node.weakPointDensity = extractReal(obj, "\"weak_point_density\":");
+                node.weakPointCount = extractInt(obj, "\"weak_point_count\":");
+                node.criticalCount  = extractInt(obj, "\"critical_count\":");
+                node.totalFiles     = extractInt(obj, "\"total_files\":");
+                node.totalLines     = extractInt(obj, "\"total_lines\":");
+                node.fingerprint    = extractQuotedString(obj, "\"fingerprint\":");
+                // skipped is an unquoted boolean: scan for "skipped": true
+                node.skipped = obj.find("\"skipped\": true") != -1 ||
+                               obj.find("\"skipped\":true") != -1;
+
+                if node.id != "" then nodes.pushBack(node);
+            }
+        } catch { }
+
+        return nodes;
     }
 
     // Extract a real (floating-point) value following a JSON key.
@@ -376,7 +440,7 @@ module Temporal {
                 w.writeln(existingEntries, ",");
             }
 
-            // New snapshot entry
+            // New snapshot entry — image_path enables per-node diff on reload
             w.write("    {");
             w.write("\"id\": \"", newSnap.id, "\", ");
             w.write("\"timestamp\": \"", newSnap.timestamp, "\", ");
@@ -387,7 +451,8 @@ module Temporal {
             w.write("\"weak_points\": ", newSnap.totalWeakPoints, ", ");
             w.write("\"critical\": ", newSnap.totalCritical, ", ");
             w.write("\"repos\": ", newSnap.reposScanned, ", ");
-            w.write("\"nodes\": ", newSnap.nodeCount);
+            w.write("\"nodes\": ", newSnap.nodeCount, ", ");
+            w.write("\"image_path\": \"", newSnap.imagePath, "\"");
             w.writeln("}");
 
             w.writeln("  ]");

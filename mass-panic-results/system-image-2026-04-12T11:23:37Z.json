@@ -1,0 +1,29 @@
+{
+  "format": "panic-attack.system-image.v1",
+  "generated_at": "2026-04-12T11:23:37Z",
+  "scan_surface": "/var/mnt/eclipse/repos/",
+  "global_health": 1.0,
+  "global_risk": 0.0,
+  "total_weak_points": 0,
+  "total_critical": 0,
+  "total_lines": 0,
+  "total_files": 0,
+  "repos_scanned": 303,
+  "locales_used": 1,
+  "node_count": 2,
+  "edge_count": 0,
+  "risk_distribution": {
+    "healthy": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 0,
+    "critical": 0
+  },
+  "nodes": [
+    {"id": "repo:awesome-zig", "name": "awesome-zig", "level": "repository", "health_score": 0.0, "risk_intensity": 0.0, "weak_point_density": 0.0, "weak_point_count": 0, "critical_count": 0, "total_files": 0, "total_lines": 0, "fingerprint": "", "skipped": false},
+    {"id": "repo:wordpress-tools", "name": "wordpress-tools", "level": "repository", "health_score": 0.0, "risk_intensity": 0.0, "weak_point_density": 0.0, "weak_point_count": 0, "critical_count": 0, "total_files": 0, "total_lines": 0, "fingerprint": "", "skipped": false}
+  ],
+  "edges": [
+
+  ]
+}

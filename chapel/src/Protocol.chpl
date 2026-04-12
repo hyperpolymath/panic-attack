@@ -97,16 +97,36 @@ module Protocol {
         result.repoPath = repoPath;
         result.repoName = basename(repoPath);
 
-        // Extract key fields from JSON using simple string matching.
-        // This avoids a full JSON parser dependency — panic-attack's output
-        // format is stable and well-defined by the panicbot JSON contract.
-        result.weakPointCount = extractInt(jsonStr, "\"weak_points\":");
+        // The assail JSON format is:
+        //   "weak_points": [ {"category": "...", "severity": "High", ...}, ... ]
+        //   "statistics":  { "total_lines": N, "unsafe_blocks": N, ... }
+        //
+        // Count weak points by counting "category": occurrences (one per weak point).
+        // Count severity grades by scanning for "severity": "Critical" etc. (note space after colon).
+        // total_lines lives under statistics but extractInt finds the first occurrence anywhere.
+        // total_files is not in the output — approximated from file_statistics array length.
+        result.weakPointCount = countOccurrences(jsonStr, "\"category\":");
         result.criticalCount = countSeverity(jsonStr, "Critical");
         result.highCount = countSeverity(jsonStr, "High");
-        result.totalFiles = extractInt(jsonStr, "\"total_files\":");
+        result.totalFiles = countOccurrences(jsonStr, "\"file_path\":");
         result.totalLines = extractInt(jsonStr, "\"total_lines\":");
 
         return result;
+    }
+
+    // Count non-overlapping occurrences of a search string in json.
+    proc countOccurrences(json: string, searchStr: string): int {
+        var count = 0;
+        var remaining = json;
+        while remaining.size > 0 {
+            const idx = remaining.find(searchStr);
+            if idx == -1 then break;
+            count += 1;
+            var rest: string;
+            try { rest = remaining[idx..]; } catch { break; }
+            try { remaining = rest[searchStr.size..]; } catch { break; }
+        }
+        return count;
     }
 
     proc extractInt(json: string, key: string): int {
@@ -131,16 +151,22 @@ module Protocol {
         return 0;
     }
 
+    // Count severity occurrences. The assail JSON emits `"severity": "High"` with
+    // a space after the colon, so we match both spaced and compact forms.
     proc countSeverity(json: string, severity: string): int {
-        // Slice-and-search: advance through the string by taking suffixes.
-        const searchStr = "\"severity\":\"" + severity + "\"";
         var count = 0;
-        var remaining = json;
-        while remaining.size > 0 {
-            const idx = remaining.find(searchStr);
-            if idx == -1 then break;
-            count += 1;
-            remaining = try! (try! remaining[idx..])[searchStr.size..];
+        // Try both "severity": "X" (spaced) and "severity":"X" (compact)
+        for searchStr in ["\"severity\": \"" + severity + "\"",
+                          "\"severity\":\"" + severity + "\""] {
+            var remaining = json;
+            while remaining.size > 0 {
+                const idx = remaining.find(searchStr);
+                if idx == -1 then break;
+                count += 1;
+                var rest: string;
+                try { rest = remaining[idx..]; } catch { break; }
+                try { remaining = rest[searchStr.size..]; } catch { break; }
+            }
         }
         return count;
     }

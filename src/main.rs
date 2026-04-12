@@ -694,6 +694,13 @@ enum Commands {
         #[arg(short, long, default_value = "7600")]
         port: u16,
     },
+
+    /// Compute the BLAKE3 fingerprint of a directory (for incremental scanning)
+    Fingerprint {
+        /// Directory to fingerprint (hashes all source files recursively)
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+    },
 }
 
 /// Patch Bridge subcommands for CVE lifecycle management.
@@ -1096,7 +1103,11 @@ fn run_main() -> Result<()> {
             if let Some(output_path) = &output {
                 fs::write(output_path, &report_json)?;
                 qprintln!(cli.quiet, "Report saved to: {}", output_path.display());
-            } else if !cli.quiet {
+            } else if cli.quiet {
+                // Machine-readable mode: print JSON to stdout for pipeline consumers
+                // (e.g. the Chapel mass-panic orchestrator reads this via subprocess pipe)
+                println!("{report_json}");
+            } else {
                 println!("\nAssail Summary:");
                 println!("  Language: {:?}", report.language);
                 println!("  Weak points: {}", report.weak_points.len());
@@ -2215,6 +2226,12 @@ fn run_main() -> Result<()> {
 
         Commands::Groove { port } => {
             groove::run(port)?;
+            return Ok(());
+        }
+
+        Commands::Fingerprint { dir } => {
+            let fp = assemblyline::fingerprint_repo(&dir)?;
+            println!("{fp}");
             return Ok(());
         }
 

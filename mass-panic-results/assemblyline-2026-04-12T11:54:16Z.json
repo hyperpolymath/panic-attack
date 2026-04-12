@@ -1,0 +1,10 @@
+{
+  "format": "panic-attack.assemblyline.v2",
+  "created_at": "2026-04-12T11:54:16Z",
+  "directory": "/var/mnt/eclipse/repos/",
+  "repos_scanned": 303,
+  "repos_with_findings": 299,
+  "repos_skipped": 0,
+  "total_weak_points": 15554,
+  "total_critical": 1898
+}

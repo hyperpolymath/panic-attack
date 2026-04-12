@@ -146,16 +146,14 @@ module MassPanic {
         var results = allResults[0..#actualCount];
         sort(results, comparator=new ResultComparator());
 
-        // Filter to only repos with findings if --findingsOnly
-        var filteredResults = results;
-        if findingsOnly {
-            var kept: list(RepoResult);
-            for r in results {
-                if r.weakPointCount > 0 || r.error != "" then
-                    kept.pushBack(r);
-            }
-            filteredResults = kept.toArray();
+        // Filter to only repos with findings if --findingsOnly.
+        // Always build via list to avoid Chapel array-shape mismatch on assignment.
+        var filteredList: list(RepoResult);
+        for r in results {
+            if !findingsOnly || r.weakPointCount > 0 || r.error != "" then
+                filteredList.pushBack(r);
         }
+        var filteredResults = filteredList.toArray();
 
         // Build system image
         var image = buildSystemImage(filteredResults, repos.size);
@@ -242,9 +240,8 @@ module MassPanic {
             return;
         }
 
-        // Build minimal SystemImage objects from snapshot summaries —
-        // global metrics are accurate; per-node breakdown is not available
-        // without loading the full image JSON.
+        // Build SystemImage objects. Start with summary metrics (always available),
+        // then load per-node data from saved image files when paths are present.
         var olderImg: SystemImage;
         olderImg.generatedAt    = fromSnap.timestamp;
         olderImg.globalHealth   = fromSnap.globalHealth;
@@ -262,6 +259,28 @@ module MassPanic {
         newerImg.totalCritical  = toSnap.totalCritical;
         newerImg.reposScanned   = toSnap.reposScanned;
         newerImg.nodeCount      = toSnap.nodeCount;
+
+        // Load per-node data if image files are available (written by takeSnapshot).
+        // Older snapshots written before this feature won't have imagePath set — the
+        // diff will still work with summary-only data, just no per-node breakdown.
+        if fromSnap.imagePath != "" {
+            const olderNodes = loadImageNodes(fromSnap.imagePath);
+            if olderNodes.size > 0 {
+                olderImg.nodes = olderNodes;
+                if !quiet then
+                    writeln("mass-panic diff: loaded ", olderNodes.size,
+                            " nodes from ", fromSnap.id);
+            }
+        }
+        if toSnap.imagePath != "" {
+            const newerNodes = loadImageNodes(toSnap.imagePath);
+            if newerNodes.size > 0 {
+                newerImg.nodes = newerNodes;
+                if !quiet then
+                    writeln("mass-panic diff: loaded ", newerNodes.size,
+                            " nodes from ", toSnap.id);
+            }
+        }
 
         const diff = diffSnapshots(olderImg, newerImg, fromSnap.tag, toSnap.tag);
 
@@ -301,10 +320,28 @@ module MassPanic {
             writeln("New repos:   +", diff.newNodes.size);
         if diff.removedNodes.size > 0 then
             writeln("Gone repos:  -", diff.removedNodes.size);
-        if diff.improvedNodes.size > 0 then
+
+        // Per-node breakdown (only populated when full image files are available)
+        if diff.improvedNodes.size > 0 {
             writeln("Improved:    ", diff.improvedNodes.size, " repos");
-        if diff.degradedNodes.size > 0 then
+            for delta in diff.improvedNodes {
+                writeln("  ▲ ", delta.name,
+                        "  health ", formatDelta(delta.healthAfter - delta.healthBefore),
+                        "  wp ", formatDeltaInt(delta.weakPointsAfter - delta.weakPointsBefore));
+            }
+        }
+        if diff.degradedNodes.size > 0 {
             writeln("Degraded:    ", diff.degradedNodes.size, " repos");
+            for delta in diff.degradedNodes {
+                writeln("  ▼ ", delta.name,
+                        "  health ", formatDelta(delta.healthAfter - delta.healthBefore),
+                        "  wp ", formatDeltaInt(delta.weakPointsAfter - delta.weakPointsBefore));
+            }
+        }
+        if diff.improvedNodes.size == 0 && diff.degradedNodes.size == 0 &&
+           diff.unchangedCount == 0 {
+            writeln("(run two scans to enable per-repo breakdown)");
+        }
         writeln();
     }
 
@@ -323,7 +360,31 @@ module MassPanic {
         writer.writeln("  \"removed_repos\": ", diff.removedNodes.size, ",");
         writer.writeln("  \"improved_repos\": ", diff.improvedNodes.size, ",");
         writer.writeln("  \"degraded_repos\": ", diff.degradedNodes.size, ",");
-        writer.writeln("  \"unchanged_repos\": ", diff.unchangedCount);
+        writer.writeln("  \"unchanged_repos\": ", diff.unchangedCount, ",");
+
+        // Per-node deltas — empty arrays when image files were not available
+        writer.writeln("  \"improved\": [");
+        for (delta, idx) in zip(diff.improvedNodes, 0..) {
+            if idx > 0 then writer.write(", ");
+            writer.write("{\"id\": \"", delta.nodeId, "\", \"name\": \"", delta.name, "\", ");
+            writer.write("\"health_before\": ", delta.healthBefore, ", ");
+            writer.write("\"health_after\": ", delta.healthAfter, ", ");
+            writer.write("\"wp_before\": ", delta.weakPointsBefore, ", ");
+            writer.write("\"wp_after\": ", delta.weakPointsAfter, "}");
+        }
+        writer.writeln("\n  ],");
+
+        writer.writeln("  \"degraded\": [");
+        for (delta, idx) in zip(diff.degradedNodes, 0..) {
+            if idx > 0 then writer.write(", ");
+            writer.write("{\"id\": \"", delta.nodeId, "\", \"name\": \"", delta.name, "\", ");
+            writer.write("\"health_before\": ", delta.healthBefore, ", ");
+            writer.write("\"health_after\": ", delta.healthAfter, ", ");
+            writer.write("\"wp_before\": ", delta.weakPointsBefore, ", ");
+            writer.write("\"wp_after\": ", delta.weakPointsAfter, "}");
+        }
+        writer.writeln("\n  ]");
+
         writer.writeln("}");
     }
 
@@ -489,12 +550,14 @@ module MassPanic {
 
         select mode {
             when "assail" {
+                // --quiet causes assail to emit JSON on stdout (no --output needed)
+                args.pushBack("--quiet");
                 args.pushBack("assail");
                 args.pushBack(repoPath);
-                args.pushBack("--output-format=json");
             }
             when "assault" {
                 // Full stress test: assail + attack all axes
+                args.pushBack("--quiet");
                 args.pushBack("assault");
                 args.pushBack(repoPath);
                 args.pushBack("--output-format=json");
@@ -507,6 +570,7 @@ module MassPanic {
             }
             when "ambush" {
                 // Timeline-driven stress test
+                args.pushBack("--quiet");
                 args.pushBack("ambush");
                 args.pushBack(repoPath);
                 args.pushBack("--output-format=json");

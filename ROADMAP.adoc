@@ -43,7 +43,7 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 * [x] Filesystem persistence for scan results
 * [x] VeriSimDB HTTP API integration: push octads via REST (ureq v3; VERISIMDB_URL env var; http feature; filesystem fallback)
 * [x] Per-project VeriSimDB instance: `deploy/panic-attack/fly.toml` for `verisim-panic-api` (6PN internal, lhr)
-* [ ] Delta reporting: only report changes since last scan
+* [x] Delta reporting: `diff` subcommand reports changes since last scan (`src/report/diff.rs`)
 * [ ] Hexad persistence for Patch Bridge mitigation registry (currently JSON file)
 * [ ] Historical trend queries via VCL
 
@@ -53,8 +53,8 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 * [x] JSON output for pipeline integration
 * [x] A2ML manifest protocol support
 * [x] i18n support (10 languages, ISO 639-1)
-* [ ] Shell completions: bash, zsh, fish, nushell
-* [ ] Interactive TUI mode for reviewing findings
+* [x] Shell completions: bash, zsh, fish, nushell, powershell (`completions/` directory)
+* [x] Interactive TUI mode for reviewing findings (`tui` subcommand)
 * [ ] Improved error messages with fix suggestions
 
 == v2.4.0 -- Patch Bridge Phase 2
@@ -134,9 +134,13 @@ Identified as an estate-wide gap in the 2026-04-05 KRL-stack CRG blitz audit.
 * [x] Assemblyline batch scanning with rayon parallelism
 * [x] BLAKE3 fingerprinting for incremental scanning
 * [x] Notification pipeline (markdown summaries, GitHub issues)
-* [ ] Chapel metalayer: distributed `coforall` scanning across compute clusters
-* [ ] Multi-machine orchestration for org-scale scanning
-* [ ] Scan result aggregation across distributed nodes
+* [x] Chapel metalayer: `mass-panic` orchestrator with fNIRS-inspired SystemImage, temporal snapshots, VeriSimDB hexad persistence (`chapel/src/`)
+* [x] `fingerprint` subcommand: BLAKE3 directory hashing for incremental skip
+* [x] Temporal diff subcommand: `--subcommand=diff` with global health/risk/weak-point deltas
+* [x] Single-locale scan validated against 303-repo estate (2026-04-12)
+* [ ] Per-node temporal diff: load full SystemImage JSON for per-repo health breakdown
+* [ ] Multi-machine orchestration: gasnet/ofi multi-locale Chapel run across cluster nodes
+* [ ] VeriSimDB HTTP push from Chapel metalayer (currently file-only)
 
 == v3.1.0 -- Ecosystem Integration
 
