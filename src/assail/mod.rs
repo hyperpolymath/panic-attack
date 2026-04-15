@@ -92,6 +92,73 @@ pub fn analyze_verbose<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     Ok(report)
 }
 
+/// Run Assail analysis for browser extensions (ignores DevTools API eval() usage)
+pub fn analyze_browser_extension<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
+    let analyzer = Analyzer::new_browser_extension(target.as_ref())?;
+    let mut report = analyzer.analyze()?;
+    apply_suppression(&mut report);
+    Ok(report)
+}
+
+/// Run Assail analysis for browser extensions with verbose output
+pub fn analyze_verbose_browser_extension<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
+    let analyzer = Analyzer::new_verbose_browser_extension(target.as_ref())?;
+    let mut report = analyzer.analyze()?;
+    apply_suppression(&mut report);
+
+    let active_count = report.weak_points.iter().filter(|wp| !wp.suppressed).count();
+    let suppressed_count = report.suppressed_count;
+
+    println!("Assail Analysis Complete (Browser Extension Mode)");
+    println!("  Language: {:?}", report.language);
+    println!("  Frameworks: {:?}", report.frameworks);
+    println!(
+        "  Weak Points (active): {} — these count toward CI gates and fleet dispatch",
+        active_count
+    );
+    if suppressed_count > 0 {
+        println!(
+            "  Weak Points (total):  {} — {} additional suppressed by FP rules",
+            report.weak_points.len(),
+            suppressed_count
+        );
+    }
+    println!("  Recommended Attacks: {:?}", report.recommended_attacks);
+    println!("  Note: eval() checks skipped for DevTools API usage");
+
+    if !report.file_statistics.is_empty() {
+        let strategy = SearchStrategy::auto_select(&report);
+        let prioritised = strategy::prioritise_files(&report, strategy);
+
+        println!("\n  Search Strategy: {:?}", strategy);
+        println!("  Per-file Breakdown (top 10 by risk):");
+
+        for (rank, file_risk) in prioritised.iter().take(10).enumerate() {
+            println!(
+                "    {}. {} ({:?}, risk: {:.1})",
+                rank + 1,
+                file_risk.file_path,
+                file_risk.language,
+                file_risk.risk_score,
+            );
+            for factor in &file_risk.risk_factors {
+                println!(
+                    "       - {}: {:.0} (weight: {:.1})",
+                    factor.name, factor.value, factor.weight,
+                );
+            }
+        }
+
+        if prioritised.len() > 10 {
+            println!("    ... and {} more files", prioritised.len() - 10);
+        }
+    }
+
+    run_logic_engine(&report);
+
+    Ok(report)
+}
+
 /// Apply context-aware FP suppression to an assail report in-place.
 ///
 /// Runs the full kanren logic engine, collects every `suppressed(Category, Location)`

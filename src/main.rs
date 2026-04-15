@@ -12,23 +12,23 @@ mod adjudicate;
 mod ambush;
 mod amuck;
 mod assail;
-mod attestation;
+mod assemblyline;
 mod attack;
+mod attestation;
 mod axial;
 #[cfg(feature = "http")]
 mod bridge;
 mod diagnostics;
+mod groove;
 mod i18n;
 mod kanren;
 mod kin;
+mod mass_panic;
+mod notify;
 mod panll;
 mod report;
 mod signatures;
 mod storage;
-mod assemblyline;
-mod groove;
-mod mass_panic;
-mod notify;
 mod types;
 
 extern crate walkdir;
@@ -120,6 +120,9 @@ enum Commands {
         #[arg(long, value_name = "PATH")]
         signing_key: Option<PathBuf>,
 
+        /// Browser extension mode: ignore DevTools API eval() usage
+        #[arg(long, default_value_t = false)]
+        browser_extension: bool,
     },
 
     /// Execute a single attack on a target program
@@ -941,12 +944,14 @@ impl From<A2mlReportKindArg> for ReportBundleKind {
     }
 }
 
+type AttackOverrides = (Vec<String>, HashMap<AttackAxis, Vec<String>>, ProbeMode);
+
 fn build_attack_overrides(
     profile_path: Option<PathBuf>,
     args: Vec<String>,
     axis_args: Vec<String>,
     probe: Option<ProbeModeArg>,
-) -> Result<(Vec<String>, HashMap<AttackAxis, Vec<String>>, ProbeMode)> {
+) -> Result<AttackOverrides> {
     let profile = if let Some(path) = profile_path {
         Some(AttackProfile::load(&path)?)
     } else {
@@ -1066,6 +1071,8 @@ fn run_main() -> Result<()> {
             verbose,
             attest,
             signing_key,
+            browser_extension,
+            ..
         } => {
             qprintln!(
                 cli.quiet,
@@ -1079,7 +1086,9 @@ fn run_main() -> Result<()> {
             // Optionally start attestation chain before scanning
             let mut chain_builder = if attest {
                 qprintln!(cli.quiet, "Attestation enabled");
-                Some(attestation::AttestationChainBuilder::begin(&target, &cli_args)?)
+                Some(attestation::AttestationChainBuilder::begin(
+                    &target, &cli_args,
+                )?)
             } else {
                 None
             };
@@ -1087,15 +1096,31 @@ fn run_main() -> Result<()> {
             let report = if let Some(ref mut builder) = chain_builder {
                 // Attested mode: use the analyzer with an evidence accumulator
                 let analyzer = if verbose {
-                    assail::analyzer::Analyzer::new_verbose(&target)?
+                    if browser_extension {
+                        assail::analyzer::Analyzer::new_verbose_browser_extension(&target)?
+                    } else {
+                        assail::analyzer::Analyzer::new_verbose(&target)?
+                    }
                 } else {
-                    assail::analyzer::Analyzer::new(&target)?
+                    if browser_extension {
+                        assail::analyzer::Analyzer::new_browser_extension(&target)?
+                    } else {
+                        assail::analyzer::Analyzer::new(&target)?
+                    }
                 };
                 analyzer.analyze_with_accumulator(Some(builder.accumulator()))?
             } else if verbose {
-                assail::analyze_verbose(&target)?
+                if browser_extension {
+                    assail::analyze_verbose_browser_extension(&target)?
+                } else {
+                    assail::analyze_verbose(&target)?
+                }
             } else {
-                assail::analyze(&target)?
+                if browser_extension {
+                    assail::analyze_browser_extension(&target)?
+                } else {
+                    assail::analyze(&target)?
+                }
             };
 
             let report_json = serde_json::to_string_pretty(&report)?;
@@ -1116,10 +1141,7 @@ fn run_main() -> Result<()> {
 
             // Seal and write attestation sidecar
             if let Some(builder) = chain_builder {
-                let envelope = builder.seal(
-                    report_json.as_bytes(),
-                    signing_key.as_deref(),
-                )?;
+                let envelope = builder.seal(report_json.as_bytes(), signing_key.as_deref())?;
                 let attestation_json = serde_json::to_string_pretty(&envelope)?;
 
                 let sidecar_path = if let Some(out) = &output {
@@ -1137,7 +1159,6 @@ fn run_main() -> Result<()> {
                     sidecar_path.display()
                 );
             }
-
         }
 
         Commands::Attack {
@@ -1553,11 +1574,7 @@ fn run_main() -> Result<()> {
                     p.set_extension(target_format.as_str());
                     p
                 });
-                axial::convert_markdown_with_pandoc(
-                    &markdown_path,
-                    &target_format,
-                    &pandoc_path,
-                )?;
+                axial::convert_markdown_with_pandoc(&markdown_path, &target_format, &pandoc_path)?;
                 qprintln!(
                     cli.quiet,
                     "axial pandoc export ({}) saved to: {}",
@@ -1787,7 +1804,10 @@ fn run_main() -> Result<()> {
                     if cf.exists() {
                         println!("Incremental mode: loading cache from {}", cf.display());
                     } else {
-                        println!("Incremental mode: first run (cache will be saved to {})", cf.display());
+                        println!(
+                            "Incremental mode: first run (cache will be saved to {})",
+                            cf.display()
+                        );
                     }
                 }
             }
@@ -1845,8 +1865,9 @@ fn run_main() -> Result<()> {
             create_issues,
             github_owner,
         } => {
-            let content = fs::read_to_string(&report_path)
-                .with_context(|| format!("reading assemblyline report {}", report_path.display()))?;
+            let content = fs::read_to_string(&report_path).with_context(|| {
+                format!("reading assemblyline report {}", report_path.display())
+            })?;
             let asmline_report: assemblyline::AssemblylineReport =
                 serde_json::from_str(&content)
                     .with_context(|| "parsing assemblyline report JSON")?;
@@ -1860,7 +1881,11 @@ fn run_main() -> Result<()> {
 
             let output_path = output.unwrap_or_else(|| PathBuf::from("reports/notification.md"));
             notify::write_notification(&asmline_report, &config, &output_path)?;
-            qprintln!(cli.quiet, "Notification written to: {}", output_path.display());
+            qprintln!(
+                cli.quiet,
+                "Notification written to: {}",
+                output_path.display()
+            );
 
             if create_issues {
                 let created = notify::create_github_issues(&asmline_report, &config)?;
@@ -1896,29 +1921,26 @@ fn run_main() -> Result<()> {
             };
 
             // Check that migration_metrics were populated
-            let mut metrics = assail_report
-                .migration_metrics
-                .clone()
-                .unwrap_or_else(|| {
-                    eprintln!("warning: target does not appear to be a ReScript project");
-                    // Return empty metrics as fallback
-                    types::MigrationMetrics {
-                        deprecated_api_count: 0,
-                        modern_api_count: 0,
-                        api_migration_ratio: 1.0,
-                        health_score: 1.0,
-                        config_format: types::ReScriptConfigFormat::None,
-                        version_bracket: types::ReScriptVersionBracket::V12Current,
-                        build_time_ms: None,
-                        bundle_size_bytes: None,
-                        file_count: 0,
-                        rescript_lines: 0,
-                        deprecated_patterns: Vec::new(),
-                        jsx_version: None,
-                        uncurried: false,
-                        module_format: None,
-                    }
-                });
+            let mut metrics = assail_report.migration_metrics.clone().unwrap_or_else(|| {
+                eprintln!("warning: target does not appear to be a ReScript project");
+                // Return empty metrics as fallback
+                types::MigrationMetrics {
+                    deprecated_api_count: 0,
+                    modern_api_count: 0,
+                    api_migration_ratio: 1.0,
+                    health_score: 1.0,
+                    config_format: types::ReScriptConfigFormat::None,
+                    version_bracket: types::ReScriptVersionBracket::V12Current,
+                    build_time_ms: None,
+                    bundle_size_bytes: None,
+                    file_count: 0,
+                    rescript_lines: 0,
+                    deprecated_patterns: Vec::new(),
+                    jsx_version: None,
+                    uncurried: false,
+                    module_format: None,
+                }
+            });
 
             // Optionally measure build time
             if build_time {
@@ -2004,17 +2026,17 @@ fn run_main() -> Result<()> {
             let diff = report::migration::compute_diff(&before_snapshot, &after_snapshot);
 
             let content = match format {
-                MigrationDiffFormatArg::Markdown => {
-                    report::migration::format_diff_markdown(&diff)
-                }
-                MigrationDiffFormatArg::Json => {
-                    serde_json::to_string_pretty(&diff)?
-                }
+                MigrationDiffFormatArg::Markdown => report::migration::format_diff_markdown(&diff),
+                MigrationDiffFormatArg::Json => serde_json::to_string_pretty(&diff)?,
             };
 
             if let Some(out_path) = output {
                 fs::write(&out_path, &content)?;
-                qprintln!(cli.quiet, "Migration diff written to: {}", out_path.display());
+                qprintln!(
+                    cli.quiet,
+                    "Migration diff written to: {}",
+                    out_path.display()
+                );
             } else {
                 println!("{}", content);
             }
@@ -2105,8 +2127,7 @@ fn run_main() -> Result<()> {
                     offline,
                     register,
                 } => {
-                    let project_dir = std::fs::canonicalize(&dir)
-                        .unwrap_or_else(|_| dir.clone());
+                    let project_dir = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
 
                     qprintln!(cli.quiet, "Patch Bridge triage: {}", project_dir.display());
 
@@ -2124,7 +2145,9 @@ fn run_main() -> Result<()> {
 
                     // Print details for non-informational CVEs
                     for cve in &report.cves {
-                        if cve.classification != bridge::Classification::Informational || cli.expand_sections {
+                        if cve.classification != bridge::Classification::Informational
+                            || cli.expand_sections
+                        {
                             let icon = match cve.classification {
                                 bridge::Classification::Mitigable => "MITIGABLE",
                                 bridge::Classification::Unmitigable => "UNMITIGABLE",
@@ -2146,7 +2169,8 @@ fn run_main() -> Result<()> {
 
                     // Register mitigations if requested
                     if register {
-                        let mut registry = bridge::registry::MitigationRegistry::load(&project_dir)?;
+                        let mut registry =
+                            bridge::registry::MitigationRegistry::load(&project_dir)?;
                         let added = registry.register_from_triage(&report.cves);
                         if added > 0 {
                             registry.save(&project_dir)?;
@@ -2166,8 +2190,7 @@ fn run_main() -> Result<()> {
                 }
 
                 BridgeAction::Status { dir } => {
-                    let project_dir = std::fs::canonicalize(&dir)
-                        .unwrap_or_else(|_| dir.clone());
+                    let project_dir = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
 
                     let registry = bridge::registry::MitigationRegistry::load(&project_dir)?;
 
@@ -2201,7 +2224,8 @@ fn run_main() -> Result<()> {
                             "\n{} entries ({} pending, {} accepted risk).",
                             registry.entries.len(),
                             registry.count_by_status(bridge::registry::MitigationStatus::Pending),
-                            registry.count_by_status(bridge::registry::MitigationStatus::AcceptedRisk),
+                            registry
+                                .count_by_status(bridge::registry::MitigationStatus::AcceptedRisk),
                         );
                     }
                 }
@@ -2243,8 +2267,8 @@ fn run_main() -> Result<()> {
                         println!("No temporal snapshots found.");
                     } else {
                         println!(
-                            "{:<6} {:<28} {:<8} {:<10} {}",
-                            "SEQ", "TIMESTAMP", "NODES", "HEALTH", "LABEL"
+                            "{:<6} {:<28} {:<8} {:<10} LABEL",
+                            "SEQ", "TIMESTAMP", "NODES", "HEALTH"
                         );
                         println!("{}", "-".repeat(60));
                         for snap in &snapshots {
@@ -2269,10 +2293,8 @@ fn run_main() -> Result<()> {
                 } => {
                     let (older_entry, newer_entry) =
                         mass_panic::temporal::get_snapshot_pair(&verisimdb_dir, from_seq, to_seq)?;
-                    let older_image =
-                        mass_panic::temporal::load_snapshot_image(&older_entry)?;
-                    let newer_image =
-                        mass_panic::temporal::load_snapshot_image(&newer_entry)?;
+                    let older_image = mass_panic::temporal::load_snapshot_image(&older_entry)?;
+                    let newer_image = mass_panic::temporal::load_snapshot_image(&newer_entry)?;
 
                     let older_label = format!("#{}", from_seq);
                     let newer_label = format!("#{}", to_seq);
@@ -2311,10 +2333,8 @@ fn run_main() -> Result<()> {
                             .as_ref()
                             .map(|p| p.with_extension("panll.json"))
                             .unwrap_or_else(|| {
-                                verisimdb_dir.join(format!(
-                                    "diff-{}-{}.panll.json",
-                                    from_seq, to_seq
-                                ))
+                                verisimdb_dir
+                                    .join(format!("diff-{}-{}.panll.json", from_seq, to_seq))
                             });
                         panll::write_temporal_export(&diff, &panll_path)?;
                         println!("PanLL temporal export: {}", panll_path.display());

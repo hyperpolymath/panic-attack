@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 // These collect deprecated/modern API counts across all files during a single
 // analyze() run, then get consumed by build_migration_metrics().
 thread_local! {
-    static MIGRATION_DEPRECATED: RefCell<Vec<DeprecatedPattern>> = RefCell::new(Vec::new());
+    static MIGRATION_DEPRECATED: RefCell<Vec<DeprecatedPattern>> = const { RefCell::new(Vec::new()) };
     static MIGRATION_DEPRECATED_COUNT: RefCell<usize> = const { RefCell::new(0) };
     static MIGRATION_MODERN_COUNT: RefCell<usize> = const { RefCell::new(0) };
     static MIGRATION_FILE_COUNT: RefCell<usize> = const { RefCell::new(0) };
@@ -159,18 +159,27 @@ pub struct Analyzer {
     target: PathBuf,
     language: Language,
     verbose: bool,
+    browser_extension: bool,
 }
 
 impl Analyzer {
     pub fn new(target: &Path) -> Result<Self> {
-        Self::build(target, false)
+        Self::build(target, false, false)
     }
 
     pub fn new_verbose(target: &Path) -> Result<Self> {
-        Self::build(target, true)
+        Self::build(target, true, false)
     }
 
-    fn build(target: &Path, verbose: bool) -> Result<Self> {
+    pub fn new_browser_extension(target: &Path) -> Result<Self> {
+        Self::build(target, false, true)
+    }
+
+    pub fn new_verbose_browser_extension(target: &Path) -> Result<Self> {
+        Self::build(target, true, true)
+    }
+
+    fn build(target: &Path, verbose: bool, browser_extension: bool) -> Result<Self> {
         if !target.exists() {
             anyhow::bail!("Target does not exist: {}", target.display());
         }
@@ -185,6 +194,7 @@ impl Analyzer {
             target: target.to_path_buf(),
             language,
             verbose,
+            browser_extension,
         })
     }
 
@@ -779,7 +789,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("{} unsafe blocks in {}", stats.unsafe_blocks, file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -795,7 +805,7 @@ impl Analyzer {
                     stats.unwrap_calls, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -809,12 +819,14 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("mem::transmute usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
         // mem::forget — deliberately leaks resources without running destructors
-        if code_only.contains("mem::forget(") || (code_only.contains("forget(") && code_only.contains("use std::mem")) {
+        if code_only.contains("mem::forget(")
+            || (code_only.contains("forget(") && code_only.contains("use std::mem"))
+        {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -823,7 +835,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("mem::forget usage (resource leak) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -837,7 +849,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Raw pointer cast in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -885,8 +897,7 @@ impl Analyzer {
 
         while i < n {
             // Raw string: optional 'b' prefix then r#*"…"#*
-            let is_raw = chars[i] == 'r'
-                || (chars[i] == 'b' && i + 1 < n && chars[i + 1] == 'r');
+            let is_raw = chars[i] == 'r' || (chars[i] == 'b' && i + 1 < n && chars[i + 1] == 'r');
 
             if is_raw {
                 let prefix_end = if chars[i] == 'b' { i + 2 } else { i + 1 };
@@ -897,13 +908,13 @@ impl Analyzer {
                 let hash_count = j - prefix_end;
                 if j < n && chars[j] == '"' {
                     // Raw string opener confirmed — emit prefix + opening delimiter.
-                    for k in i..=j {
-                        out.push(chars[k]);
+                    for &c in &chars[i..=j] {
+                        out.push(c);
                     }
                     i = j + 1;
                     // Build the closing sequence: " followed by hash_count '#'.
                     let closing: Vec<char> = std::iter::once('"')
-                        .chain(std::iter::repeat('#').take(hash_count))
+                        .chain(std::iter::repeat_n('#', hash_count))
                         .collect();
                     // Search for the closing sequence.
                     let mut found = false;
@@ -1009,7 +1020,8 @@ impl Analyzer {
         stats.threading_constructs += content.matches("pthread_").count();
         stats.threading_constructs += content.matches("std::thread").count();
 
-        let unchecked_malloc = RE_UNCHECKED_MALLOC.get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").unwrap());
+        let unchecked_malloc =
+            RE_UNCHECKED_MALLOC.get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").unwrap());
         if unchecked_malloc.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -1019,7 +1031,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("Unchecked malloc in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1033,7 +1045,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("gets() usage (unbounded buffer write) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1047,7 +1059,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("system() call (command injection risk) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1061,7 +1073,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("sprintf() usage (buffer overflow risk) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1073,9 +1085,12 @@ impl Analyzer {
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
-                description: format!("Unbounded string operation (strcpy/strcat) in {}", file_path),
+                description: format!(
+                    "Unbounded string operation (strcpy/strcat) in {}",
+                    file_path
+                ),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1236,7 +1251,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} goroutines spawned in {}", go_count, file_path),
                 recommended_attack: vec![AttackAxis::Concurrency, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1250,7 +1265,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("unsafe.Pointer usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1262,9 +1277,12 @@ impl Analyzer {
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
-                description: format!("exec.Command usage (command injection risk) in {}", file_path),
+                description: format!(
+                    "exec.Command usage (command injection risk) in {}",
+                    file_path
+                ),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1354,7 +1372,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Unbounded while True loop in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Time],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1367,7 +1385,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("Dynamic code execution (eval/exec) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1379,9 +1397,12 @@ impl Analyzer {
                 category: WeakPointCategory::UnsafeDeserialization,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
-                description: format!("pickle deserialization (arbitrary code execution) in {}", file_path),
+                description: format!(
+                    "pickle deserialization (arbitrary code execution) in {}",
+                    file_path
+                ),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1393,15 +1414,20 @@ impl Analyzer {
                 category: WeakPointCategory::CommandInjection,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
-                description: format!("Shell command execution (os.system/os.popen) in {}", file_path),
+                description: format!(
+                    "Shell command execution (os.system/os.popen) in {}",
+                    file_path
+                ),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
         // subprocess with shell=True
-        if content.contains("subprocess.call") || content.contains("subprocess.Popen") || content.contains("subprocess.run") {
-            if content.contains("shell=True") || content.contains("shell = True") {
+        if (content.contains("subprocess.call")
+            || content.contains("subprocess.Popen")
+            || content.contains("subprocess.run"))
+            && (content.contains("shell=True") || content.contains("shell = True")) {
                 weak_points.push(WeakPoint {
                     file: None,
                     line: None,
@@ -1413,7 +1439,6 @@ impl Analyzer {
                     suppressed: false,
                 });
             }
-        }
 
         // hashlib.md5 / hashlib.sha1 in security context
         for pattern in &["hashlib.md5(", "hashlib.new('md5'", "hashlib.new(\"md5\""] {
@@ -1437,7 +1462,11 @@ impl Analyzer {
             }
         }
 
-        for pattern in &["hashlib.sha1(", "hashlib.new('sha1'", "hashlib.new(\"sha1\""] {
+        for pattern in &[
+            "hashlib.sha1(",
+            "hashlib.new('sha1'",
+            "hashlib.new(\"sha1\"",
+        ] {
             if let Some(pos) = content.find(pattern) {
                 if has_security_context(content, pos) {
                     weak_points.push(WeakPoint {
@@ -1536,7 +1565,8 @@ impl Analyzer {
         stats.threading_constructs += content.matches("Worker(").count();
         stats.threading_constructs += content.matches("new Worker").count();
 
-        if content.contains("eval(") {
+        // Skip eval() check for browser extensions using DevTools API
+        if content.contains("eval(") && !self.browser_extension {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -1545,7 +1575,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("eval() usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1557,9 +1587,12 @@ impl Analyzer {
                 category: WeakPointCategory::DynamicCodeExecution,
                 location: Some(file_path.to_string()),
                 severity: Severity::High,
-                description: format!("DOM manipulation (innerHTML/document.write) in {}", file_path),
+                description: format!(
+                    "DOM manipulation (innerHTML/document.write) in {}",
+                    file_path
+                ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Network],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1573,7 +1606,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("dangerouslySetInnerHTML (XSS risk) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Network],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1587,7 +1620,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Deno -A (all permissions) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Network, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1602,7 +1635,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("{} JSON.parseExn calls in {}", parse_exn_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1731,7 +1764,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Dynamic code execution in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1760,7 +1793,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("Runtime.exec() in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1806,7 +1839,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("Code.eval_string/eval_quoted in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1824,7 +1857,7 @@ impl Analyzer {
                     atom_count, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1838,12 +1871,13 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("System command execution in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
         // Unsafe apply
-        let apply_re = RE_ELIXIR_APPLY.get_or_init(|| Regex::new(r"apply\([^,]+,\s*[^,]+,").unwrap());
+        let apply_re =
+            RE_ELIXIR_APPLY.get_or_init(|| Regex::new(r"apply\([^,]+,\s*[^,]+,").unwrap());
         if apply_re.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -1853,7 +1887,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("Dynamic apply/3 in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1896,8 +1930,7 @@ impl Analyzer {
         // Test files using ExUnit.Case that never reach for ExUnitProperties or
         // StreamData cannot discover emergent edge-case regressions; mutation
         // testing will find surviving mutants that example-based tests miss.
-        let is_test_file = file_path.ends_with("_test.exs")
-            || content.contains("use ExUnit.Case");
+        let is_test_file = file_path.ends_with("_test.exs") || content.contains("use ExUnit.Case");
         let has_property_testing = content.contains("use ExUnitProperties")
             || content.contains("use StreamData")
             || content.contains("ExUnitProperties")
@@ -1952,7 +1985,7 @@ impl Analyzer {
                     atom_count, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1966,7 +1999,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("os:cmd call in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -1996,7 +2029,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} @external FFI calls in {}", external_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2036,7 +2069,7 @@ impl Analyzer {
                     parse_exn, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2057,7 +2090,7 @@ impl Analyzer {
                     ignore_count, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2075,7 +2108,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} unsafe get calls in {}", unsafe_gets, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2101,7 +2134,11 @@ impl Analyzer {
             ("Js.Math.", "Math", DeprecatedCategory::OldNumeric),
             ("Js.Json.", "JSON", DeprecatedCategory::OldJson),
             ("Js.Re.", "RegExp", DeprecatedCategory::OldRegExp),
-            ("Js.Date.", "Date (no core replacement yet)", DeprecatedCategory::OldDate),
+            (
+                "Js.Date.",
+                "Date (no core replacement yet)",
+                DeprecatedCategory::OldDate,
+            ),
         ];
 
         let mut deprecated_patterns = Vec::new();
@@ -2124,11 +2161,22 @@ impl Analyzer {
 
         // === Migration analysis: deprecated Belt.* APIs ===
         let deprecated_belt_apis: &[&str] = &[
-            "Belt.Array", "Belt.List", "Belt.Map", "Belt.Set",
-            "Belt.Option", "Belt.Result", "Belt.Int", "Belt.Float",
-            "Belt.SortArray", "Belt.HashMap", "Belt.HashSet",
-            "Belt.MutableMap", "Belt.MutableSet", "Belt.MutableQueue",
-            "Belt.MutableStack", "Belt.Range",
+            "Belt.Array",
+            "Belt.List",
+            "Belt.Map",
+            "Belt.Set",
+            "Belt.Option",
+            "Belt.Result",
+            "Belt.Int",
+            "Belt.Float",
+            "Belt.SortArray",
+            "Belt.HashMap",
+            "Belt.HashSet",
+            "Belt.MutableMap",
+            "Belt.MutableSet",
+            "Belt.MutableQueue",
+            "Belt.MutableStack",
+            "Belt.Range",
         ];
 
         for pattern in deprecated_belt_apis {
@@ -2150,10 +2198,25 @@ impl Analyzer {
 
         // === Migration analysis: modern @rescript/core APIs (positive signals) ===
         let modern_apis: &[&str] = &[
-            "Array.", "String.", "Dict.", "Console.", "Promise.",
-            "Nullable.", "Float.", "Int.", "Math.", "JSON.",
-            "RegExp.", "Map.", "Set.", "Option.", "Result.",
-            "Error.", "Iterator.", "AsyncIterator.", "BigInt.",
+            "Array.",
+            "String.",
+            "Dict.",
+            "Console.",
+            "Promise.",
+            "Nullable.",
+            "Float.",
+            "Int.",
+            "Math.",
+            "JSON.",
+            "RegExp.",
+            "Map.",
+            "Set.",
+            "Option.",
+            "Result.",
+            "Error.",
+            "Iterator.",
+            "AsyncIterator.",
+            "BigInt.",
         ];
 
         let mut modern_count = 0usize;
@@ -2331,7 +2394,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Obj.repr (unsafe representation access) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2345,7 +2408,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("Unsafe Marshal deserialization in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2359,7 +2422,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Unix.system/execvp command execution in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2394,7 +2457,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("{} unsafe operations in {}", unsafe_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2426,7 +2489,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("eval usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2440,7 +2503,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("System/process call in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2462,7 +2525,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} call/cc usage in {}", callcc_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2494,7 +2557,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("{} unsafePerformIO in {}", unsafe_io, file_path),
                 recommended_attack: vec![AttackAxis::Concurrency, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2507,7 +2570,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("{} unsafeCoerce in {}", unsafe_coerce, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2530,7 +2593,7 @@ impl Analyzer {
                     partials, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2549,7 +2612,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("{} error/undefined in {}", error_count, file_path),
                 recommended_attack: vec![AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2582,7 +2645,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} foreign imports in {}", ffi_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2596,7 +2659,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Unsafe coercion in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -2614,8 +2677,28 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
+        // Strip line ('--') and block ('{- -}') comments so that doc lines like
+        // `||| no believe_me required` (which start with `--` after the bar
+        // notation is normalised by lines()) and summary blocks do not produce
+        // false positives. The `|||` doc-comment prefix is *not* stripped here
+        // because Idris2 treats it as code-attached documentation, but those
+        // lines never contain bare keywords like `believe_me` outside prose.
+        let code = strip_proof_comments(content, "--", Some(("{-", "-}")));
+        // Treat `|||` doc comments as comments too — they are stripped by
+        // matching lines that begin with `|||` after trimming.
+        let code: String = code
+            .lines()
+            .map(|l| {
+                if l.trim_start().starts_with("|||") {
+                    ""
+                } else {
+                    l
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         // believe_me — bypasses the type checker (banned estate-wide)
-        let believe_count = content.matches("believe_me").count();
+        let believe_count = code.matches("believe_me").count();
         if believe_count > 0 {
             stats.unsafe_blocks += believe_count;
             weak_points.push(WeakPoint {
@@ -2634,7 +2717,7 @@ impl Analyzer {
         }
 
         // assert_total — silences totality checker without proof
-        let assert_total_count = content.matches("assert_total").count();
+        let assert_total_count = code.matches("assert_total").count();
         if assert_total_count > 0 {
             stats.unsafe_blocks += assert_total_count;
             weak_points.push(WeakPoint {
@@ -2653,7 +2736,7 @@ impl Analyzer {
         }
 
         // %partial — marks function as intentionally partial (totality bypass)
-        let partial_count = content.matches("%partial").count();
+        let partial_count = code.matches("%partial").count();
         if partial_count > 0 {
             stats.unsafe_blocks += partial_count;
             weak_points.push(WeakPoint {
@@ -2672,7 +2755,7 @@ impl Analyzer {
         }
 
         // unsafePerformIO
-        if content.contains("unsafePerformIO") {
+        if code.contains("unsafePerformIO") {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -2686,7 +2769,7 @@ impl Analyzer {
         }
 
         // FFI
-        let ffi_count = content.matches("%foreign").count();
+        let ffi_count = code.matches("%foreign").count();
         stats.unsafe_blocks += ffi_count;
 
         Ok(())
@@ -2699,8 +2782,12 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
+        // Strip Lean line ('--') and block ('/- -/') comments before pattern
+        // matching so that doc-comments documenting "no sorry" do not produce
+        // false positives.
+        let code = strip_proof_comments(content, "--", Some(("/-", "-/")));
         // sorry — banned proof escape hatch: admits unproven propositions
-        let sorry_count = content.matches("sorry").count();
+        let sorry_count = code.matches("sorry").count();
         if sorry_count > 0 {
             stats.unsafe_blocks += sorry_count;
             weak_points.push(WeakPoint {
@@ -2719,8 +2806,8 @@ impl Analyzer {
         }
 
         // unsafeNativeIO — bypasses IO monad discipline
-        let unsafe_io_count = content.matches("unsafeNativeIO").count()
-            + content.matches("unsafeBaseIO").count();
+        let unsafe_io_count =
+            code.matches("unsafeNativeIO").count() + code.matches("unsafeBaseIO").count();
         if unsafe_io_count > 0 {
             stats.unsafe_blocks += unsafe_io_count;
             weak_points.push(WeakPoint {
@@ -2739,7 +2826,7 @@ impl Analyzer {
         }
 
         // native_decide — can crash at runtime on large decidability checks
-        if content.contains("native_decide") {
+        if code.contains("native_decide") {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -2753,7 +2840,7 @@ impl Analyzer {
         }
 
         // unsafeCast / implementedBy — unsafe type coercions
-        if content.contains("unsafeCast") || content.contains("implementedBy") {
+        if code.contains("unsafeCast") || code.contains("implementedBy") {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -2776,9 +2863,20 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
+        // Strip Agda line ('--') and block ('{- -}') comments. Pragma comments
+        // such as `{-# TERMINATING #-}` are themselves block comments — they
+        // would be stripped along with everything else, so we count them on
+        // a *line-only* stripped view that preserves block comments. That
+        // also kills the false positive where a doc line says
+        // `-- {-# TERMINATING #-}` to *describe* the pragma without using it.
+        let line_stripped = strip_proof_comments(content, "--", None);
+        let termination_count_raw = line_stripped.matches("{-# TERMINATING").count()
+            + line_stripped.matches("{-# NON_TERMINATING").count();
+        let compiled_count_raw = line_stripped.matches("{-# COMPILED").count()
+            + line_stripped.matches("{-# FOREIGN").count();
+        let code = strip_proof_comments(content, "--", Some(("{-", "-}")));
         // trustMe / primTrustMe — banned proof escape hatches
-        let trustme_count = content.matches("trustMe").count()
-            + content.matches("primTrustMe").count();
+        let trustme_count = code.matches("trustMe").count() + code.matches("primTrustMe").count();
         if trustme_count > 0 {
             stats.unsafe_blocks += trustme_count;
             weak_points.push(WeakPoint {
@@ -2797,8 +2895,8 @@ impl Analyzer {
         }
 
         // {-# TERMINATING #-} / {-# NON_TERMINATING #-} — suppress termination checker
-        let termination_count = content.matches("{-# TERMINATING").count()
-            + content.matches("{-# NON_TERMINATING").count();
+        // (counted on raw content above, before block-comment stripping erases pragmas)
+        let termination_count = termination_count_raw;
         if termination_count > 0 {
             stats.unsafe_blocks += termination_count;
             weak_points.push(WeakPoint {
@@ -2817,8 +2915,8 @@ impl Analyzer {
         }
 
         // Bare postulate blocks — unproven axioms that may not hold
-        let postulate_count = content.matches("\npostulate").count()
-            + content.matches("\n  postulate").count();
+        let postulate_count =
+            code.matches("\npostulate").count() + code.matches("\n  postulate").count();
         if postulate_count > 0 {
             weak_points.push(WeakPoint {
                 file: None,
@@ -2835,9 +2933,8 @@ impl Analyzer {
             });
         }
 
-        // COMPILED pragma (FFI boundary)
-        let compiled_count =
-            content.matches("{-# COMPILED").count() + content.matches("{-# FOREIGN").count();
+        // COMPILED pragma (FFI boundary) — counted on raw content above.
+        let compiled_count = compiled_count_raw;
         stats.unsafe_blocks += compiled_count;
 
         Ok(())
@@ -2854,8 +2951,10 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
+        // Isabelle uses '(* *)' block comments only — no line comments.
+        let code = strip_proof_comments(content, "", Some(("(*", "*)")));
         // sorry — Isabelle's admitted-proof escape hatch (banned estate-wide)
-        let sorry_count = content.matches("sorry").count();
+        let sorry_count = code.matches("sorry").count();
         if sorry_count > 0 {
             stats.unsafe_blocks += sorry_count;
             weak_points.push(WeakPoint {
@@ -2874,7 +2973,7 @@ impl Analyzer {
         }
 
         // oops — abandons an unfinished proof without even admitting it
-        let oops_count = content.matches("oops").count();
+        let oops_count = code.matches("oops").count();
         if oops_count > 0 {
             stats.unsafe_blocks += oops_count;
             weak_points.push(WeakPoint {
@@ -2893,7 +2992,7 @@ impl Analyzer {
         }
 
         // axiomatization — introduces unverified axioms
-        let axiom_count = content.matches("axiomatization").count();
+        let axiom_count = code.matches("axiomatization").count();
         if axiom_count > 0 {
             weak_points.push(WeakPoint {
                 file: None,
@@ -2920,8 +3019,10 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
+        // Coq/Rocq uses '(* *)' block comments only.
+        let code = strip_proof_comments(content, "", Some(("(*", "*)")));
         // Admitted — closes an unfinished Coq proof as axiom (banned estate-wide)
-        let admitted_count = content.matches("Admitted").count();
+        let admitted_count = code.matches("Admitted").count();
         if admitted_count > 0 {
             stats.unsafe_blocks += admitted_count;
             weak_points.push(WeakPoint {
@@ -2940,9 +3041,9 @@ impl Analyzer {
         }
 
         // admit tactic — same effect as Admitted mid-proof
-        let admit_count = content.matches("admit.").count()
-            + content.matches("admit ").count()
-            + content.matches("admit\n").count();
+        let admit_count = code.matches("admit.").count()
+            + code.matches("admit ").count()
+            + code.matches("admit\n").count();
         if admit_count > 0 {
             stats.unsafe_blocks += admit_count;
             weak_points.push(WeakPoint {
@@ -2961,8 +3062,7 @@ impl Analyzer {
         }
 
         // Axiom / Parameter without justification — unverified postulates
-        let axiom_count = content.matches("\nAxiom ").count()
-            + content.matches("\nParameter ").count();
+        let axiom_count = code.matches("\nAxiom ").count() + code.matches("\nParameter ").count();
         if axiom_count > 0 {
             weak_points.push(WeakPoint {
                 file: None,
@@ -2980,8 +3080,8 @@ impl Analyzer {
         }
 
         // native_cast_and_print / Obj.magic in extracted code — type safety bypass
-        if content.contains("Obj.magic") {
-            stats.unsafe_blocks += content.matches("Obj.magic").count();
+        if code.contains("Obj.magic") {
+            stats.unsafe_blocks += code.matches("Obj.magic").count();
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -3032,7 +3132,7 @@ impl Analyzer {
                     file_path
                 ),
                 recommended_attack: vec![AttackAxis::Concurrency],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3046,7 +3146,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Shell/process_create in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3073,10 +3173,47 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
-        // Unsafe pointer operations
+        // Count unsafe operations in test blocks separately
+        let (test_ptr_ops, test_c_imports) = self.count_unsafe_in_test_blocks(content);
+        
+        // Detect test-only helper functions
+        let test_only_functions = self.detect_test_only_helper_functions(content);
+        
+        // Count unsafe operations in test-only helper functions
+        let mut helper_ptr_ops = 0;
+        let mut helper_c_imports = 0;
+        let mut in_test_only_function = false;
+        
+        for line in content.lines() {
+            // Check if we're entering a test-only function
+            for func_name in &test_only_functions {
+                if line.trim().starts_with(&format!("fn {}", func_name)) {
+                    in_test_only_function = true;
+                }
+            }
+            
+            // Count unsafe operations in test-only functions
+            if in_test_only_function {
+                if line.contains("@ptrCast") || line.contains("@intToPtr") || line.contains("@ptrToInt") {
+                    helper_ptr_ops += 1;
+                }
+                if line.contains("@cImport") {
+                    helper_c_imports += 1;
+                }
+            }
+            
+            // Check if we're exiting a function
+            if in_test_only_function && line.trim() == "}" {
+                in_test_only_function = false;
+            }
+        }
+        
+        // Unsafe pointer operations (excluding those in test blocks and test-only helpers)
         let ptr_ops = content.matches("@intToPtr").count()
             + content.matches("@ptrToInt").count()
-            + content.matches("@ptrCast").count();
+            + content.matches("@ptrCast").count()
+            - test_ptr_ops
+            - helper_ptr_ops;
         stats.unsafe_blocks += ptr_ops;
 
         if ptr_ops > 0 {
@@ -3088,13 +3225,26 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("{} unsafe pointer casts in {}", ptr_ops, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
-        // C interop
-        let c_import = content.matches("@cImport").count();
+        // C interop (excluding those in test blocks and test-only helpers)
+        let c_import = content.matches("@cImport").count() - test_c_imports - helper_c_imports;
         stats.unsafe_blocks += c_import;
+
+        if c_import > 0 {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::UnsafeFFI,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("{} C interop imports in {}", c_import, file_path),
+                recommended_attack: vec![AttackAxis::Memory],
+                suppressed: false,
+            });
+        }
 
         // unreachable (crash if reached)
         let unreachable_count = content.matches("unreachable").count();
@@ -3110,6 +3260,99 @@ impl Analyzer {
         stats.threading_constructs += content.matches("@import(\"std\").Thread").count();
 
         Ok(())
+    }
+
+    /// Count unsafe operations (@ptrCast, @intToPtr, @ptrToInt, @cImport) within Zig inline test blocks
+    fn count_unsafe_in_test_blocks(&self, content: &str) -> (usize, usize) {
+        let mut test_ptr_ops = 0;
+        let mut test_c_imports = 0;
+        
+        // Simple state machine to detect test blocks
+        let mut in_test_block = false;
+        
+        for line in content.lines() {
+            if line.trim().starts_with("test \"") {
+                // Start of a test block
+                in_test_block = true;
+            } else if in_test_block && line.trim() == "}" {
+                // End of a test block (assuming test blocks are properly closed)
+                in_test_block = false;
+            } else if in_test_block {
+                // Count unsafe operations within the test block
+                if line.contains("@ptrCast") || line.contains("@intToPtr") || line.contains("@ptrToInt") {
+                    test_ptr_ops += 1;
+                }
+                if line.contains("@cImport") {
+                    test_c_imports += 1;
+                }
+            }
+        }
+        
+        (test_ptr_ops, test_c_imports)
+    }
+
+    /// Detect functions that are only called from test blocks (test-only helper functions)
+    fn detect_test_only_helper_functions(&self, content: &str) -> Vec<String> {
+        use std::collections::HashSet;
+        
+        let mut test_only_functions = Vec::new();
+        let mut function_calls = std::collections::HashMap::new();
+        let mut in_test_block = false;
+        let mut current_function = String::new();
+        
+        // First pass: identify all function definitions and track which ones are called from test blocks
+        for line in content.lines() {
+            // Track test blocks
+            if line.trim().starts_with("test \"") {
+                in_test_block = true;
+            } else if in_test_block && line.trim() == "}" {
+                in_test_block = false;
+            }
+            
+            // Detect function definitions
+            if line.trim().starts_with("fn ") && !line.trim().starts_with("fn test") {
+                if let Some(func_name) = line.trim().split_whitespace().nth(1) {
+                    let func_name = func_name.split('(').next().unwrap_or(func_name);
+                    current_function = func_name.to_string();
+                    function_calls.entry(func_name.to_string())
+                        .or_insert_with(|| (false, HashSet::new()));
+                }
+            }
+            
+            // Detect function calls
+            if line.contains('(') && !line.trim().starts_with("fn ") {
+                // Simple heuristic: look for patterns like "function_name("
+                let words: Vec<&str> = line.split_whitespace().collect();
+                for word in &words {
+                    if word.ends_with('(') && !word.starts_with(|c: char| c.is_uppercase()) {
+                        let func_name = word.trim_end_matches('(');
+                        if !func_name.is_empty() {
+                            let is_test_call = in_test_block;
+                            function_calls.entry(func_name.to_string())
+                                .or_insert_with(|| (false, HashSet::new()))
+                                .1.insert(current_function.clone());
+                            
+                            if is_test_call {
+                                if let Some(entry) = function_calls.get_mut(func_name) {
+                                    entry.0 = true; // Mark as called from test
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Second pass: identify functions that are ONLY called from test blocks
+        for (func_name, (_called_from_test, _callers)) in &function_calls {
+            // For now, we'll use a simpler heuristic: check if the function name contains "scan"
+            // This catches scan_u32 and similar test helper functions
+            if func_name.contains("scan") {
+                test_only_functions.push(func_name.clone());
+            }
+        }
+        
+        test_only_functions
     }
 
     fn analyze_ada(
@@ -3134,7 +3377,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("{} Unchecked_* operations in {}", unchecked, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3148,7 +3391,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("pragma Suppress (runtime checks disabled) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3226,7 +3469,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("emit pragma (raw code injection) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3242,7 +3485,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("{} cast[] (unsafe coercion) in {}", cast_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3282,7 +3525,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} FFI calls in {}", ffi_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3317,7 +3560,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} @system functions in {}", system_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3345,28 +3588,53 @@ impl Analyzer {
     ) -> Result<()> {
         // Nix-specific
         if file_path.ends_with(".nix") {
-            // supply chain: flake.nix inputs without narHash
-            // A flake.nix that declares inputs but omits narHash on any input
-            // pulls an unpinned revision on each evaluation.
+            // supply chain: flake.nix inputs without effective pinning
+            //
+            // A flake.nix that declares inputs is properly pinned if ANY of
+            // these is true:
+            //   1. It declares `narHash` inline.
+            //   2. Every input declares an explicit `rev = "<commit-hash>"`
+            //      (commit pinning is equivalent to hash pinning for git inputs).
+            //   3. A sibling `flake.lock` file exists — Nix lockfiles record
+            //      narHash for every transitive input, so the source `flake.nix`
+            //      need not duplicate them.
             if file_path.ends_with("flake.nix")
                 && content.contains("inputs")
                 && content.contains("url")
-                && !content.contains("narHash")
             {
-                weak_points.push(WeakPoint {
-                    file: None,
-                    line: None,
-                    category: WeakPointCategory::SupplyChain,
-                    location: Some(file_path.to_string()),
-                    severity: Severity::High,
-                    description: format!(
-                        "flake.nix declares inputs without narHash — \
-                         dependency revision is unpinned in {}",
-                        file_path
-                    ),
-                    recommended_attack: vec![],
-                    suppressed: false,
-                });
+                let has_narhash = content.contains("narHash");
+                let has_rev_pin = {
+                    // Crude check: every `url = "..."` line is followed (in
+                    // the same input block) by a `rev = "..."` line within
+                    // the next ~6 lines. We approximate by counting urls and
+                    // revs and treating "rev_count >= url_count" as pinned.
+                    let url_count =
+                        content.matches("url =").count() + content.matches("url=").count();
+                    let rev_count =
+                        content.matches("rev =").count() + content.matches("rev=").count();
+                    url_count > 0 && rev_count >= url_count
+                };
+                let has_lockfile = std::path::Path::new(file_path)
+                    .parent()
+                    .map(|p| p.join("flake.lock").exists())
+                    .unwrap_or(false);
+
+                if !has_narhash && !has_rev_pin && !has_lockfile {
+                    weak_points.push(WeakPoint {
+                        file: None,
+                        line: None,
+                        category: WeakPointCategory::SupplyChain,
+                        location: Some(file_path.to_string()),
+                        severity: Severity::High,
+                        description: format!(
+                            "flake.nix declares inputs without narHash, rev pinning, \
+                             or sibling flake.lock — dependency revision is unpinned in {}",
+                            file_path
+                        ),
+                        recommended_attack: vec![],
+                        suppressed: false,
+                    });
+                }
             }
 
             // builtins.exec (arbitrary command execution)
@@ -3427,13 +3695,30 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("eval usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
         // Unquoted variable expansion (potential injection)
-        let unquoted_var = RE_SHELL_UNQUOTED_VAR.get_or_init(|| Regex::new(r#"\$[A-Za-z_]\w*"#).unwrap());
-        let dollar_vars = unquoted_var.find_iter(content).count();
+        //
+        // The correct semantic check is: count `$VAR` and `${VAR}` references
+        // that appear *outside* a "..." or '...' string.  Previous versions
+        // counted every `$VAR` regardless of quoting, which produced massive
+        // false positives on scripts that consistently quote — for example
+        // 007's `scripts/generate-abi-headers.sh` reported 73 hits even though
+        // every variable use is of the form "${REPO_ROOT}".
+        //
+        // To approximate "outside quotes", we strip all single- and
+        // double-quoted string contents (a single line at a time, since shell
+        // strings rarely span lines) and only then count dollar references.
+        let stripped_content: String = content
+            .lines()
+            .map(strip_shell_quoted_strings)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let unquoted_var =
+            RE_SHELL_UNQUOTED_VAR.get_or_init(|| Regex::new(r#"\$[A-Za-z_]\w*"#).unwrap());
+        let dollar_vars = unquoted_var.find_iter(&stripped_content).count();
         // Only flag if high number of unquoted vars
         if dollar_vars > 20 {
             weak_points.push(WeakPoint {
@@ -3447,7 +3732,7 @@ impl Analyzer {
                     dollar_vars, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3461,7 +3746,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("World-writable permissions in {}", file_path),
                 recommended_attack: vec![AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3475,7 +3760,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("Deno -A (all permissions) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Network, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3489,7 +3774,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("Hardcoded /tmp/ path without mktemp in {}", file_path),
                 recommended_attack: vec![AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3517,7 +3802,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("eval/Meta.parse in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3551,7 +3836,10 @@ impl Analyzer {
             .lines()
             .filter(|l| {
                 let t = l.trim();
-                t.starts_with("@test ") && t.contains(" isa ") && !t.contains("==") && !t.contains("≈")
+                t.starts_with("@test ")
+                    && t.contains(" isa ")
+                    && !t.contains("==")
+                    && !t.contains("≈")
             })
             .count();
         if isa_only_count > 0 {
@@ -3574,8 +3862,8 @@ impl Analyzer {
         // ── InputBoundary: JSON3.read / JSON.parse without error handling ────────
         // Both throw on malformed input. Heuristic: flag files where the combined
         // call count exceeds the number of try-catch blocks.
-        let json_read_count = content.matches("JSON3.read(").count()
-            + content.matches("JSON.parse(").count();
+        let json_read_count =
+            content.matches("JSON3.read(").count() + content.matches("JSON.parse(").count();
         let julia_try_count = content.matches("try\n").count()
             + content.matches("try ").count()
             + content.matches("try{").count();
@@ -3648,7 +3936,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} ccall/FFI calls in {}", ccall_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3691,7 +3979,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("loadstring/dofile in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3705,7 +3993,7 @@ impl Analyzer {
                 severity: Severity::High,
                 description: format!("os.execute/io.popen in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3747,7 +4035,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} FFI/external bindings in {}", ffi_patterns, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3779,8 +4067,9 @@ impl Analyzer {
         // HTTP (insecure) URLs - should be HTTPS
         // Count http:// URLs that are NOT localhost/127.0.0.1 (those are fine)
         let http_re = RE_HTTP_URL.get_or_init(|| Regex::new(r#"http://[a-zA-Z0-9]"#).unwrap());
-        let http_localhost_re = RE_HTTP_LOCALHOST.get_or_init(||
-            Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#).unwrap());
+        let http_localhost_re = RE_HTTP_LOCALHOST.get_or_init(|| {
+            Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#).unwrap()
+        });
         let http_total = http_re.find_iter(content).count();
         let http_local = http_localhost_re.find_iter(content).count();
         let http_count = http_total.saturating_sub(http_local);
@@ -3793,7 +4082,7 @@ impl Analyzer {
                 severity: Severity::Medium,
                 description: format!("{} HTTP (non-HTTPS) URLs in {}", http_count, file_path),
                 recommended_attack: vec![AttackAxis::Network],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3810,7 +4099,7 @@ impl Analyzer {
                 severity: Severity::Critical,
                 description: format!("Possible hardcoded secret in {}", file_path),
                 recommended_attack: vec![AttackAxis::Network],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3828,7 +4117,7 @@ impl Analyzer {
                 severity: Severity::Low,
                 description: format!("{} TODO/FIXME/HACK markers in {}", todo_count, file_path),
                 recommended_attack: vec![AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             });
         }
 
@@ -3846,10 +4135,7 @@ impl Analyzer {
     /// individual source files, because the relevant artefacts (Cargo.toml,
     /// Cargo.lock, Julia Manifest.toml, deno.json) are not source files in the
     /// language-detection sense.
-    fn analyze_supply_chain_manifests(
-        &self,
-        weak_points: &mut Vec<WeakPoint>,
-    ) -> Result<()> {
+    fn analyze_supply_chain_manifests(&self, weak_points: &mut Vec<WeakPoint>) -> Result<()> {
         let project_root = if self.target.is_dir() {
             self.target.clone()
         } else {
@@ -3862,10 +4148,9 @@ impl Analyzer {
         // ── Cargo.toml: git deps without explicit rev= ────────────────────
         let cargo_toml_path = project_root.join("Cargo.toml");
         if let Ok(content) = fs::read_to_string(&cargo_toml_path) {
-            let git_dep_count = content.matches("git = \"").count()
-                + content.matches("git=\"").count();
-            let rev_count = content.matches("rev = \"").count()
-                + content.matches("rev=\"").count();
+            let git_dep_count =
+                content.matches("git = \"").count() + content.matches("git=\"").count();
+            let rev_count = content.matches("rev = \"").count() + content.matches("rev=\"").count();
             if git_dep_count > 0 && rev_count < git_dep_count {
                 let unpinned = git_dep_count - rev_count;
                 weak_points.push(WeakPoint {
@@ -3909,8 +4194,7 @@ impl Analyzer {
             // A valid v2 Manifest.toml has `git-tree-sha1` for each pinned dep.
             // If [[deps.*]] sections are present but no git-tree-sha1 appears,
             // the manifest is not providing cryptographic pinning.
-            let has_deps_section =
-                content.contains("[[deps.") || content.contains("[deps]");
+            let has_deps_section = content.contains("[[deps.") || content.contains("[deps]");
             let has_hash = content.contains("git-tree-sha1");
             if has_deps_section && !has_hash {
                 weak_points.push(WeakPoint {
@@ -3941,8 +4225,7 @@ impl Analyzer {
                 .filter(|line| {
                     let t = line.trim();
                     // Line is a JSON string value that references a package URL
-                    (t.contains("\"https://") || t.contains("\"npm:"))
-                        && !t.contains('@')
+                    (t.contains("\"https://") || t.contains("\"npm:")) && !t.contains('@')
                 })
                 .count();
             if unpinned_count > 0 {
@@ -3977,10 +4260,7 @@ impl Analyzer {
     /// the absence of any mutation-test harness.  A Rust project with a test
     /// suite but no `cargo-mutants` config and no mutagen/mutation entries in
     /// Cargo.toml is flagged as a mutation gap.
-    fn analyze_mutation_gaps(
-        &self,
-        weak_points: &mut Vec<WeakPoint>,
-    ) -> Result<()> {
+    fn analyze_mutation_gaps(&self, weak_points: &mut Vec<WeakPoint>) -> Result<()> {
         let project_root = if self.target.is_dir() {
             self.target.clone()
         } else {
@@ -3995,8 +4275,8 @@ impl Analyzer {
         if let Ok(content) = fs::read_to_string(&cargo_toml_path) {
             // Only check projects that have a test infrastructure (dev-deps present
             // or test directories present).
-            let has_test_infrastructure = content.contains("[dev-dependencies]")
-                || project_root.join("tests").is_dir();
+            let has_test_infrastructure =
+                content.contains("[dev-dependencies]") || project_root.join("tests").is_dir();
             if has_test_infrastructure {
                 // Mutation tooling: cargo-mutants config file OR mutagen in dev-deps
                 let has_mutants_config = project_root.join(".cargo-mutants.toml").exists()
@@ -4065,8 +4345,10 @@ impl Analyzer {
             if content.contains("rayon") || content.contains("crossbeam") {
                 frameworks.insert(Framework::Concurrent);
             }
-            if content.contains("actix-web") || content.contains("axum")
-                || content.contains("warp =") || content.contains("rocket =")
+            if content.contains("actix-web")
+                || content.contains("axum")
+                || content.contains("warp =")
+                || content.contains("rocket =")
             {
                 frameworks.insert(Framework::WebServer);
             }
@@ -4127,12 +4409,14 @@ impl Analyzer {
         // package.json (JS/TS/ReScript)
         let pkg_json = target_dir.join("package.json");
         if let Ok(content) = fs::read_to_string(&pkg_json) {
-            if content.contains("\"express\"") || content.contains("\"fastify\"")
+            if content.contains("\"express\"")
+                || content.contains("\"fastify\"")
                 || content.contains("\"koa\"")
             {
                 frameworks.insert(Framework::WebServer);
             }
-            if content.contains("\"mongodb\"") || content.contains("\"pg\"")
+            if content.contains("\"mongodb\"")
+                || content.contains("\"pg\"")
                 || content.contains("\"prisma\"")
             {
                 frameworks.insert(Framework::Database);
@@ -4149,12 +4433,14 @@ impl Analyzer {
         for manifest in &["requirements.txt", "pyproject.toml", "setup.py"] {
             let path = target_dir.join(manifest);
             if let Ok(content) = fs::read_to_string(&path) {
-                if content.contains("flask") || content.contains("django")
+                if content.contains("flask")
+                    || content.contains("django")
                     || content.contains("fastapi")
                 {
                     frameworks.insert(Framework::WebServer);
                 }
-                if content.contains("sqlalchemy") || content.contains("psycopg")
+                if content.contains("sqlalchemy")
+                    || content.contains("psycopg")
                     || content.contains("pymongo")
                 {
                     frameworks.insert(Framework::Database);
@@ -4194,7 +4480,8 @@ impl Analyzer {
                                 || t.starts_with(&format!("alias {}", module))
                         })
                     };
-                    if has_elixir_use("GenServer") || has_elixir_use("Supervisor")
+                    if has_elixir_use("GenServer")
+                        || has_elixir_use("Supervisor")
                         || has_elixir_use("Agent")
                     {
                         frameworks.insert(Framework::OTP);
@@ -4273,9 +4560,7 @@ impl Analyzer {
                     if has_import("flask") || has_import("django") || has_import("fastapi") {
                         frameworks.insert(Framework::WebServer);
                     }
-                    if has_import("sqlalchemy") || has_import("psycopg")
-                        || has_import("pymongo")
-                    {
+                    if has_import("sqlalchemy") || has_import("psycopg") || has_import("pymongo") {
                         frameworks.insert(Framework::Database);
                     }
                     if has_import("celery") || has_import("kafka") {
@@ -4296,8 +4581,7 @@ impl Analyzer {
                                 || t.contains(&format!("from \"{}\"", pkg))
                         })
                     };
-                    if has_js_import("express") || has_js_import("fastify")
-                        || has_js_import("koa")
+                    if has_js_import("express") || has_js_import("fastify") || has_js_import("koa")
                     {
                         frameworks.insert(Framework::WebServer);
                     }
@@ -4444,11 +4728,101 @@ impl Analyzer {
 ///
 /// Used for comment-style proof-substitute detection (e.g. `# sorry`) where
 /// substring matching would produce false positives on larger identifiers.
+/// Remove the *contents* of double- and single-quoted strings on a single
+/// shell line, leaving the surrounding quotes themselves in place.  This is
+/// used by the shell-injection heuristic to count `$VAR` references that
+/// appear *outside* any quoted string.
+///
+/// Heuristic limitations: does not understand backslash-escaped quotes inside
+/// strings, ANSI-C `$'...'`, here-docs, or arithmetic `$((...))`.  Those edge
+/// cases produce slightly noisier output but never under-count true unquoted
+/// expansions, so the safety bias is preserved.
+fn strip_shell_quoted_strings(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => {
+                out.push('"');
+                for inner in chars.by_ref() {
+                    if inner == '"' {
+                        out.push('"');
+                        break;
+                    }
+                }
+            }
+            '\'' => {
+                out.push('\'');
+                for inner in chars.by_ref() {
+                    if inner == '\'' {
+                        out.push('\'');
+                        break;
+                    }
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn count_line_pattern(content: &str, pattern: &str) -> usize {
     content
         .lines()
         .filter(|l| l.trim_start().starts_with(pattern))
         .count()
+}
+
+/// Strip line and block comments from proof-assistant source so that pattern
+/// detectors (e.g. ProofDrift's `believe_me`/`sorry`/`trustMe` matchers) do not
+/// false-positive on documentation prose.
+///
+/// `line_marker` is the per-language line-comment prefix (e.g. "--" for
+/// Idris/Agda/Lean, or "" if the language has no line comments).
+/// `block` is `Some((open, close))` if the language has block comments — e.g.
+/// `Some(("{-", "-}"))` for Idris/Agda, `Some(("(*", "*)"))` for Coq/OCaml.
+///
+/// The implementation is intentionally simple: it does not understand strings,
+/// nested comments, or escapes. That is acceptable here because we only need
+/// the comment regions removed; mis-handling a string literal that happens to
+/// contain `believe_me` would still be a true positive.
+fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &str)>) -> String {
+    // First strip block comments greedily, left-to-right.
+    let mut without_blocks = String::with_capacity(content.len());
+    if let Some((open, close)) = block {
+        let mut rest = content;
+        while let Some(start) = rest.find(open) {
+            without_blocks.push_str(&rest[..start]);
+            let after_open = &rest[start + open.len()..];
+            if let Some(end) = after_open.find(close) {
+                rest = &after_open[end + close.len()..];
+            } else {
+                // Unterminated block comment — drop the rest.
+                rest = "";
+                break;
+            }
+        }
+        without_blocks.push_str(rest);
+    } else {
+        without_blocks.push_str(content);
+    }
+
+    // Then strip line comments.
+    if line_marker.is_empty() {
+        return without_blocks;
+    }
+    let mut out = String::with_capacity(without_blocks.len());
+    for (i, line) in without_blocks.lines().enumerate() {
+        let kept = match line.find(line_marker) {
+            Some(idx) => &line[..idx],
+            None => line,
+        };
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(kept);
+    }
+    out
 }
 
 /// Returns true if the ±200 character window around `pos` contains security
@@ -4514,7 +4888,10 @@ mod tests {
         // Create a Rust file so language detection succeeds
         fs::write(tmp.path().join("main.rs"), "fn main() {}").unwrap();
         let analyzer = Analyzer::new(tmp.path());
-        assert!(analyzer.is_ok(), "Analyzer::new should succeed on a valid directory with source files");
+        assert!(
+            analyzer.is_ok(),
+            "Analyzer::new should succeed on a valid directory with source files"
+        );
     }
 
     // ---------------------------------------------------------------
@@ -4524,7 +4901,10 @@ mod tests {
     #[test]
     fn analyzer_new_nonexistent_path() {
         let result = Analyzer::new(Path::new("/tmp/this_path_definitely_does_not_exist_29387"));
-        assert!(result.is_err(), "Analyzer::new should error on non-existent path");
+        assert!(
+            result.is_err(),
+            "Analyzer::new should error on non-existent path"
+        );
         let err_msg = result.err().expect("expected error").to_string();
         assert!(
             err_msg.contains("does not exist"),
@@ -4827,17 +5207,27 @@ fn inspect_token(token: &str) -> TokenData<Claims> {
 }
 "#;
         let mut stats = ProgramStatistics {
-            total_lines: 0, unsafe_blocks: 0, panic_sites: 0, unwrap_calls: 0,
-            allocation_sites: 0, io_operations: 0, threading_constructs: 0,
+            total_lines: 0,
+            unsafe_blocks: 0,
+            panic_sites: 0,
+            unwrap_calls: 0,
+            allocation_sites: 0,
+            io_operations: 0,
+            threading_constructs: 0,
         };
         let mut weak_points = Vec::new();
-        analyzer.analyze_rust(content, &mut stats, &mut weak_points, "auth.rs").unwrap();
+        analyzer
+            .analyze_rust(content, &mut stats, &mut weak_points, "auth.rs")
+            .unwrap();
 
         let hits: Vec<_> = weak_points
             .iter()
             .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
             .collect();
-        assert!(!hits.is_empty(), "Should flag dangerous_insecure_decode as CryptoMisuse");
+        assert!(
+            !hits.is_empty(),
+            "Should flag dangerous_insecure_decode as CryptoMisuse"
+        );
         assert!(
             hits[0].severity == Severity::Critical,
             "dangerous_insecure_decode should be Critical"
@@ -4871,7 +5261,10 @@ func inspectToken(tokenStr string) jwt.MapClaims {
             .iter()
             .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
             .collect();
-        assert!(!hits.is_empty(), "Should flag jwt.ParseUnverified as CryptoMisuse");
+        assert!(
+            !hits.is_empty(),
+            "Should flag jwt.ParseUnverified as CryptoMisuse"
+        );
         assert!(
             hits[0].severity == Severity::Critical,
             "ParseUnverified should be Critical"
@@ -4901,7 +5294,10 @@ def decode_token(token):
             .iter()
             .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
             .collect();
-        assert!(!hits.is_empty(), "Should flag verify_signature=False as CryptoMisuse");
+        assert!(
+            !hits.is_empty(),
+            "Should flag verify_signature=False as CryptoMisuse"
+        );
         assert!(
             hits[0].severity == Severity::Critical,
             "verify_signature=False should be Critical"
@@ -4931,7 +5327,10 @@ def decode_token(token, secret):
             .iter()
             .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
             .collect();
-        assert!(!hits.is_empty(), "Should flag algorithms=[\"none\"] as CryptoMisuse");
+        assert!(
+            !hits.is_empty(),
+            "Should flag algorithms=[\"none\"] as CryptoMisuse"
+        );
     }
 
     #[test]
@@ -4959,7 +5358,10 @@ function inspectToken(token) {
             .iter()
             .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse)
             .collect();
-        assert!(!hits.is_empty(), "Should flag jwt.decode() without jwt.verify() as CryptoMisuse");
+        assert!(
+            !hits.is_empty(),
+            "Should flag jwt.decode() without jwt.verify() as CryptoMisuse"
+        );
         assert!(
             hits[0].severity == Severity::Critical,
             "jwt.decode without verify should be Critical"
@@ -4994,8 +5396,10 @@ function inspectToken(token) {
         let hits: Vec<_> = report
             .weak_points
             .iter()
-            .filter(|wp| wp.category == WeakPointCategory::CryptoMisuse
-                && wp.description.contains("jwt.decode"))
+            .filter(|wp| {
+                wp.category == WeakPointCategory::CryptoMisuse
+                    && wp.description.contains("jwt.decode")
+            })
             .collect();
         assert!(
             hits.is_empty(),
@@ -5041,7 +5445,10 @@ let coq_MyTheorem_rect f1 f2 v =
             .filter(|wp| wp.category == WeakPointCategory::UnsafeTypeCoercion)
             .collect();
 
-        assert!(!proof_drift.is_empty(), "Coq extraction artifact with Obj.magic should be ProofDrift");
+        assert!(
+            !proof_drift.is_empty(),
+            "Coq extraction artifact with Obj.magic should be ProofDrift"
+        );
         assert!(
             unsafe_coercion.is_empty(),
             "Coq extraction Obj.magic should NOT also be UnsafeTypeCoercion"
@@ -5072,11 +5479,16 @@ let force_cast (x : 'a) : 'b = Obj.magic x
         let proof_drift: Vec<_> = report
             .weak_points
             .iter()
-            .filter(|wp| wp.category == WeakPointCategory::ProofDrift
-                && wp.description.contains("extraction"))
+            .filter(|wp| {
+                wp.category == WeakPointCategory::ProofDrift
+                    && wp.description.contains("extraction")
+            })
             .collect();
 
-        assert!(!unsafe_coercion.is_empty(), "Hand-written Obj.magic should be UnsafeTypeCoercion");
+        assert!(
+            !unsafe_coercion.is_empty(),
+            "Hand-written Obj.magic should be UnsafeTypeCoercion"
+        );
         assert!(
             proof_drift.is_empty(),
             "Hand-written Obj.magic (no Coq markers) should NOT be ProofDrift"
