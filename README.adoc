@@ -85,6 +85,20 @@ panic-attack supports multiple deployment patterns:
 * **panicbot**: integrated automated diagnostics
 * **mass-panic**: large-scale multi-repo / multi-system scanning
 
+=== Special Cases
+
+For **browser extensions** (Firefox/Chrome):
+
+* Use `panic-attack assail` (static analysis only)
+* Skip dynamic attack phase (extensions cannot be executed as standalone programs)
+* Focus on:
+  - `eval()` usage
+  - DOM manipulation
+  - Hardcoded secrets
+  - Supply chain risks
+
+Future: Add browser-specific attack simulation via headless browsers.
+
 ---
 
 == Relationship to PanLL
