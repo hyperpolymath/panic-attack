@@ -2,6 +2,8 @@
 # panic-attack justfile
 
 # Default recipe: build and test
+import? "contractile.just"
+
 default: build test
 
 # Build release binary
