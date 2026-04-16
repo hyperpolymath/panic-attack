@@ -129,6 +129,50 @@ Identified as an estate-wide gap in the 2026-04-05 KRL-stack CRG blitz audit.
 * [x] Detect Elixir test suites without `ExUnitProperties` or StreamData for property-based testing — PA025
 * [ ] Emit `mutation_gap` weak-point for any module with >80% line coverage but zero mutation score (requires runtime coverage data — deferred)
 
+== v2.5.5 -- 007 False Positive Reduction
+
+Based on the 007 repository analysis (2026-04-15), this milestone targets
+specific false positive patterns that currently inflate weak-point counts.
+
+=== `comment_analysis` — Distinguish code from documentation
+
+Panic-attack currently flags comments that mention "unsafe" or document
+security aspects, leading to false positives in security tests.
+
+* [ ] Parse Rust/JS/Python/Julia comment syntax to exclude from unsafe detection
+* [ ] Add `// panic-attack: accepted` comment parser for explicit suppression
+* [ ] Create comment-only weak-point category for documentation review
+* [ ] Improve Zig comment parsing to reduce build.zig false positives
+
+=== `test_context` — Test vs production code distinction
+
+Test files should not be held to the same safety standards as production code,
+but panic-attack currently applies uniform rules.
+
+* [ ] Detect test modules (`#[cfg(test)]`, `test "..."`, `ExUnit.Case`) across languages
+* [ ] Suppress PanicPath findings in test-only code (unwrap/expect acceptable in tests)
+* [ ] Add test/production context to weak-point metadata
+* [ ] Create test-specific suppression patterns for HTTP URLs and other test data
+
+=== `ffi_refinement` — Better FFI boundary detection
+
+Current FFI detection flags build system files and legitimate ABI boundaries.
+
+* [ ] Distinguish `@import("std")` from `@cImport` in Zig analyzer
+* [ ] Recognize build.zig as build-system context, not FFI usage
+* [ ] Cross-reference with `audits/audit-ffi-unsafe.md` for pre-approved boundaries
+* [ ] Add FFI category subtyping (BuildSystem, RuntimeABI, TestMock)
+
+=== `jit_context` — JIT compilation awareness
+
+JIT compilation inherently requires unsafe code for function pointer manipulation,
+but panic-attack flags these as generic UnsafeCode findings.
+
+* [ ] Detect Cranelift/LLVM JIT compilation contexts
+* [ ] Add JIT-specific unsafe suppression for transmute patterns
+* [ ] Document JIT safety invariants in weak-point metadata
+* [ ] Create JIT category for specialized analysis
+
 == v3.0.0 -- Distributed Scanning
 
 * [x] Assemblyline batch scanning with rayon parallelism

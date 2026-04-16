@@ -759,6 +759,28 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
+        // Detect if this is a test file - Expanded patterns
+        let is_test_file = file_path.contains("_tests.") 
+            || file_path.contains("/tests/") 
+            || file_path.ends_with("_test.rs")
+            || file_path.starts_with("tests/")
+            || file_path.contains("/test_")
+            || file_path.contains("_spec.")  // RSpec, Jest patterns
+            || file_path.contains("_bench.") // Benchmark files
+            || file_path.contains("/benches/") // Rust bench directory
+            || file_path.ends_with("_bench.rs")
+            || file_path.contains("__tests__/") // JavaScript
+            || file_path.contains("/__tests__/")
+            || file_path.ends_with(".test.") // Generic test files
+            || file_path.ends_with(".spec.")
+            || file_path.contains("_integration.") // Integration tests
+            || file_path.contains("_e2e.") // End-to-end tests
+            || file_path.contains("_unit.") // Unit tests
+            || file_path.contains("/examples/") // Example code (often test-like)
+            || file_path.contains("/samples/") // Sample code
+            || file_path.contains("_mock.") // Mock files
+            || file_path.contains("_stub."); // Stub files
+        
         // Strip string literal contents before counting so that detection-tool
         // source files (which embed patterns as string literals) do not trigger
         // their own rules.  Stats that measure code structure rather than
@@ -768,10 +790,76 @@ impl Analyzer {
 
         stats.unsafe_blocks += code_only.matches("unsafe {").count();
         stats.unsafe_blocks += code_only.matches("unsafe fn").count();
-        stats.panic_sites += code_only.matches("panic!(").count();
-        stats.panic_sites += code_only.matches("unreachable!(").count();
-        stats.unwrap_calls += code_only.matches(".unwrap()").count();
-        stats.unwrap_calls += code_only.matches(".expect(").count();
+        
+        // Count panic sites, but suppress them in test files
+        let panic_sites = code_only.matches("panic!(").count() + code_only.matches("unreachable!(").count();
+        let unwrap_calls = code_only.matches(".unwrap()").count() + code_only.matches(".expect(").count();
+        
+        // Apply test file suppression
+        let (effective_panic_sites, effective_unwrap_calls) = if is_test_file {
+            // In test files, only count excessive usage that might indicate real issues
+            // Suppress normal test patterns but flag extreme cases
+            let panic_threshold = 20;  // More than 20 panics might indicate poor test design
+            let unwrap_threshold = 10; // More than 10 unwraps might indicate poor test design
+            
+            if panic_sites > panic_threshold {
+                (panic_sites - panic_threshold, unwrap_calls)
+            } else {
+                (0, 0) // Suppress normal test patterns
+            }
+        } else {
+            (panic_sites, unwrap_calls) // Production code: count all
+        };
+        
+        stats.panic_sites += effective_panic_sites;
+        stats.unwrap_calls += effective_unwrap_calls;
+        
+        // Enhanced allocation analysis - detect unbounded allocation patterns
+        let vec_new_count = content.matches("Vec::new()").count();
+        let box_new_count = content.matches("Box::new(").count();
+        let string_new_count = content.matches("String::new()").count();
+        
+        // Detect potential unbounded allocations
+        let unbounded_vec_patterns = content.matches("Vec::with_capacity(").count();
+        let unbounded_box_patterns = content.matches("Box::new(").count(); // Box can be unbounded
+        let unbounded_string_patterns = content.matches("String::with_capacity(").count();
+        
+        // Count allocations but flag unbounded patterns separately
+        stats.allocation_sites += vec_new_count + box_new_count + string_new_count;
+        
+        // Flag unbounded allocation patterns as high-risk - Enhanced detection
+        let has_unbounded_allocations = content.contains("while let") && content.contains("push(") ||
+                                      content.contains("for") && content.contains("push(") ||
+                                      content.contains("unbounded") ||
+                                      content.contains("no_bound") ||
+                                      content.contains("no_limit") ||
+                                      content.contains("infinite") ||
+                                      content.contains("boundless") ||
+                                      content.contains("unlimited") ||
+                                      content.contains("unconstrained") ||
+                                      // Common unbounded loop + allocation patterns
+                                      (content.contains("loop") && content.contains("Vec::new")) ||
+                                      (content.contains("loop") && content.contains("push")) ||
+                                      (content.contains("recursion") && !content.contains("depth")) ||
+                                      // Suspicious capacity patterns
+                                      content.contains("with_capacity(0)") ||
+                                      content.contains("with_capacity(1)") ||
+                                      // Network-related unbounded patterns
+                                      (content.contains("read_to_end") && !content.contains("limit")) ||
+                                      (content.contains("read_to_string") && !content.contains("limit"));
+        
+        if has_unbounded_allocations && !is_test_file {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::UnboundedAllocation,
+                location: Some(file_path.to_string()),
+                severity: Severity::Critical,
+                description: format!("Potential unbounded allocation pattern detected in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
+                suppressed: false,
+            });
+        }
         stats.allocation_sites += content.matches("Vec::new()").count();
         stats.allocation_sites += content.matches("Box::new(").count();
         stats.allocation_sites += content.matches("String::new()").count();

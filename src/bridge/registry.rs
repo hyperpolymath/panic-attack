@@ -107,11 +107,9 @@ impl MitigationRegistry {
             }
 
             // Skip if already registered
-            if self
-                .entries
-                .iter()
-                .any(|e| e.advisory_id == cve.vulnerability.id && e.package == cve.vulnerability.package)
-            {
+            if self.entries.iter().any(|e| {
+                e.advisory_id == cve.vulnerability.id && e.package == cve.vulnerability.package
+            }) {
                 continue;
             }
 

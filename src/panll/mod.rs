@@ -176,10 +176,7 @@ fn extract_constraints(report: &AssaultReport) -> Vec<PanllConstraint> {
     for wp in &report.assail_report.weak_points {
         if wp.severity == Severity::Critical {
             id_counter += 1;
-            let location = wp
-                .location
-                .as_deref()
-                .unwrap_or("unknown");
+            let location = wp.location.as_deref().unwrap_or("unknown");
             constraints.push(PanllConstraint {
                 id: format!("wp-crit-{}", id_counter),
                 description: format!(
@@ -251,15 +248,12 @@ fn extract_constraints(report: &AssaultReport) -> Vec<PanllConstraint> {
 
         if matches!(
             metrics.config_format,
-            crate::types::ReScriptConfigFormat::BsConfig
-                | crate::types::ReScriptConfigFormat::Both
+            crate::types::ReScriptConfigFormat::BsConfig | crate::types::ReScriptConfigFormat::Both
         ) {
             id_counter += 1;
             constraints.push(PanllConstraint {
                 id: format!("migration-config-{}", id_counter),
-                description: format!(
-                    "bsconfig.json still present (migrate to rescript.json)"
-                ),
+                description: "bsconfig.json still present (migrate to rescript.json)".to_string(),
             });
         }
 
@@ -303,6 +297,7 @@ fn extract_constraints(report: &AssaultReport) -> Vec<PanllConstraint> {
 fn category_label(cat: WeakPointCategory) -> &'static str {
     match cat {
         WeakPointCategory::UncheckedAllocation => "unchecked-alloc",
+        WeakPointCategory::UnboundedAllocation => "unbounded-alloc",
         WeakPointCategory::UnboundedLoop => "unbounded-loop",
         WeakPointCategory::BlockingIO => "blocking-io",
         WeakPointCategory::UnsafeCode => "unsafe-code",
@@ -615,7 +610,7 @@ mod tests {
                 taint_matrix: TaintMatrix { rows: taint_rows },
                 recommended_attacks: vec![],
                 migration_metrics: None,
-            suppressed_count: 0,
+                suppressed_count: 0,
             },
             attack_results,
             total_crashes: 0,
@@ -712,10 +707,7 @@ mod tests {
         assert_eq!(export.summary.weak_points, 2);
         assert_eq!(export.summary.critical_weak_points, 1);
         assert_eq!(export.summary.robustness_score, 80.0);
-        assert_eq!(
-            export.summary.program,
-            "/tmp/test-target"
-        );
+        assert_eq!(export.summary.program, "/tmp/test-target");
     }
 
     // ------------------------------------------------------------------
@@ -734,7 +726,7 @@ mod tests {
                 severity: Severity::Critical,
                 description: "shell exec from user input".to_string(),
                 recommended_attack: vec![AttackAxis::Cpu],
-                    suppressed: false,
+                suppressed: false,
             }],
             // One failed attack -> generates constraint
             vec![AttackResult {

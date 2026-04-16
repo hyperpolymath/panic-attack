@@ -194,7 +194,10 @@ pub fn format_snapshot_summary(snapshot: &MigrationSnapshot) -> String {
     out.push_str(&format!("**Target:** {}\n", snapshot.target_path));
     out.push_str(&format!("**Timestamp:** {}\n", snapshot.timestamp));
     out.push_str(&format!("**Version bracket:** {}\n", m.version_bracket));
-    out.push_str(&format!("**Config format:** {}\n", config_label(m.config_format)));
+    out.push_str(&format!(
+        "**Config format:** {}\n",
+        config_label(m.config_format)
+    ));
     out.push_str(&format!("**Health score:** {:.2}\n", m.health_score));
     out.push_str(&format!(
         "**API migration ratio:** {:.1}%\n",
@@ -257,7 +260,11 @@ fn direction_emoji(value: i64, lower_is_better: bool) -> &'static str {
         return "-";
     }
     if lower_is_better {
-        if value < 0 { "IMPROVED" } else { "REGRESSED" }
+        if value < 0 {
+            "IMPROVED"
+        } else {
+            "REGRESSED"
+        }
     } else if value > 0 {
         "IMPROVED"
     } else {

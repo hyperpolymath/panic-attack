@@ -9,7 +9,6 @@ use crate::types::{AssailReport, AssaultReport, AttackResult};
 use crate::{abduct, adjudicate, amuck, axial};
 use anyhow::{anyhow, Context, Result};
 use serde::de::DeserializeOwned;
-use serde_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -253,19 +252,13 @@ impl Manifest {
             .map(|(name, pairs)| {
                 let mut list = vec![Sexpr::Atom(name)];
                 for (k, v) in pairs {
-                    list.push(Sexpr::List(vec![
-                        Sexpr::Atom(k),
-                        Sexpr::String(v),
-                    ]));
+                    list.push(Sexpr::List(vec![Sexpr::Atom(k), Sexpr::String(v)]));
                 }
                 Sexpr::List(list)
             })
             .collect();
 
-        Ok(Self {
-            root_name,
-            entries,
-        })
+        Ok(Self { root_name, entries })
     }
 
     pub fn report_formats(&self) -> Vec<ReportOutputFormat> {
@@ -300,8 +293,8 @@ impl Manifest {
                             .iter()
                             .flat_map(|values| {
                                 values.iter().filter_map(|value| match value {
-                                    Sexpr::String(text) => StorageMode::from_str(text),
-                                    Sexpr::Atom(atom) => StorageMode::from_str(atom),
+                                    Sexpr::String(text) => text.parse::<StorageMode>().ok(),
+                                    Sexpr::Atom(atom) => atom.parse::<StorageMode>().ok(),
                                     _ => None,
                                 })
                             })
@@ -538,9 +531,9 @@ fn parse_payload(kind: ReportBundleKind, payload_json: &str) -> Result<ReportBun
         ReportBundleKind::Adjudicate => ReportBundlePayload::Adjudicate(serde_json::from_str::<
             adjudicate::AdjudicateReport,
         >(payload_json)?),
-        ReportBundleKind::Axial => ReportBundlePayload::Axial(serde_json::from_str::<
-            axial::AxialReport,
-        >(payload_json)?),
+        ReportBundleKind::Axial => {
+            ReportBundlePayload::Axial(serde_json::from_str::<axial::AxialReport>(payload_json)?)
+        }
     })
 }
 
@@ -576,6 +569,7 @@ enum Sexpr {
 struct Parser<'a> {
     chars: std::str::Chars<'a>,
     peeked: Option<Option<char>>,
+    at_line_start: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -583,6 +577,7 @@ impl<'a> Parser<'a> {
         Self {
             chars: input.chars(),
             peeked: None,
+            at_line_start: true,
         }
     }
 
@@ -597,7 +592,7 @@ impl<'a> Parser<'a> {
     }
 
     fn next(&mut self) -> Option<char> {
-        if let Some(opt) = self.peeked.take() {
+        let consumed = if let Some(opt) = self.peeked.take() {
             if let Some(ch) = opt {
                 self.chars.next();
                 Some(ch)
@@ -606,7 +601,11 @@ impl<'a> Parser<'a> {
             }
         } else {
             self.chars.next()
+        };
+        if let Some(ch) = consumed {
+            self.at_line_start = ch == '\n';
         }
+        consumed
     }
 
     fn skip_whitespace(&mut self) {
@@ -615,7 +614,16 @@ impl<'a> Parser<'a> {
                 Some(ch) if ch.is_whitespace() => {
                     self.next();
                 }
-                Some('#') => {
+                // Line comments: ';' anywhere (Scheme), '#' only at line start
+                // (so '#t'/'#f' Scheme booleans inside an expression still parse).
+                Some(';') => {
+                    while let Some(ch) = self.next() {
+                        if ch == '\n' {
+                            break;
+                        }
+                    }
+                }
+                Some('#') if self.at_line_start => {
                     while let Some(ch) = self.next() {
                         if ch == '\n' {
                             break;
@@ -832,7 +840,7 @@ mod tests {
                 severity: Severity::Medium,
                 description: "unchecked result".to_string(),
                 recommended_attack: vec![AttackAxis::Concurrency],
-                    suppressed: false,
+                suppressed: false,
             }],
             statistics: ProgramStatistics {
                 total_lines: 42,
@@ -1277,5 +1285,41 @@ mod tests {
                 kind.as_str()
             );
         }
+    }
+
+    #[test]
+    fn parser_accepts_scheme_line_comments_and_hash_booleans() {
+        // Regression: 007's 0-AI-MANIFEST.a2ml uses ';;' Scheme comments and '#t'
+        // Scheme booleans inside expressions. The parser must skip ';' line comments
+        // anywhere, but only treat '#' as a line comment when it appears at the
+        // start of a line — never when it leads a '#t'/'#f' literal.
+        let manifest = r#";; SPDX-License-Identifier: PMPL-1.0-or-later
+;; Copyright (c) 2026 Jonathan D.A. Jewell
+
+(ai-manifest
+  (version "2.0")
+  (project "007")
+  (classification (dual-use #t)))
+"#;
+        let mut parser = Parser::new(manifest);
+        let tree = parser.parse_all().expect("parse should succeed");
+        match tree {
+            Sexpr::List(items) => {
+                assert!(matches!(items.first(), Some(Sexpr::Atom(s)) if s == "ai-manifest"));
+            }
+            _ => panic!("expected list at top level"),
+        }
+    }
+
+    #[test]
+    fn parser_accepts_hash_line_comments_at_line_start() {
+        // Backward compatibility: existing manifests use '#' line comments.
+        let manifest = r#"# SPDX-License-Identifier: PMPL-1.0-or-later
+# AI Manifest
+
+(ai-manifest (project "panic-attack"))
+"#;
+        let mut parser = Parser::new(manifest);
+        parser.parse_all().expect("parse should succeed");
     }
 }

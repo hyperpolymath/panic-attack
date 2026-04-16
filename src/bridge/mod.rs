@@ -13,11 +13,11 @@
 //!
 //! Design document: docs/patch-bridge-design.md
 
-pub mod intelligence;
-pub mod reachability;
 pub mod classify;
-pub mod registry;
+pub mod intelligence;
 pub mod lockfile;
+pub mod reachability;
+pub mod registry;
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -205,9 +205,21 @@ impl BridgeReport {
 
     /// Recompute counts from the CVE list.
     pub fn recount(&mut self) {
-        self.mitigated = self.cves.iter().filter(|c| c.classification == Classification::Mitigable).count();
-        self.unmitigable = self.cves.iter().filter(|c| c.classification == Classification::Unmitigable).count();
-        self.informational = self.cves.iter().filter(|c| c.classification == Classification::Informational).count();
+        self.mitigated = self
+            .cves
+            .iter()
+            .filter(|c| c.classification == Classification::Mitigable)
+            .count();
+        self.unmitigable = self
+            .cves
+            .iter()
+            .filter(|c| c.classification == Classification::Unmitigable)
+            .count();
+        self.informational = self
+            .cves
+            .iter()
+            .filter(|c| c.classification == Classification::Informational)
+            .count();
         self.vulnerable_dependencies = self.cves.len();
     }
 }
@@ -254,8 +266,7 @@ pub fn triage(project_dir: &Path, offline: bool) -> anyhow::Result<BridgeReport>
     let mut assessed = Vec::new();
     for vuln in vulns {
         let evidence = reachability::check_reachability(project_dir, &vuln.package)?;
-        let (classification, rationale, action) =
-            classify::classify(&vuln, &evidence);
+        let (classification, rationale, action) = classify::classify(&vuln, &evidence);
 
         assessed.push(AssessedCve {
             vulnerability: vuln,

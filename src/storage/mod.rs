@@ -17,7 +17,6 @@ use crate::types::AssaultReport;
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -29,12 +28,14 @@ pub enum StorageMode {
     VerisimDb,
 }
 
-impl StorageMode {
-    pub fn from_str(value: &str) -> Option<Self> {
+impl std::str::FromStr for StorageMode {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.to_lowercase().as_str() {
-            "filesystem" | "disk" | "local" => Some(StorageMode::Filesystem),
-            "verisimdb" | "verisim" | "veri" => Some(StorageMode::VerisimDb),
-            _ => None,
+            "filesystem" | "disk" | "local" => Ok(StorageMode::Filesystem),
+            "verisimdb" | "verisim" | "veri" => Ok(StorageMode::VerisimDb),
+            _ => Err(()),
         }
     }
 }
@@ -290,11 +291,7 @@ fn build_assemblyline_hexad(
         semantic: HexadSemantic {
             total_weak_points: report.total_weak_points,
             critical_count: report.total_critical,
-            high_count: report
-                .results
-                .iter()
-                .map(|r| r.high_count)
-                .sum(),
+            high_count: report.results.iter().map(|r| r.high_count).sum(),
             total_crashes: 0,
             robustness_score: 0.0,
             categories,
@@ -472,8 +469,8 @@ pub fn push_hexad_with_fallback(
     hexad: &PanicAttackHexad,
     fallback_dir: &Path,
 ) -> Result<Vec<PathBuf>> {
-    let gateway_url = std::env::var("VERISIMDB_URL")
-        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let gateway_url =
+        std::env::var("VERISIMDB_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
     // Skip HTTP entirely if gateway is known-down (cached health check)
     if !check_gateway(&gateway_url) {
@@ -491,10 +488,7 @@ pub fn push_hexad_with_fallback(
 
 /// Write a hexad to the local filesystem fallback directory.
 #[cfg(feature = "http")]
-fn fallback_write_hexad(
-    hexad: &PanicAttackHexad,
-    fallback_dir: &Path,
-) -> Result<Vec<PathBuf>> {
+fn fallback_write_hexad(hexad: &PanicAttackHexad, fallback_dir: &Path) -> Result<Vec<PathBuf>> {
     let hexad_dir = fallback_dir.join("hexads");
     fs::create_dir_all(&hexad_dir)?;
     let path = hexad_dir.join(format!("{}.json", hexad.id));
@@ -580,10 +574,7 @@ fn read_body(mut response: ureq::http::Response<ureq::Body>) -> String {
 /// Returns as soon as one attempt succeeds.
 #[cfg(feature = "http")]
 #[allow(dead_code)]
-pub fn push_hexad_http_with_retry(
-    hexad: &PanicAttackHexad,
-    gateway_url: &str,
-) -> Result<String> {
+pub fn push_hexad_http_with_retry(hexad: &PanicAttackHexad, gateway_url: &str) -> Result<String> {
     let delays = [
         std::time::Duration::from_secs(1),
         std::time::Duration::from_secs(2),
@@ -604,7 +595,8 @@ pub fn push_hexad_http_with_retry(
         }
     }
 
-    Err(last_err.unwrap_or_else(|| anyhow!("VeriSimDB push failed after {} attempts", max_attempts)))
+    Err(last_err
+        .unwrap_or_else(|| anyhow!("VeriSimDB push failed after {} attempts", max_attempts)))
 }
 
 /// Push a batch of hexads to the VeriSimDB batch endpoint.
@@ -615,19 +607,13 @@ pub fn push_hexad_http_with_retry(
 /// pushing each hexad individually via [`push_hexad_http_with_retry`].
 #[cfg(feature = "http")]
 #[allow(dead_code)]
-pub fn push_hexads_batch(
-    hexads: &[PanicAttackHexad],
-    gateway_url: &str,
-) -> Result<Vec<String>> {
+pub fn push_hexads_batch(hexads: &[PanicAttackHexad], gateway_url: &str) -> Result<Vec<String>> {
     if hexads.is_empty() {
         return Ok(Vec::new());
     }
 
     let url = format!("{}/octads/batch", gateway_url.trim_end_matches('/'));
-    let payloads: Vec<serde_json::Value> = hexads
-        .iter()
-        .map(hexad_to_octad_request)
-        .collect();
+    let payloads: Vec<serde_json::Value> = hexads.iter().map(hexad_to_octad_request).collect();
     let payload_bytes = serde_json::to_vec(&payloads)?;
 
     let mut builder = ureq::post(&url).header("Content-Type", "application/json");
@@ -737,10 +723,7 @@ pub fn check_gateway(gateway_url: &str) -> bool {
 
 pub fn latest_reports(dir: &Path, count: usize) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
-        return Err(anyhow!(
-            "storage directory not found: {}",
-            dir.display()
-        ));
+        return Err(anyhow!("storage directory not found: {}", dir.display()));
     }
 
     let mut entries: Vec<PathBuf> = fs::read_dir(dir)?
@@ -781,14 +764,14 @@ mod tests {
     #[test]
     fn test_storage_mode_parsing() {
         assert_eq!(
-            StorageMode::from_str("filesystem"),
-            Some(StorageMode::Filesystem)
+            "filesystem".parse::<StorageMode>(),
+            Ok(StorageMode::Filesystem)
         );
         assert_eq!(
-            StorageMode::from_str("verisimdb"),
-            Some(StorageMode::VerisimDb)
+            "verisimdb".parse::<StorageMode>(),
+            Ok(StorageMode::VerisimDb)
         );
-        assert_eq!(StorageMode::from_str("disk"), Some(StorageMode::Filesystem));
-        assert_eq!(StorageMode::from_str("bogus"), None);
+        assert_eq!("disk".parse::<StorageMode>(), Ok(StorageMode::Filesystem));
+        assert_eq!("bogus".parse::<StorageMode>(), Err(()));
     }
 }

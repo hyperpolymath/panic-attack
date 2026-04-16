@@ -126,7 +126,11 @@ fn main() {
             .iter()
             .any(|wp| wp.category == WeakPointCategory::PanicPath),
         "assail should detect unwrap calls, got: {:?}",
-        report.weak_points.iter().map(|wp| format!("{:?}", wp.category)).collect::<Vec<_>>()
+        report
+            .weak_points
+            .iter()
+            .map(|wp| format!("{:?}", wp.category))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -145,8 +149,14 @@ fn readiness_c_assail_json_output() {
     assert!(ok, "assail --output should succeed: {}", stderr);
     let content = fs::read_to_string(&output).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    assert!(parsed["language"].is_string(), "JSON should have language field");
-    assert!(parsed["weak_points"].is_array(), "JSON should have weak_points array");
+    assert!(
+        parsed["language"].is_string(),
+        "JSON should have language field"
+    );
+    assert!(
+        parsed["weak_points"].is_array(),
+        "JSON should have weak_points array"
+    );
 }
 
 #[test]
@@ -184,8 +194,18 @@ fn readiness_c_diff_runs() {
 
     // Assault on a source file (not a binary) — if it works, great; if not,
     // this test still verifies diff handles the error path gracefully.
-    let (ok1, _, _) = run(&["assault", src.to_str().unwrap(), "--output", r1.to_str().unwrap()]);
-    let (ok2, _, _) = run(&["assault", src.to_str().unwrap(), "--output", r2.to_str().unwrap()]);
+    let (ok1, _, _) = run(&[
+        "assault",
+        src.to_str().unwrap(),
+        "--output",
+        r1.to_str().unwrap(),
+    ]);
+    let (ok2, _, _) = run(&[
+        "assault",
+        src.to_str().unwrap(),
+        "--output",
+        r2.to_str().unwrap(),
+    ]);
 
     if ok1 && ok2 && r1.exists() && r2.exists() {
         let (ok, _stdout, stderr) = run(&["diff", r1.to_str().unwrap(), r2.to_str().unwrap()]);
@@ -204,14 +224,21 @@ fn readiness_c_a2ml_roundtrip() {
     let a2ml_path = dir.path().join("report.a2ml");
     let reimport_path = dir.path().join("reimported.json");
 
-    let (ok, _, stderr) = run(&["assail", src.to_str().unwrap(), "--output", json_path.to_str().unwrap()]);
+    let (ok, _, stderr) = run(&[
+        "assail",
+        src.to_str().unwrap(),
+        "--output",
+        json_path.to_str().unwrap(),
+    ]);
     assert!(ok, "assail should succeed: {}", stderr);
 
     let (ok, _, stderr) = run(&[
         "a2ml-export",
-        "--kind", "assail",
+        "--kind",
+        "assail",
         json_path.to_str().unwrap(),
-        "--output", a2ml_path.to_str().unwrap(),
+        "--output",
+        a2ml_path.to_str().unwrap(),
     ]);
     assert!(ok, "a2ml-export should succeed: {}", stderr);
     assert!(a2ml_path.exists(), "a2ml file should be created");
@@ -219,7 +246,8 @@ fn readiness_c_a2ml_roundtrip() {
     let (ok, _, stderr) = run(&[
         "a2ml-import",
         a2ml_path.to_str().unwrap(),
-        "--output", reimport_path.to_str().unwrap(),
+        "--output",
+        reimport_path.to_str().unwrap(),
     ]);
     assert!(ok, "a2ml-import should succeed: {}", stderr);
     assert!(reimport_path.exists(), "reimported JSON should be created");
@@ -282,7 +310,10 @@ fn readiness_c_notify_runs() {
     assert!(ok, "notify should succeed: {}", stderr);
     assert!(output.exists(), "notification should be created");
     let content = fs::read_to_string(&output).unwrap();
-    assert!(content.contains("test-repo"), "notification should mention the repo");
+    assert!(
+        content.contains("test-repo"),
+        "notification should mention the repo"
+    );
 }
 
 #[test]
@@ -346,7 +377,11 @@ fn readiness_b_assail_multilang() {
 
     // C
     let c_file = dir.path().join("test.c");
-    fs::write(&c_file, "#include <stdlib.h>\nint main() { system(\"ls\"); }").unwrap();
+    fs::write(
+        &c_file,
+        "#include <stdlib.h>\nint main() { system(\"ls\"); }",
+    )
+    .unwrap();
     let r3 = assail::analyze(&c_file).unwrap();
     assert_eq!(r3.language, Language::C);
 
@@ -420,7 +455,10 @@ fn readiness_b_notify_filtering() {
     ]);
     assert!(ok, "notify --critical-only should succeed: {}", stderr);
     let content = fs::read_to_string(&output).unwrap();
-    assert!(content.contains("critical-repo"), "should include critical repo");
+    assert!(
+        content.contains("critical-repo"),
+        "should include critical repo"
+    );
     assert!(
         !content.contains("medium-repo"),
         "should exclude non-critical repo"
@@ -446,16 +484,28 @@ fn readiness_b_panicbot_json_contract() {
     let json = serde_json::to_value(&report).expect("report should serialise");
 
     // Top-level fields panicbot requires
-    assert!(json["program_path"].is_string(), "must have program_path string");
-    assert!(json["weak_points"].is_array(), "must have weak_points array");
+    assert!(
+        json["program_path"].is_string(),
+        "must have program_path string"
+    );
+    assert!(
+        json["weak_points"].is_array(),
+        "must have weak_points array"
+    );
     assert!(json["language"].is_string(), "must have language string");
-    assert!(json["statistics"].is_object(), "must have statistics object");
+    assert!(
+        json["statistics"].is_object(),
+        "must have statistics object"
+    );
 
     // WeakPoint field names
     let wp = &json["weak_points"][0];
     assert!(wp["category"].is_string(), "weak_point must have category");
     assert!(wp["severity"].is_string(), "weak_point must have severity");
-    assert!(wp["description"].is_string(), "weak_point must have description");
+    assert!(
+        wp["description"].is_string(),
+        "weak_point must have description"
+    );
 
     // PascalCase serialisation (no serde rename_all on these enums)
     let cat = wp["category"].as_str().unwrap();
@@ -474,13 +524,31 @@ fn readiness_b_panicbot_json_contract() {
     // All 25 WeakPointCategory variants must map to PA001–PA025
     // Verify the category enum values match panicbot's expected strings
     let expected_categories = [
-        "UncheckedAllocation", "UnboundedLoop", "BlockingIO", "UnsafeCode",
-        "PanicPath", "RaceCondition", "DeadlockPotential", "ResourceLeak",
-        "CommandInjection", "UnsafeDeserialization", "DynamicCodeExecution",
-        "UnsafeFFI", "AtomExhaustion", "InsecureProtocol", "ExcessivePermissions",
-        "PathTraversal", "HardcodedSecret", "UncheckedError", "InfiniteRecursion",
-        "UnsafeTypeCoercion", "ProofDrift", "CryptoMisuse", "SupplyChain",
-        "InputBoundary", "MutationGap",
+        "UncheckedAllocation",
+        "UnboundedLoop",
+        "BlockingIO",
+        "UnsafeCode",
+        "PanicPath",
+        "RaceCondition",
+        "DeadlockPotential",
+        "ResourceLeak",
+        "CommandInjection",
+        "UnsafeDeserialization",
+        "DynamicCodeExecution",
+        "UnsafeFFI",
+        "AtomExhaustion",
+        "InsecureProtocol",
+        "ExcessivePermissions",
+        "PathTraversal",
+        "HardcodedSecret",
+        "UncheckedError",
+        "InfiniteRecursion",
+        "UnsafeTypeCoercion",
+        "ProofDrift",
+        "CryptoMisuse",
+        "SupplyChain",
+        "InputBoundary",
+        "MutationGap",
     ];
     for variant_name in &expected_categories {
         let variant_json = format!("\"{}\"", variant_name);

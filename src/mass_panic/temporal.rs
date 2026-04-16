@@ -477,16 +477,16 @@ mod tests {
         let dir = TempDir::new().expect("tempdir should create");
         let image = sample_image(0.75, 8);
 
-        let entry = take_snapshot(&image, dir.path(), "test-label")
-            .expect("snapshot should succeed");
+        let entry =
+            take_snapshot(&image, dir.path(), "test-label").expect("snapshot should succeed");
         assert_eq!(entry.sequence, 1);
         assert_eq!(entry.label, "test-label");
         assert!(entry.image_path.exists());
 
         // Second snapshot
         let image2 = sample_image(0.85, 4);
-        let entry2 = take_snapshot(&image2, dir.path(), "improved")
-            .expect("second snapshot should succeed");
+        let entry2 =
+            take_snapshot(&image2, dir.path(), "improved").expect("second snapshot should succeed");
         assert_eq!(entry2.sequence, 2);
 
         // List snapshots

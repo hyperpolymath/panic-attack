@@ -71,8 +71,7 @@ impl ExecutionIntent {
         let tool_version = env!("CARGO_PKG_VERSION").to_string();
 
         // 4. Hash the running binary for self-attestation
-        let tool_binary_hash = hash_current_binary()
-            .unwrap_or_else(|_| "unavailable".to_string());
+        let tool_binary_hash = hash_current_binary().unwrap_or_else(|_| "unavailable".to_string());
 
         // 5. ISO 8601 timestamp
         let timestamp = chrono::Utc::now().to_rfc3339();
@@ -112,8 +111,7 @@ pub(crate) fn sha256_str(data: &[u8]) -> String {
 /// Falls back gracefully if the binary cannot be read (e.g. on some
 /// sandboxed environments).
 fn hash_current_binary() -> Result<String> {
-    let exe_path = std::env::current_exe()
-        .context("resolving current executable path")?;
+    let exe_path = std::env::current_exe().context("resolving current executable path")?;
     let bytes = std::fs::read(&exe_path)
         .with_context(|| format!("reading binary {}", exe_path.display()))?;
     Ok(sha256_str(&bytes))

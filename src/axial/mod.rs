@@ -39,6 +39,19 @@ pub struct AxialConfig {
     pub aspell_lang: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct RunOnceConfig<'a> {
+    command: &'a ExecutionCommand,
+    run_index: usize,
+    target: &'a Path,
+    timeout_secs: u64,
+    head_lines: usize,
+    tail_lines: usize,
+    matcher: &'a PatternMatcher,
+    use_aspell: bool,
+    aspell_lang: &'a str,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AxialReport {
     pub created_at: String,
@@ -175,17 +188,18 @@ pub fn run(config: AxialConfig) -> Result<AxialReport> {
     if let Some(exec) = &config.execute {
         // Repeated observations help surface flaky, timing-dependent reactions.
         for run_idx in 0..config.repeat {
-            run_observations.push(run_once(
-                exec,
-                run_idx + 1,
-                &config.target,
-                config.timeout_secs,
-                config.head_lines,
-                config.tail_lines,
-                &matcher,
-                config.aspell,
-                &aspell_lang,
-            )?);
+            let run_config = RunOnceConfig {
+                command: exec,
+                run_index: run_idx + 1,
+                target: &config.target,
+                timeout_secs: config.timeout_secs,
+                head_lines: config.head_lines,
+                tail_lines: config.tail_lines,
+                matcher: &matcher,
+                use_aspell: config.aspell,
+                aspell_lang: &aspell_lang,
+            };
+            run_observations.push(run_once(run_config)?);
         }
     }
 
@@ -356,19 +370,10 @@ pub fn convert_markdown_with_pandoc(markdown: &Path, to: &str, output: &Path) ->
     Ok(())
 }
 
-fn run_once(
-    command: &ExecutionCommand,
-    run_index: usize,
-    target: &Path,
-    timeout_secs: u64,
-    head_lines: usize,
-    tail_lines: usize,
-    matcher: &PatternMatcher,
-    use_aspell: bool,
-    aspell_lang: &str,
-) -> Result<RunObservation> {
-    let target_token = target.to_string_lossy().to_string();
-    let mut args = command
+fn run_once(config: RunOnceConfig) -> Result<RunObservation> {
+    let target_token = config.target.to_string_lossy().to_string();
+    let mut args = config
+        .command
         .args
         .iter()
         .map(|arg| arg.replace("{target}", &target_token))
@@ -378,16 +383,16 @@ fn run_once(
     }
 
     let started = Instant::now();
-    let mut child = Command::new(&command.program)
+    let mut child = Command::new(&config.command.program)
         .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .with_context(|| format!("executing {}", command.program))?;
+        .with_context(|| format!("executing {}", config.command.program))?;
 
     // Hard timeout prevents long-running probes from stalling full campaigns.
-    let limit = Duration::from_secs(timeout_secs);
+    let limit = Duration::from_secs(config.timeout_secs);
     let mut timed_out = false;
     loop {
         if child.try_wait()?.is_some() {
@@ -404,15 +409,15 @@ fn run_once(
     let output = child.wait_with_output()?;
     let stdout = clamp_output(String::from_utf8_lossy(&output.stdout).to_string());
     let stderr = clamp_output(String::from_utf8_lossy(&output.stderr).to_string());
-    let stdout_head = head_lines_of(&stdout, head_lines);
-    let stdout_tail = tail_lines_of(&stdout, tail_lines);
-    let stderr_head = head_lines_of(&stderr, head_lines);
-    let stderr_tail = tail_lines_of(&stderr, tail_lines);
+    let stdout_head = head_lines_of(&stdout, config.head_lines);
+    let stdout_tail = tail_lines_of(&stdout, config.tail_lines);
+    let stderr_head = head_lines_of(&stderr, config.head_lines);
+    let stderr_tail = tail_lines_of(&stderr, config.tail_lines);
 
     let combined = format!("{}\n{}", stdout, stderr);
-    let matches = matcher.scan(&combined);
-    let spellcheck = if use_aspell {
-        Some(spellcheck_text(&combined, aspell_lang))
+    let matches = config.matcher.scan(&combined);
+    let spellcheck = if config.use_aspell {
+        Some(spellcheck_text(&combined, config.aspell_lang))
     } else {
         None
     };
@@ -426,7 +431,7 @@ fn run_once(
     );
 
     Ok(RunObservation {
-        run_index,
+        run_index: config.run_index,
         success: output.status.success() && !timed_out,
         exit_code: output.status.code(),
         duration_ms: started.elapsed().as_millis(),
@@ -645,10 +650,7 @@ fn clamp_output(mut value: String) -> String {
     value
 }
 
-fn build_recommendations(
-    signal_counts: &BTreeMap<String, usize>,
-    lang: Lang,
-) -> Vec<String> {
+fn build_recommendations(signal_counts: &BTreeMap<String, usize>, lang: Lang) -> Vec<String> {
     let mut recommendations = Vec::new();
     if signal_counts.get("crash_signal").copied().unwrap_or(0) > 0 {
         recommendations.push(t(lang, "rec.crash").to_string());

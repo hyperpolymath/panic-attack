@@ -142,10 +142,7 @@ pub fn fingerprint_repo(repo_path: &Path) -> Result<String> {
 }
 
 /// Recursively collect BLAKE3 hashes of source files
-fn collect_source_hashes(
-    dir: &Path,
-    hashes: &mut Vec<(String, blake3::Hash)>,
-) -> Result<()> {
+fn collect_source_hashes(dir: &Path, hashes: &mut Vec<(String, blake3::Hash)>) -> Result<()> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return Ok(()), // Skip unreadable directories
@@ -204,26 +201,79 @@ fn hash_file(path: &Path) -> Result<blake3::Hash> {
 
 /// Check if a file has a known source code extension
 fn is_source_file(path: &Path) -> bool {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     matches!(
         ext,
-        "rs" | "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hxx"
-            | "go" | "java" | "py" | "pyw"
-            | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx"
-            | "rb" | "ex" | "exs" | "erl" | "hrl" | "gleam"
-            | "res" | "resi" | "ml" | "mli" | "sml" | "sig"
-            | "scm" | "ss" | "sld" | "rkt" | "scrbl"
-            | "hs" | "lhs" | "purs"
-            | "idr" | "ipkg" | "lean" | "agda" | "lagda"
-            | "pl" | "pro" | "lgt" | "logtalk" | "dl"
-            | "zig" | "adb" | "ads" | "gpr" | "odin"
-            | "nim" | "nims" | "pony" | "d" | "di"
-            | "ncl" | "nix" | "sh" | "bash" | "zsh" | "fish"
-            | "jl" | "lua" | "luau"
-            | "toml" | "yaml" | "yml" | "json"
+        "rs" | "c"
+            | "h"
+            | "cpp"
+            | "cc"
+            | "cxx"
+            | "hpp"
+            | "hxx"
+            | "go"
+            | "java"
+            | "py"
+            | "pyw"
+            | "js"
+            | "mjs"
+            | "cjs"
+            | "ts"
+            | "tsx"
+            | "jsx"
+            | "rb"
+            | "ex"
+            | "exs"
+            | "erl"
+            | "hrl"
+            | "gleam"
+            | "res"
+            | "resi"
+            | "ml"
+            | "mli"
+            | "sml"
+            | "sig"
+            | "scm"
+            | "ss"
+            | "sld"
+            | "rkt"
+            | "scrbl"
+            | "hs"
+            | "lhs"
+            | "purs"
+            | "idr"
+            | "ipkg"
+            | "lean"
+            | "agda"
+            | "lagda"
+            | "pl"
+            | "pro"
+            | "lgt"
+            | "logtalk"
+            | "dl"
+            | "zig"
+            | "adb"
+            | "ads"
+            | "gpr"
+            | "odin"
+            | "nim"
+            | "nims"
+            | "pony"
+            | "d"
+            | "di"
+            | "ncl"
+            | "nix"
+            | "sh"
+            | "bash"
+            | "zsh"
+            | "fish"
+            | "jl"
+            | "lua"
+            | "luau"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "json"
     )
 }
 
@@ -311,8 +361,7 @@ fn scan_repo(repo_path: &Path) -> RepoResult {
 pub fn run(config: &AssemblylineConfig) -> Result<AssemblylineReport> {
     let cache = match &config.cache_file {
         Some(path) if path.exists() => {
-            FingerprintCache::load_cache_file(path)
-                .ok() // gracefully degrade if cache is corrupt
+            FingerprintCache::load_cache_file(path).ok() // gracefully degrade if cache is corrupt
         }
         _ => None,
     };

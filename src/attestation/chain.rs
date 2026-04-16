@@ -34,9 +34,10 @@
 //!      - `evidence_hash`  = SHA-256 of the serialised evidence JSON
 //!      - `report_hash`    = SHA-256 of the report JSON bytes
 //!      - `chain_hash`     = SHA-256(intent_hash || evidence_hash || report_hash)
-//!    The chain_hash is the cryptographic root — if any component changes,
-//!    chain_hash changes. Optionally, chain_hash is signed with Ed25519.
-//!    Everything is wrapped in an A2ML envelope with `envelope_type: "trustfile"`.
+//!
+//!        The chain_hash is the cryptographic root — if any component changes,
+//!        chain_hash changes. Optionally, chain_hash is signed with Ed25519.
+//!        Everything is wrapped in an A2ML envelope with `envelope_type: "trustfile"`.
 //!
 //! ## Data Flow
 //!
@@ -199,8 +200,9 @@ impl AttestationChainBuilder {
     ///      - `evidence_hash` = SHA-256(evidence_json)
     ///      - `report_hash`   = SHA-256(report_json)
     ///      - `chain_hash`    = SHA-256(intent_hash || evidence_hash || report_hash)
-    ///    The `||` is string concatenation of the hex digests — 64 + 64 + 64 = 192
-    ///    ASCII characters fed into SHA-256.
+    ///
+    ///        The `||` is string concatenation of the hex digests — 64 + 64 + 64 = 192
+    ///        ASCII characters fed into SHA-256.
     ///
     /// 4. **Sign** (optional): If a signing key path is provided, calls
     ///    `seal.sign(key_path)`, which reads the Ed25519 private key seed,
@@ -212,11 +214,7 @@ impl AttestationChainBuilder {
     ///    passes to `A2mlEnvelope::wrap()`, which sets `a2ml_version: "1.0.0"`,
     ///    `envelope_type: "trustfile"`, `issuer: "panic-attack/{version}"`,
     ///    `issued_at: now()`, and `decision_hash: seal.report_hash`.
-    pub fn seal(
-        mut self,
-        report_json: &[u8],
-        signing_key: Option<&Path>,
-    ) -> Result<A2mlEnvelope> {
+    pub fn seal(mut self, report_json: &[u8], signing_key: Option<&Path>) -> Result<A2mlEnvelope> {
         // Step 1: Finalise the evidence accumulator.
         // `take()` moves the accumulator out of the Option, leaving None.
         // `finalize()` consumes the accumulator and returns ExecutionEvidence.

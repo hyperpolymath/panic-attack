@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
 // Template: QUICKSTART-MAINTAINER.adoc — packaging, deploying, and maintaining
-// Replace panic-attacker, {{PACKAGE_NAME}}, {{DEPS}} with actuals
-= panic-attacker — Quick Start for Platform Maintainers
+// Replace panic-attacker, panic-attack, rustc, cargo, mold, pkg-config with actuals
+= panic-attack — Quick Start for Platform Maintainers
 :toc:
 :toclevels: 2
 
 == Overview
 
-This guide covers packaging, deploying, and maintaining panic-attacker for
+This guide covers packaging, deploying, and maintaining panic-attack for
 distribution on your platform.
 
 == Runtime Dependencies
 
-{{DEPS}}
+rustc, cargo, mold, pkg-config
 
 == Build from Source
 
 [source,bash]
 ----
-git clone https://github.com/hyperpolymath/panic-attacker.git
-cd panic-attacker
+git clone https://github.com/hyperpolymath/panic-attack.git
+cd panic-attack
 just build-release
 ----
 
-Output: `{{BUILD_OUTPUT_PATH}}`
+Output: `target/release/panic-attack`
 
 == Packaging
 
@@ -46,7 +46,7 @@ nix build
 [source,bash]
 ----
 just stapeln-export    # Generates Containerfile
-podman build -t panic-attacker .
+podman build -t panic-attack .
 ----
 
 === Manual Package
@@ -65,10 +65,10 @@ Files installed:
 | `$PREFIX/bin/`
 | Executables
 
-| `$PREFIX/share/{{PACKAGE_NAME}}/`
+| `$PREFIX/share/panic-attack/`
 | Data files, assets
 
-| `$PREFIX/share/doc/{{PACKAGE_NAME}}/`
+| `$PREFIX/share/doc/panic-attack/`
 | Documentation
 
 | `$PREFIX/share/applications/`
@@ -80,9 +80,9 @@ Files installed:
 
 == Configuration
 
-Default config location: `$XDG_CONFIG_HOME/{{PACKAGE_NAME}}/config.toml`
+Default config location: `$XDG_CONFIG_HOME/panic-attack/config.toml`
 
-Fallback: `$HOME/.config/{{PACKAGE_NAME}}/config.toml`
+Fallback: `$HOME/.config/panic-attack/config.toml`
 
 == Health Checks
 
@@ -102,13 +102,13 @@ just build-release
 just install --prefix=/usr/local
 ----
 
-Or via OPSM: `opsm update {{PACKAGE_NAME}}`
+Or via OPSM: `opsm update panic-attack`
 
 == Security Notes
 
 * License: PMPL-1.0-or-later (Palimpsest License)
 * All dependencies SHA-pinned
-* `panic-attacker` scan results: link:INSTALL-SECURITY-REPORT.adoc[]
+* `panic-attack` scan results: link:INSTALL-SECURITY-REPORT.adoc[]
 * OpenSSF Scorecard: see badge in README
 
 == Multi-Instance Deployment
@@ -117,8 +117,8 @@ For deploying multiple instances (e.g., different users or tenants):
 
 [source,bash]
 ----
-just install --prefix=/opt/{{PACKAGE_NAME}}-instance1 --config=/etc/{{PACKAGE_NAME}}/instance1.toml
-just install --prefix=/opt/{{PACKAGE_NAME}}-instance2 --config=/etc/{{PACKAGE_NAME}}/instance2.toml
+just install --prefix=/opt/panic-attack-instance1 --config=/etc/panic-attack/instance1.toml
+just install --prefix=/opt/panic-attack-instance2 --config=/etc/panic-attack/instance2.toml
 ----
 
 Each instance has isolated config, data, and logs.

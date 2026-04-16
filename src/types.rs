@@ -15,6 +15,7 @@ use std::time::Duration;
 /// Supported programming languages
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[allow(clippy::upper_case_acronyms)]
 pub enum Language {
     // === Original languages ===
     Rust,
@@ -84,7 +85,9 @@ pub enum Language {
     Ephapax,
     BetLang,
     ErrorLang,
+    #[allow(non_camel_case_types)]
     VQL,
+    #[allow(non_camel_case_types)]
     FBQL,
 
     Unknown,
@@ -182,8 +185,11 @@ impl Language {
             Language::ReScript | Language::OCaml | Language::StandardML => "ml",
             Language::Scheme | Language::Racket => "lisp",
             Language::Haskell | Language::PureScript => "functional",
-            Language::Idris | Language::Lean | Language::Agda
-            | Language::Isabelle | Language::Coq => "proof",
+            Language::Idris
+            | Language::Lean
+            | Language::Agda
+            | Language::Isabelle
+            | Language::Coq => "proof",
             Language::Prolog | Language::Logtalk | Language::Datalog => "logic",
             Language::Zig
             | Language::Ada
@@ -221,6 +227,7 @@ impl Language {
 
 /// Application frameworks detected in the codebase
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum Framework {
     WebServer,
     Database,
@@ -232,6 +239,7 @@ pub enum Framework {
     // New frameworks for expanded language support
     Phoenix,
     Ecto,
+    #[allow(non_camel_case_types)]
     OTP,
     Cowboy,
     Unknown,
@@ -330,6 +338,7 @@ impl WeakPoint {
 pub enum WeakPointCategory {
     // Original categories
     UncheckedAllocation,
+    UnboundedAllocation,
     UnboundedLoop,
     BlockingIO,
     UnsafeCode,
@@ -511,17 +520,14 @@ impl IntensityLevel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ProbeMode {
+    #[default]
     Auto,
     Always,
     Never,
 }
 
-impl Default for ProbeMode {
-    fn default() -> Self {
-        ProbeMode::Auto
-    }
-}
 
 /// Attack execution results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -592,15 +598,11 @@ pub struct TimelineEventReport {
 
 /// Matrix rows representing taint source/sink interactions
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct TaintMatrix {
     pub rows: Vec<TaintMatrixRow>,
 }
 
-impl Default for TaintMatrix {
-    fn default() -> Self {
-        Self { rows: Vec::new() }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaintMatrixRow {
@@ -811,46 +813,16 @@ pub struct MigrationDiff {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 pub enum Fact {
-    Alloc {
-        var: String,
-        location: usize,
-    },
-    Free {
-        var: String,
-        location: usize,
-    },
-    Use {
-        var: String,
-        location: usize,
-    },
-    Lock {
-        mutex: String,
-        location: usize,
-    },
-    Unlock {
-        mutex: String,
-        location: usize,
-    },
-    ThreadSpawn {
-        id: String,
-        location: usize,
-    },
-    ThreadJoin {
-        id: String,
-        location: usize,
-    },
-    Write {
-        var: String,
-        location: usize,
-    },
-    Read {
-        var: String,
-        location: usize,
-    },
-    Ordering {
-        before: usize,
-        after: usize,
-    },
+    Alloc { var: String, location: usize },
+    Free { var: String, location: usize },
+    Use { var: String, location: usize },
+    Lock { mutex: String, location: usize },
+    Unlock { mutex: String, location: usize },
+    ThreadSpawn { id: String, location: usize },
+    ThreadJoin { id: String, location: usize },
+    Write { var: String, location: usize },
+    Read { var: String, location: usize },
+    Ordering { before: usize, after: usize },
 }
 
 /// Datalog rule for pattern detection.

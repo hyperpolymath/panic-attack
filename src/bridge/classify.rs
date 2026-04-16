@@ -31,7 +31,10 @@ pub fn classify(
                  Removing the dependency from Cargo.toml eliminates this CVE entirely.",
                 vuln.package, vuln.version
             ),
-            format!("Remove unused dependency `{}` from Cargo.toml", vuln.package),
+            format!(
+                "Remove unused dependency `{}` from Cargo.toml",
+                vuln.package
+            ),
         ),
 
         // ─── Unreachable: imported but no taint flow (Phase 2) ───
@@ -84,11 +87,7 @@ fn classify_reachable(
                 "{} {} has {} ({}) with NO upstream fix available. \
                  The dependency is imported at: {}. \
                  The vulnerable code is reachable in this project.",
-                vuln.package,
-                vuln.version,
-                vuln.id,
-                vuln.summary,
-                import_summary
+                vuln.package, vuln.version, vuln.id, vuln.summary, import_summary
             ),
             format!(
                 "Replace `{}` with an alternative or accept the risk. \
@@ -105,8 +104,7 @@ fn classify_reachable(
                 "{} {} has {} ({}). \
                  A semver-compatible fix is available in version {}. \
                  Run `cargo update {}` to apply.",
-                vuln.package, vuln.version, vuln.id, vuln.summary,
-                fix_version, vuln.package
+                vuln.package, vuln.version, vuln.id, vuln.summary, fix_version, vuln.package
             ),
             format!("Run `cargo update {}`", vuln.package),
         )
@@ -119,8 +117,7 @@ fn classify_reachable(
                 "{} {} has {} ({}). \
                  Fix available in version(s) {} but requires a breaking upgrade. \
                  The dependency is imported at: {}.",
-                vuln.package, vuln.version, vuln.id, vuln.summary,
-                fix_versions, import_summary
+                vuln.package, vuln.version, vuln.id, vuln.summary, fix_versions, import_summary
             ),
             format!(
                 "Upgrade `{}` to {} in Cargo.toml (breaking change — review API differences)",

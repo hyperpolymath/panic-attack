@@ -122,8 +122,7 @@ impl App for ReportGui {
                 ui.label("Path:");
                 let response = ui.text_edit_singleline(&mut self.load_path);
                 if ui.button("Load").clicked()
-                    || (response.lost_focus()
-                        && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                    || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                 {
                     self.try_load_file();
                 }
@@ -437,30 +436,28 @@ impl ReportGui {
         });
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("image-nodes")
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.label("Name");
-                    ui.label("Health");
-                    ui.label("Risk");
-                    ui.label("Weak pts");
-                    ui.label("Critical");
-                    ui.label("Files");
-                    ui.label("Lines");
+            egui::Grid::new("image-nodes").striped(true).show(ui, |ui| {
+                ui.label("Name");
+                ui.label("Health");
+                ui.label("Risk");
+                ui.label("Weak pts");
+                ui.label("Critical");
+                ui.label("Files");
+                ui.label("Lines");
+                ui.end_row();
+                for node in &sorted_nodes {
+                    ui.label(&node.name);
+                    let hc = health_color(node.health_score);
+                    ui.colored_label(hc, format!("{:.0}%", node.health_score * 100.0));
+                    let rc = risk_color(node.risk_intensity);
+                    ui.colored_label(rc, format!("{:.0}%", node.risk_intensity * 100.0));
+                    ui.label(node.weak_point_count.to_string());
+                    ui.label(node.critical_count.to_string());
+                    ui.label(node.total_files.to_string());
+                    ui.label(node.total_lines.to_string());
                     ui.end_row();
-                    for node in &sorted_nodes {
-                        ui.label(&node.name);
-                        let hc = health_color(node.health_score);
-                        ui.colored_label(hc, format!("{:.0}%", node.health_score * 100.0));
-                        let rc = risk_color(node.risk_intensity);
-                        ui.colored_label(rc, format!("{:.0}%", node.risk_intensity * 100.0));
-                        ui.label(node.weak_point_count.to_string());
-                        ui.label(node.critical_count.to_string());
-                        ui.label(node.total_files.to_string());
-                        ui.label(node.total_lines.to_string());
-                        ui.end_row();
-                    }
-                });
+                }
+            });
         });
     }
 
@@ -470,9 +467,7 @@ impl ReportGui {
             Some(d) => d,
             None => {
                 ui.heading("Temporal Diff");
-                ui.label(
-                    "No temporal diff loaded. Use the path input above to load a JSON file.",
-                );
+                ui.label("No temporal diff loaded. Use the path input above to load a JSON file.");
                 return;
             }
         };
@@ -569,14 +564,11 @@ impl ReportGui {
 
         // New and removed nodes.
         if !diff.new_nodes.is_empty() {
-            ui.collapsing(
-                format!("New nodes ({})", diff.new_nodes.len()),
-                |ui| {
-                    for node_id in &diff.new_nodes {
-                        ui.colored_label(COLOUR_GREEN, node_id);
-                    }
-                },
-            );
+            ui.collapsing(format!("New nodes ({})", diff.new_nodes.len()), |ui| {
+                for node_id in &diff.new_nodes {
+                    ui.colored_label(COLOUR_GREEN, node_id);
+                }
+            });
         }
 
         if !diff.removed_nodes.is_empty() {

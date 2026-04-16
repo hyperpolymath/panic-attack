@@ -29,8 +29,8 @@ pub fn check_reachability(project_dir: &Path, crate_name: &str) -> Result<Reacha
 
     let patterns = [
         format!("use {}::", normalised),
-        format!("use {}", normalised),     // bare `use serde;`
-        format!("{}::", normalised),        // qualified path
+        format!("use {}", normalised), // bare `use serde;`
+        format!("{}::", normalised),   // qualified path
         format!("extern crate {}", normalised),
     ];
 
@@ -67,10 +67,7 @@ pub fn check_reachability(project_dir: &Path, crate_name: &str) -> Result<Reacha
             for pattern in &patterns {
                 if trimmed.contains(pattern.as_str()) {
                     // Make path relative to project dir for cleaner output
-                    let rel_path = path
-                        .strip_prefix(project_dir)
-                        .unwrap_or(path)
-                        .to_path_buf();
+                    let rel_path = path.strip_prefix(project_dir).unwrap_or(path).to_path_buf();
 
                     import_sites.push(ImportSite {
                         file: rel_path,
@@ -99,15 +96,19 @@ pub fn check_reachability(project_dir: &Path, crate_name: &str) -> Result<Reacha
 
 /// Directories to exclude from scanning.
 fn is_excluded(path: &Path) -> bool {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     matches!(
         name,
-        "target" | ".git" | "node_modules" | ".lake" | "vendor"
-            | "_build" | "deps" | ".elixir_ls" | ".machine_readable"
+        "target"
+            | ".git"
+            | "node_modules"
+            | ".lake"
+            | "vendor"
+            | "_build"
+            | "deps"
+            | ".elixir_ls"
+            | ".machine_readable"
     )
 }
 
@@ -158,11 +159,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let src_dir = tmp.path().join("src");
         fs::create_dir_all(&src_dir).unwrap();
-        fs::write(
-            src_dir.join("lib.rs"),
-            "use serde_json::Value;\n",
-        )
-        .unwrap();
+        fs::write(src_dir.join("lib.rs"), "use serde_json::Value;\n").unwrap();
 
         // Query with hyphen — should match underscore form
         let evidence = check_reachability(tmp.path(), "serde-json").unwrap();

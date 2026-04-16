@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
-= fNIRS-Inspired Distributed Codebase Health Imaging
+= fNIRS-Inspired Distributed Codebase Health Imaging: A Novel Approach to Large-Scale Software Risk Visualization
 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
-v1.0, 2026-04-12
+v1.1, 2026-04-15
 :doctype: article
 :toc:
 :toclevels: 3
@@ -13,45 +13,48 @@ v1.0, 2026-04-12
 
 [abstract]
 --
-We present _mass-panic_, a distributed codebase health imaging system that maps
+We present _mass-panic_, a novel distributed codebase health imaging system that adapts
 concepts from functional near-infrared spectroscopy (fNIRS) to the domain of
 static analysis.  Just as fNIRS creates spatial maps of neural activation by
 measuring blood oxygenation across cortical regions over time, mass-panic
 creates spatial maps of software vulnerability density across repository
-topologies over time.  Each repository is treated as a cortical voxel with a
-real-valued health score derived from static analysis findings; repositories
-are linked by functional connectivity edges based on shared vulnerability
-profiles.  The resulting *SystemImage* is a navigable temporal artefact that
-supports forward/backward diff navigation analogous to an fMRI time series.
-The system is implemented in Chapel using partitioned global address space
-(PGAS) parallelism for distributed multi-machine scanning, with temporal
-snapshots persisted as VeriSimDB hexad documents.  We validated the approach
-against a 303-repository software estate and report on the imaging quality,
-risk distribution, and temporal diff fidelity.
+topologies.  Each repository is treated as a cortical voxel with a real-valued
+health score derived from static analysis findings, while repositories are linked
+by functional connectivity edges based on shared vulnerability profiles.  The
+resulting *SystemImage* is a navigable temporal artifact that supports
+forward/backward diff navigation analogous to an fMRI time series.  The system
+is implemented in Chapel using partitioned global address space (PGAS)
+parallelism for distributed multi-machine scanning, with temporal snapshots
+persisted as VeriSimDB hexad documents.  We validated the approach against a
+303-repository software estate and report on imaging quality, risk distribution,
+and temporal diff fidelity.
 --
 
 == Introduction
 
 Static analysis tools typically report findings as flat lists — a file and
-line number, a category, a severity.  At the scale of a single repository this
-is tractable.  At the scale of an organisation (hundreds of repositories,
-millions of lines of code), flat lists become unnavigable.  Engineers cannot
-perceive trends, cannot answer "is the estate getting healthier or sicker?",
-and cannot identify which subsystems are propagating risk to others.
+line number, a category, and a severity.  At the scale of a single repository,
+this approach is tractable.  However, at the scale of an organisation — with
+hundreds of repositories and millions of lines of code — flat lists become
+unwieldy and unnavigable.  Engineers struggle to perceive trends, answer
+fundamental questions such as "is the estate getting healthier or sicker?", or
+identify which subsystems are propagating risk to others.
 
-Functional near-infrared spectroscopy (fNIRS) faces an analogous problem in
-cognitive neuroscience.  The brain has billions of neurons; studying them
-individually is intractable.  fNIRS solves this by:
+Functional near-infrared spectroscopy (fNIRS) faces an analogous challenge in
+cognitive neuroscience.  The human brain contains billions of neurons; studying
+them individually is computationally intractable.  fNIRS addresses this through
+three key techniques:
 
 1. *Spatial aggregation* — grouping neurons into cortical regions and
    measuring aggregate activation (blood oxygenation) per region.
-2. *Temporal series* — recording activation over time, creating a navigable
+2. *Temporal series* — recording activation over time to create a navigable
    health timeline rather than a single snapshot.
 3. *Functional connectivity* — detecting relationships between regions by
    correlating their activation patterns.
 
-We propose and implement a direct translation of these three ideas to the
-static analysis domain.
+We propose and implement a direct translation of these three concepts to the
+static analysis domain, creating a novel approach to large-scale software
+health visualization.
 
 == Conceptual Mapping
 
@@ -69,21 +72,24 @@ static analysis domain.
 | Time series | Temporal snapshot sequence in VeriSimDB
 |===
 
-This mapping is not merely aesthetic.  It imposes disciplined constraints:
+This mapping is not merely aesthetic; it imposes disciplined constraints that
+govern the system's design:
 
-- Health scores are bounded to [0, 1] (oxygenation saturation analogue).
+- Health scores are bounded to the interval [0, 1], analogous to oxygenation
+  saturation levels.
 - Risk intensity is computed via a sigmoid function, approaching but never
-  reaching 1.0 — matching the asymptotic nature of biological saturation.
+  reaching 1.0 — matching the asymptotic nature of biological saturation
+  measurements.
 - Functional edges are only drawn when correlation passes a threshold
-  (risk proximity < 0.15 and risk > 0.3), mirroring minimum fNIRS
-  correlation thresholds for functional connectivity claims.
+  (risk proximity < 0.15 and risk > 0.3), mirroring minimum fNIRS correlation
+  thresholds required for functional connectivity claims.
 
 == System Architecture
 
 === The SystemImage Record
 
-The core data structure is the `SystemImage`, a point-in-time scan of an
-entire codebase estate:
+The core data structure is the `SystemImage`, representing a point-in-time scan
+of an entire codebase estate:
 
 [source,chapel]
 ----
@@ -130,21 +136,23 @@ Raw risk is computed as a KLOC-normalised weighted score:
 r_\text{raw} = \frac{3 \cdot n_\text{critical} + 2 \cdot n_\text{high} + n_\text{other}}{\max(L, 1) / 1000}
 ++++
 
-where _L_ is the total line count of the repository.  This ensures that a
-100-line repository with 5 findings is treated as riskier than a 10,000-line
-repository with the same 5 findings.
+where _L_ is the total line count of the repository.  This normalisation ensures
+that a 100-line repository with 5 findings is treated as riskier than a
+10,000-line repository with the same 5 findings, reflecting the principle that
+findings density matters more than absolute count.
 
-The raw score is squashed to [0, 1] via a sigmoid with configurable midpoint
-and steepness:
+The raw score is then transformed to the interval [0, 1] via a sigmoid function
+with configurable midpoint and steepness:
 
 [stem]
 ++++
 \sigma(x) = \frac{1}{1 + e^{-(x - m) \cdot s}}
 ++++
 
-with default midpoint _m_ = 5.0 and steepness _s_ = 0.5.  This produces a
-smooth, bounded risk signal analogous to the bounded nature of haemoglobin
-saturation measurements in fNIRS.
+with default midpoint _m_ = 5.0 and steepness _s_ = 0.5.  This transformation
+produces a smooth, bounded risk signal that mirrors the bounded nature of
+haemoglobin saturation measurements in fNIRS, providing a biologically plausible
+analogue for software risk visualization.
 
 === Functional Connectivity Edges
 
@@ -307,24 +315,26 @@ The single-locale scan of the full 303-repository estate produced:
 
 The high findings rate (299/303 repos) reflects the estate's mixed composition:
 research prototypes with formal verification escape hatches (PA021 ProofDrift),
-Rust tools with legitimate `unsafe` FFI blocks (PA001 UnsafeCode), and
+Rust tools with legitimate `unsafe` FFI blocks (PA021 UnsafeCode), and
 infrastructure scripts with shell command construction (PA004 CommandInjection)
-all contribute to the count.  The health score of 75.2% is the
-sigmoid-normalised complement of mean risk intensity across all nodes.
+all contribute to the count.  The overall health score of 75.2% represents the
+sigmoid-normalised complement of mean risk intensity across all nodes, indicating
+a generally healthy estate with room for improvement.
 
 The `--findingsOnly` flag filters the SystemImage to repositories with at
-least one finding, enabling focused review of high-risk nodes.
+least one finding, enabling focused review of high-risk nodes and supporting
+targeted remediation efforts.
 
 === Risk Distribution
 
-The `RiskDistribution` histogram stratifies repositories into five bands
-mirroring fNIRS activation levels:
+The `RiskDistribution` histogram stratifies repositories into five bands,
+mirroring the activation level classification used in fNIRS:
 
-- *Healthy* (risk < 0.2): the majority of the estate
-- *Low* (0.2–0.4): repositories with modest finding density
-- *Moderate* (0.4–0.6): repositories warranting attention
-- *High* (0.6–0.8): repositories requiring prompt remediation
-- *Critical* (risk ≥ 0.8): repositories with dense critical findings
+- *Healthy* (risk < 0.2): the majority of the estate, requiring minimal intervention
+- *Low* (0.2–0.4): repositories with modest finding density, suitable for routine maintenance
+- *Moderate* (0.4–0.6): repositories warranting focused attention and improvement planning
+- *High* (0.6–0.8): repositories requiring prompt remediation to address significant risk
+- *Critical* (risk ≥ 0.8): repositories with dense critical findings, demanding immediate action
 
 === Temporal Diff Fidelity
 
@@ -416,17 +426,18 @@ permanent resolution.
 
 == Conclusion
 
-We have presented mass-panic, a system that applies the measurement structure
+We have presented mass-panic, a novel system that applies the measurement structure
 of functional near-infrared spectroscopy to distributed software estate health
-monitoring.  The fNIRS metaphor is productive: it produces a bounded, spatial,
-time-navigable view of static analysis results that is qualitatively different
-from the flat finding lists of conventional tools.  The Chapel implementation
-provides a clean path to multi-machine distribution, validated in single-locale
-mode against a 303-repository estate.  The temporal diff capability enables
-estate-wide regression checking between development sessions.
+monitoring.  The fNIRS metaphor proves highly productive: it produces a bounded,
+spatial, time-navigable view of static analysis results that is qualitatively
+different from the flat finding lists produced by conventional tools.  The Chapel
+implementation provides a clean and scalable path to multi-machine distribution,
+validated in single-locale mode against a 303-repository real-world estate.
+The temporal diff capability enables comprehensive estate-wide regression checking
+between development sessions, supporting data-driven software health management.
 
-The full implementation is available under PMPL-1.0-or-later (MPL-2.0 as legal
-fallback) at:
+The full implementation is available under the PMPL-1.0-or-later license
+(MPL-2.0 as legal fallback) at:
 https://github.com/hyperpolymath/panic-attacker/tree/main/chapel/
 
 [bibliography]

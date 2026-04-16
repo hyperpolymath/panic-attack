@@ -29,7 +29,10 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
         if trimmed == "[[package]]" {
             // Flush previous package if it was a registry dependency
             if let (Some(name), Some(version)) = (current_name.take(), current_version.take()) {
-                if current_source.as_ref().map_or(false, |s| s.contains("registry")) {
+                if current_source
+                    .as_ref()
+                    .map_or(false, |s| s.contains("registry"))
+                {
                     deps.push(LockedDependency {
                         name,
                         version,
@@ -55,7 +58,10 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
 
     // Flush last package
     if let (Some(name), Some(version)) = (current_name, current_version) {
-        if current_source.as_ref().map_or(false, |s| s.contains("registry")) {
+        if current_source
+            .as_ref()
+            .map_or(false, |s| s.contains("registry"))
+        {
             deps.push(LockedDependency {
                 name,
                 version,
@@ -127,6 +133,9 @@ version = "0.1.0"
         .unwrap();
 
         let deps = parse_cargo_lock(tmp.path()).unwrap();
-        assert!(deps.is_empty(), "Local packages (no source) should be skipped");
+        assert!(
+            deps.is_empty(),
+            "Local packages (no source) should be skipped"
+        );
     }
 }

@@ -21,6 +21,12 @@ pub enum ReportView {
 
 pub struct ReportFormatter;
 
+impl Default for ReportFormatter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReportFormatter {
     pub fn new() -> Self {
         Self

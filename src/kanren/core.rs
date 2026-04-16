@@ -386,6 +386,12 @@ pub struct LogicEngine {
     pub db: FactDB,
 }
 
+impl Default for LogicEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LogicEngine {
     pub fn new() -> Self {
         Self { db: FactDB::new() }
@@ -544,12 +550,21 @@ impl LogicEngine {
         let v1 = Term::Var(201);
         self.db.add_rule(LogicRule::with_metadata(
             "suppress_unchecked_alloc".into(),
-            LogicFact::new("suppressed", vec![Term::atom("UncheckedAllocation"), v0.clone()]),
+            LogicFact::new(
+                "suppressed",
+                vec![Term::atom("UncheckedAllocation"), v0.clone()],
+            ),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("UncheckedAllocation"), v0.clone(), v1.clone()]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("UncheckedAllocation"), v0.clone(), v1.clone()],
+                ),
                 LogicFact::new("context", vec![v0.clone(), Term::atom("null_checked")]),
             ],
-            RuleMetadata { confidence: 0.95, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.95,
+                ..Default::default()
+            },
         ));
 
         // Rule 2: suppress_unwrap_boundary(File) :-
@@ -562,9 +577,15 @@ impl LogicEngine {
             LogicFact::new("suppressed", vec![Term::atom("PanicPath"), v2.clone()]),
             vec![
                 LogicFact::new("weak_point", vec![Term::atom("PanicPath"), v2.clone(), v3]),
-                LogicFact::new("context", vec![v2.clone(), Term::atom("result_returning_fn")]),
+                LogicFact::new(
+                    "context",
+                    vec![v2.clone(), Term::atom("result_returning_fn")],
+                ),
             ],
-            RuleMetadata { confidence: 0.90, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.90,
+                ..Default::default()
+            },
         ));
 
         // Rule 3: suppress_validated_deser(File) :-
@@ -574,12 +595,21 @@ impl LogicEngine {
         let v5 = Term::Var(205);
         self.db.add_rule(LogicRule::with_metadata(
             "suppress_validated_deser".into(),
-            LogicFact::new("suppressed", vec![Term::atom("UnsafeDeserialization"), v4.clone()]),
+            LogicFact::new(
+                "suppressed",
+                vec![Term::atom("UnsafeDeserialization"), v4.clone()],
+            ),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("UnsafeDeserialization"), v4.clone(), v5]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("UnsafeDeserialization"), v4.clone(), v5],
+                ),
                 LogicFact::new("context", vec![v4.clone(), Term::atom("schema_validated")]),
             ],
-            RuleMetadata { confidence: 0.85, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.85,
+                ..Default::default()
+            },
         ));
 
         // Rule 4: suppress_whitelisted_cmd(File) :-
@@ -589,12 +619,21 @@ impl LogicEngine {
         let v7 = Term::Var(207);
         self.db.add_rule(LogicRule::with_metadata(
             "suppress_whitelisted_cmd".into(),
-            LogicFact::new("suppressed", vec![Term::atom("CommandInjection"), v6.clone()]),
+            LogicFact::new(
+                "suppressed",
+                vec![Term::atom("CommandInjection"), v6.clone()],
+            ),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("CommandInjection"), v6.clone(), v7]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("CommandInjection"), v6.clone(), v7],
+                ),
                 LogicFact::new("context", vec![v6.clone(), Term::atom("enum_args")]),
             ],
-            RuleMetadata { confidence: 0.90, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.90,
+                ..Default::default()
+            },
         ));
 
         // Rule 5: suppress_synchronized(File) :-
@@ -606,10 +645,16 @@ impl LogicEngine {
             "suppress_synchronized".into(),
             LogicFact::new("suppressed", vec![Term::atom("RaceCondition"), v8.clone()]),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("RaceCondition"), v8.clone(), v9]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("RaceCondition"), v8.clone(), v9],
+                ),
                 LogicFact::new("context", vec![v8.clone(), Term::atom("mutex_guarded")]),
             ],
-            RuleMetadata { confidence: 0.95, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.95,
+                ..Default::default()
+            },
         ));
 
         // Rule 6: suppress_timeout_lock(File) :-
@@ -619,12 +664,24 @@ impl LogicEngine {
         let v11 = Term::Var(211);
         self.db.add_rule(LogicRule::with_metadata(
             "suppress_timeout_lock".into(),
-            LogicFact::new("suppressed", vec![Term::atom("DeadlockPotential"), v10.clone()]),
+            LogicFact::new(
+                "suppressed",
+                vec![Term::atom("DeadlockPotential"), v10.clone()],
+            ),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("DeadlockPotential"), v10.clone(), v11]),
-                LogicFact::new("context", vec![v10.clone(), Term::atom("timeout_protected")]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("DeadlockPotential"), v10.clone(), v11],
+                ),
+                LogicFact::new(
+                    "context",
+                    vec![v10.clone(), Term::atom("timeout_protected")],
+                ),
             ],
-            RuleMetadata { confidence: 0.85, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.85,
+                ..Default::default()
+            },
         ));
 
         // Rule 7: suppress_canonicalized_path(File) :-
@@ -636,10 +693,19 @@ impl LogicEngine {
             "suppress_canonicalized_path".into(),
             LogicFact::new("suppressed", vec![Term::atom("PathTraversal"), v12.clone()]),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("PathTraversal"), v12.clone(), v13]),
-                LogicFact::new("context", vec![v12.clone(), Term::atom("path_canonicalized")]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("PathTraversal"), v12.clone(), v13],
+                ),
+                LogicFact::new(
+                    "context",
+                    vec![v12.clone(), Term::atom("path_canonicalized")],
+                ),
             ],
-            RuleMetadata { confidence: 0.90, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.90,
+                ..Default::default()
+            },
         ));
 
         // Rule 8: suppress_constant_injection(File) :-
@@ -649,12 +715,21 @@ impl LogicEngine {
         let v15 = Term::Var(215);
         self.db.add_rule(LogicRule::with_metadata(
             "suppress_constant_injection".into(),
-            LogicFact::new("suppressed", vec![Term::atom("CommandInjection"), v14.clone()]),
+            LogicFact::new(
+                "suppressed",
+                vec![Term::atom("CommandInjection"), v14.clone()],
+            ),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("CommandInjection"), v14.clone(), v15]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("CommandInjection"), v14.clone(), v15],
+                ),
                 LogicFact::new("context", vec![v14.clone(), Term::atom("constant_args")]),
             ],
-            RuleMetadata { confidence: 0.95, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.95,
+                ..Default::default()
+            },
         ));
 
         // Rule 9: suppress_test_file(File, Category) :-
@@ -670,7 +745,10 @@ impl LogicEngine {
                 LogicFact::new("weak_point", vec![v16.clone(), v17.clone(), v18]),
                 LogicFact::new("context", vec![v17.clone(), Term::atom("test_file")]),
             ],
-            RuleMetadata { confidence: 0.99, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.99,
+                ..Default::default()
+            },
         ));
 
         // Rule 10: suppress_raii_leak(File) :-
@@ -682,10 +760,16 @@ impl LogicEngine {
             "suppress_raii_leak".into(),
             LogicFact::new("suppressed", vec![Term::atom("ResourceLeak"), v19.clone()]),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("ResourceLeak"), v19.clone(), v20]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("ResourceLeak"), v19.clone(), v20],
+                ),
                 LogicFact::new("context", vec![v19.clone(), Term::atom("raii_managed")]),
             ],
-            RuleMetadata { confidence: 0.90, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.90,
+                ..Default::default()
+            },
         ));
 
         // Rule 11: suppress_pest_parser_unwrap(File) :-
@@ -703,10 +787,16 @@ impl LogicEngine {
             "suppress_pest_parser_unwrap".into(),
             LogicFact::new("suppressed", vec![Term::atom("PanicPath"), v21.clone()]),
             vec![
-                LogicFact::new("weak_point", vec![Term::atom("PanicPath"), v21.clone(), v22]),
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("PanicPath"), v21.clone(), v22],
+                ),
                 LogicFact::new("context", vec![v21.clone(), Term::atom("pest_parser")]),
             ],
-            RuleMetadata { confidence: 0.92, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.92,
+                ..Default::default()
+            },
         ));
 
         // Rule 12: suppress_jit_memory_taint(File) :-
@@ -729,7 +819,10 @@ impl LogicEngine {
                 LogicFact::new("weak_point", vec![v23.clone(), v24.clone(), v25]),
                 LogicFact::new("context", vec![v24.clone(), Term::atom("jit_compiler")]),
             ],
-            RuleMetadata { confidence: 0.88, ..Default::default() },
+            RuleMetadata {
+                confidence: 0.88,
+                ..Default::default()
+            },
         ));
     }
 
@@ -770,7 +863,8 @@ impl LogicEngine {
                 || path.contains("/spec/")
                 || path.contains("test_")
                 || path.ends_with("_test.rs")
-                || path.ends_with("_tests.rs") // plural suffix
+                || path.ends_with("_tests.rs")
+            // plural suffix
             {
                 self.db.assert_fact(LogicFact::new(
                     "context",
@@ -826,10 +920,7 @@ impl LogicEngine {
             // no external network input reaching the allocator.  Detected by
             // path name; Rule 12 prevents taint from unrelated HTTP backends
             // being falsely chained through the JIT allocator.
-            if path.contains("jit_compiler")
-                || path.contains("jit/")
-                || path.contains("/jit_")
-            {
+            if path.contains("jit_compiler") || path.contains("jit/") || path.contains("/jit_") {
                 self.db.assert_fact(LogicFact::new(
                     "context",
                     vec![Term::atom(path), Term::atom("jit_compiler")],
@@ -1143,16 +1234,14 @@ mod tests {
             severity: Severity::Medium,
             description: description.to_string(),
             recommended_attack: vec![],
-                    suppressed: false,
+            suppressed: false,
         }
     }
 
     /// Helper: check whether a context fact exists in the engine's FactDB.
     fn has_context(engine: &LogicEngine, file: &str, ctx: &str) -> bool {
         engine.db.get_facts("context").iter().any(|f| {
-            f.args.len() == 2
-                && f.args[0] == Term::atom(file)
-                && f.args[1] == Term::atom(ctx)
+            f.args.len() == 2 && f.args[0] == Term::atom(file) && f.args[1] == Term::atom(ctx)
         })
     }
 
@@ -1367,12 +1456,32 @@ mod tests {
         engine.extract_context_facts(&report);
 
         // Original 4 context facts
-        assert!(has_context(&engine, "tests/integration_test.rs", "test_file"));
-        assert!(has_context(&engine, "tests/integration_test.rs", "mutex_guarded"));
-        assert!(has_context(&engine, "tests/integration_test.rs", "raii_managed"));
-        assert!(has_context(&engine, "tests/integration_test.rs", "result_returning_fn"));
+        assert!(has_context(
+            &engine,
+            "tests/integration_test.rs",
+            "test_file"
+        ));
+        assert!(has_context(
+            &engine,
+            "tests/integration_test.rs",
+            "mutex_guarded"
+        ));
+        assert!(has_context(
+            &engine,
+            "tests/integration_test.rs",
+            "raii_managed"
+        ));
+        assert!(has_context(
+            &engine,
+            "tests/integration_test.rs",
+            "result_returning_fn"
+        ));
 
         // New description-based fact
-        assert!(has_context(&engine, "tests/integration_test.rs", "timeout_protected"));
+        assert!(has_context(
+            &engine,
+            "tests/integration_test.rs",
+            "timeout_protected"
+        ));
     }
 }

@@ -44,7 +44,10 @@ pub fn execute(config: AttackConfig) -> Result<Vec<AttackResult>> {
         for axis in &config.axes {
             log::info!(
                 "Ambushing {:?} on axis {:?} (intensity: {:?}, duration: {:?})",
-                program, axis, config.intensity, config.duration
+                program,
+                axis,
+                config.intensity,
+                config.duration
             );
 
             let args = args_for_axis(&config, *axis);
@@ -389,7 +392,6 @@ fn spawn_network_stress(
 
     for _ in 0..clients {
         let stop = stop.clone();
-        let addr = addr;
         threads.push(thread::spawn(move || {
             let payload = vec![0x5A_u8; 4096];
             while !stop.load(Ordering::Relaxed) && Instant::now() < deadline {

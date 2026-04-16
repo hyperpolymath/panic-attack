@@ -179,11 +179,7 @@ fn osv_ecosystem(ecosystem: &str) -> String {
 /// Convert an OSV vulnerability to our internal Vulnerability type.
 fn osv_to_vulnerability(osv: &OsvVuln, dep: &LockedDependency) -> Vulnerability {
     // Extract CVE alias if present
-    let cve = osv
-        .aliases
-        .iter()
-        .find(|a| a.starts_with("CVE-"))
-        .cloned();
+    let cve = osv.aliases.iter().find(|a| a.starts_with("CVE-")).cloned();
 
     // Extract CVSS score from severity entries
     let severity_score = osv.severity.iter().find_map(|s| {
@@ -213,15 +209,11 @@ fn osv_to_vulnerability(osv: &OsvVuln, dep: &LockedDependency) -> Vulnerability 
     }
 
     // Check if any fixed version is semver-compatible with current
-    let semver_fix = fixed_versions.iter().any(|fv| {
-        is_semver_compatible(&dep.version, fv)
-    });
-
-    let references = osv
-        .references
+    let semver_fix = fixed_versions
         .iter()
-        .map(|r| r.url.clone())
-        .collect();
+        .any(|fv| is_semver_compatible(&dep.version, fv));
+
+    let references = osv.references.iter().map(|r| r.url.clone()).collect();
 
     Vulnerability {
         id: osv.id.clone(),
@@ -261,14 +253,8 @@ fn parse_cvss_score(score_str: &str) -> Option<f64> {
 /// This is a simplified check — a full semver resolver would use the
 /// Cargo.toml version requirement, but for MVP this catches most cases.
 fn is_semver_compatible(current: &str, fixed: &str) -> bool {
-    let cur_parts: Vec<u64> = current
-        .split('.')
-        .filter_map(|p| p.parse().ok())
-        .collect();
-    let fix_parts: Vec<u64> = fixed
-        .split('.')
-        .filter_map(|p| p.parse().ok())
-        .collect();
+    let cur_parts: Vec<u64> = current.split('.').filter_map(|p| p.parse().ok()).collect();
+    let fix_parts: Vec<u64> = fixed.split('.').filter_map(|p| p.parse().ok()).collect();
 
     if cur_parts.len() < 2 || fix_parts.len() < 2 {
         return false;

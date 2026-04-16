@@ -12,8 +12,14 @@ fn make_assault_report(
     weak_points: Vec<WeakPoint>,
     attack_results: Vec<AttackResult>,
 ) -> AssaultReport {
-    let _critical_count = weak_points.iter().filter(|wp| wp.severity == Severity::Critical).count();
-    let unsafe_count = weak_points.iter().filter(|wp| wp.category == WeakPointCategory::UnsafeCode).count();
+    let _critical_count = weak_points
+        .iter()
+        .filter(|wp| wp.severity == Severity::Critical)
+        .count();
+    let unsafe_count = weak_points
+        .iter()
+        .filter(|wp| wp.category == WeakPointCategory::UnsafeCode)
+        .count();
 
     AssaultReport {
         assail_report: AssailReport {
@@ -74,7 +80,7 @@ fn test_panll_export_summary_reflects_report() {
             severity: Severity::Critical,
             description: "unsafe block".to_string(),
             recommended_attack: vec![],
-                    suppressed: false,
+            suppressed: false,
         }],
         vec![],
     );
@@ -102,7 +108,7 @@ fn test_panll_export_constraints_from_critical_wp() {
                 severity: Severity::Critical,
                 description: "transmute usage".to_string(),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             },
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
@@ -112,7 +118,7 @@ fn test_panll_export_constraints_from_critical_wp() {
                 severity: Severity::Medium,
                 description: "unwrap call".to_string(),
                 recommended_attack: vec![],
-                    suppressed: false,
+                suppressed: false,
             },
         ],
         vec![],
@@ -128,7 +134,10 @@ fn test_panll_export_constraints_from_critical_wp() {
 
     // Only the critical WP should generate a constraint, not the medium one
     assert_eq!(constraints.len(), 1, "only critical WPs become constraints");
-    assert!(constraints[0]["id"].as_str().unwrap().starts_with("wp-crit-"));
+    assert!(constraints[0]["id"]
+        .as_str()
+        .unwrap()
+        .starts_with("wp-crit-"));
     assert!(constraints[0]["description"]
         .as_str()
         .unwrap()
@@ -217,10 +226,9 @@ fn test_panll_export_constraints_from_failed_attacks() {
     let constraints = parsed["constraints"].as_array().unwrap();
 
     assert!(
-        constraints.iter().any(|c| c["id"]
-            .as_str()
-            .unwrap()
-            .starts_with("attack-fail-")),
+        constraints
+            .iter()
+            .any(|c| c["id"].as_str().unwrap().starts_with("attack-fail-")),
         "failed attack should generate a constraint"
     );
 }

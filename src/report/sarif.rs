@@ -115,6 +115,7 @@ pub struct SarifRegion {
 fn rule_id(category: &WeakPointCategory) -> &'static str {
     match category {
         WeakPointCategory::UncheckedAllocation => "PA001",
+        WeakPointCategory::UnboundedAllocation => "PA001b",
         WeakPointCategory::UnboundedLoop => "PA002",
         WeakPointCategory::BlockingIO => "PA003",
         WeakPointCategory::UnsafeCode => "PA004",
@@ -146,6 +147,7 @@ fn rule_id(category: &WeakPointCategory) -> &'static str {
 fn rule_name(category: &WeakPointCategory) -> &'static str {
     match category {
         WeakPointCategory::UncheckedAllocation => "unchecked-allocation",
+        WeakPointCategory::UnboundedAllocation => "unbounded-allocation",
         WeakPointCategory::UnboundedLoop => "unbounded-loop",
         WeakPointCategory::BlockingIO => "blocking-io",
         WeakPointCategory::UnsafeCode => "unsafe-code",

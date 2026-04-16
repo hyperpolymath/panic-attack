@@ -106,10 +106,7 @@ pub fn generate_markdown(report: &AssemblylineReport, config: &NotifyConfig) -> 
             "MEDIUM"
         };
 
-        md.push_str(&format!(
-            "## {} [{}]\n\n",
-            result.repo_name, severity_badge
-        ));
+        md.push_str(&format!("## {} [{}]\n\n", result.repo_name, severity_badge));
         md.push_str(&format!(
             "- **Findings:** {} total ({} critical, {} high)\n",
             result.weak_point_count, result.critical_count, result.high_count
@@ -132,8 +129,7 @@ pub fn generate_markdown(report: &AssemblylineReport, config: &NotifyConfig) -> 
                 for wp in &critical_and_high {
                     let severity_str = format!("{:?}", wp.severity);
                     let category_str = format!("{:?}", wp.category);
-                    let annotation =
-                        severity_annotation(&severity_str, &category_str);
+                    let annotation = severity_annotation(&severity_str, &category_str);
 
                     md.push_str(&format!(
                         "- **[{}] {}** — {}\n",
@@ -184,10 +180,7 @@ pub fn create_github_issues(
     report: &AssemblylineReport,
     config: &NotifyConfig,
 ) -> Result<Vec<String>> {
-    let owner = config
-        .github_owner
-        .as_deref()
-        .unwrap_or("hyperpolymath");
+    let owner = config.github_owner.as_deref().unwrap_or("hyperpolymath");
 
     let mut created = Vec::new();
 
@@ -210,10 +203,7 @@ pub fn create_github_issues(
              **Tool:** panic-attack assemblyline\n\
              **Scan date:** {}\n\
              **Findings:** {} total ({} critical, {} high)\n\n",
-            report.created_at,
-            result.weak_point_count,
-            result.critical_count,
-            result.high_count
+            report.created_at, result.weak_point_count, result.critical_count, result.high_count
         );
 
         if let Some(ref assail_report) = result.report {
@@ -224,10 +214,7 @@ pub fn create_github_issues(
                 .collect();
 
             for wp in &criticals {
-                body.push_str(&format!(
-                    "- **{:?}**: {}\n",
-                    wp.category, wp.description
-                ));
+                body.push_str(&format!("- **{:?}**: {}\n", wp.category, wp.description));
             }
         }
 
@@ -237,16 +224,8 @@ pub fn create_github_issues(
 
         let output = Command::new("gh")
             .args([
-                "issue",
-                "create",
-                "--repo",
-                &repo_slug,
-                "--title",
-                &title,
-                "--body",
-                &body,
-                "--label",
-                "security",
+                "issue", "create", "--repo", &repo_slug, "--title", &title, "--body", &body,
+                "--label", "security",
             ])
             .output();
 
@@ -259,14 +238,12 @@ pub fn create_github_issues(
                 let stderr = String::from_utf8_lossy(&o.stderr);
                 log::warn!(
                     "failed to create issue for {}: {}",
-                    result.repo_name, stderr
+                    result.repo_name,
+                    stderr
                 );
             }
             Err(e) => {
-                log::warn!(
-                    "gh not available for {}: {}",
-                    result.repo_name, e
-                );
+                log::warn!("gh not available for {}: {}", result.repo_name, e);
             }
         }
     }
@@ -328,7 +305,10 @@ mod tests {
         let md = generate_markdown(&report, &NotifyConfig::default());
         assert!(md.contains("danger-repo"));
         assert!(md.contains("[CRITICAL]"));
-        assert!(!md.contains("safe-repo"), "repos with 0 findings should be excluded");
+        assert!(
+            !md.contains("safe-repo"),
+            "repos with 0 findings should be excluded"
+        );
     }
 
     #[test]
@@ -343,7 +323,10 @@ mod tests {
         };
         let md = generate_markdown(&report, &config);
         assert!(md.contains("critical-repo"));
-        assert!(!md.contains("medium-repo"), "non-critical repos should be excluded");
+        assert!(
+            !md.contains("medium-repo"),
+            "non-critical repos should be excluded"
+        );
     }
 
     #[test]
@@ -358,14 +341,20 @@ mod tests {
         };
         let md = generate_markdown(&report, &config);
         assert!(md.contains("big-repo"));
-        assert!(!md.contains("small-repo"), "repos below threshold should be excluded");
+        assert!(
+            !md.contains("small-repo"),
+            "repos below threshold should be excluded"
+        );
     }
 
     #[test]
     fn test_generate_markdown_warning_banner_on_criticals() {
         let report = make_report(vec![make_repo_result("vuln-repo", 5, 1, 2)]);
         let md = generate_markdown(&report, &NotifyConfig::default());
-        assert!(md.contains("Warning"), "should include warning banner when criticals present");
+        assert!(
+            md.contains("Warning"),
+            "should include warning banner when criticals present"
+        );
     }
 
     #[test]

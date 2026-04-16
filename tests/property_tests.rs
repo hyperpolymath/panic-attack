@@ -35,7 +35,11 @@ fn prop_language_detection_idempotent() {
     for filename in files {
         let lang1 = Language::detect(filename);
         let lang2 = Language::detect(filename);
-        assert_eq!(lang1, lang2, "Language detection must be idempotent for {}", filename);
+        assert_eq!(
+            lang1, lang2,
+            "Language detection must be idempotent for {}",
+            filename
+        );
     }
 }
 
@@ -43,18 +47,38 @@ fn prop_language_detection_idempotent() {
 #[test]
 fn prop_all_detected_languages_have_family() {
     let test_files = vec![
-        "test.rs", "test.py", "test.js", "test.ex", "test.go",
-        "test.rb", "test.c", "test.cpp", "test.h", "test.hpp",
-        "test.java", "test.kt", "test.scala", "test.ts", "test.tsx",
-        "test.zig", "test.ada", "test.nim", "test.jl", "test.ml",
+        "test.rs",
+        "test.py",
+        "test.js",
+        "test.ex",
+        "test.go",
+        "test.rb",
+        "test.c",
+        "test.cpp",
+        "test.h",
+        "test.hpp",
+        "test.java",
+        "test.kt",
+        "test.scala",
+        "test.ts",
+        "test.tsx",
+        "test.zig",
+        "test.ada",
+        "test.nim",
+        "test.jl",
+        "test.ml",
     ];
 
     for filename in test_files {
         let lang = Language::detect(filename);
         let family = lang.family();
         // Every language should have a non-empty family designation
-        assert!(!format!("{:?}", family).is_empty(),
-                "Language {:?} from {} must have a valid family", lang, filename);
+        assert!(
+            !format!("{:?}", family).is_empty(),
+            "Language {:?} from {} must have a valid family",
+            lang,
+            filename
+        );
     }
 }
 
@@ -84,12 +108,14 @@ fn prop_no_false_positive_on_comments() {
     "#;
     // Check that the code doesn't contain actual unwrap() calls (only comment mentions)
     // This string shouldn't have "unwrap()" as a code construct
-    let has_actual_call = rust_comment_only.lines()
-        .any(|line| {
-            let trimmed = line.trim();
-            !trimmed.starts_with("//") && trimmed.contains("unwrap()")
-        });
-    assert!(!has_actual_call, "Comments should not be counted as actual code");
+    let has_actual_call = rust_comment_only.lines().any(|line| {
+        let trimmed = line.trim();
+        !trimmed.starts_with("//") && trimmed.contains("unwrap()")
+    });
+    assert!(
+        !has_actual_call,
+        "Comments should not be counted as actual code"
+    );
 }
 
 // ============================================================================
@@ -101,7 +127,7 @@ fn prop_no_false_positive_on_comments() {
 fn prop_kanren_self_unification() {
     // A term should unify with itself successfully
     // This tests kanren::core::Substitution::unify behavior
-    use panic_attack::kanren::core::{Term, Substitution};
+    use panic_attack::kanren::core::{Substitution, Term};
 
     let term1 = Term::atom("test");
     let term2 = Term::atom("test");
@@ -125,8 +151,10 @@ fn prop_kanren_forward_chaining_preserves_facts() {
     let original_size = db.total_facts();
 
     // After any operation, the database should not shrink unexpectedly
-    assert!(db.total_facts() >= original_size,
-            "FactDB must not lose facts during operations");
+    assert!(
+        db.total_facts() >= original_size,
+        "FactDB must not lose facts during operations"
+    );
 }
 
 /// Property: Taint analyzer setup must be correct
@@ -139,8 +167,10 @@ fn prop_taint_analyzer_setup() {
     let initial_count = db.total_facts();
 
     // Database must be able to track facts
-    assert!(db.total_facts() >= initial_count,
-            "FactDB must maintain fact count");
+    assert!(
+        db.total_facts() >= initial_count,
+        "FactDB must maintain fact count"
+    );
 }
 
 // ============================================================================
@@ -164,8 +194,11 @@ fn prop_language_family_consistent() {
     for lang in languages {
         let family1 = lang.family();
         let family2 = lang.family();
-        assert_eq!(family1, family2,
-                   "Language family must be deterministic for {:?}", lang);
+        assert_eq!(
+            family1, family2,
+            "Language family must be deterministic for {:?}",
+            lang
+        );
     }
 }
 
@@ -184,17 +217,18 @@ fn prop_weak_point_location_validity() {
         line: None,
         description: "test".to_string(),
         recommended_attack: vec![],
-                    suppressed: false,
+        suppressed: false,
     };
 
     // Location can be None only if explicitly set to None
-    assert!(wp.location.is_none() || wp.location.is_some(),
-            "WeakPoint location must be in a valid state");
+    assert!(
+        wp.location.is_none() || wp.location.is_some(),
+        "WeakPoint location must be in a valid state"
+    );
 
     // If we set a location, it must persist
     wp.location = Some("test.rs:42".to_string());
-    assert!(wp.location.is_some(),
-            "Setting a location must persist");
+    assert!(wp.location.is_some(), "Setting a location must persist");
     assert_eq!(wp.location.as_ref().unwrap(), "test.rs:42");
 }
 
@@ -216,10 +250,7 @@ fn prop_report_statistics_consistency() {
     };
 
     // Unwrap + panic sites should not exceed total lines
-    assert!(
-        (statistics.unwrap_calls + statistics.panic_sites)
-            <= statistics.total_lines
-    );
+    assert!((statistics.unwrap_calls + statistics.panic_sites) <= statistics.total_lines);
 }
 
 /// Property: Weak point list should not contain duplicates by location
@@ -234,7 +265,7 @@ fn prop_no_duplicate_weak_points_at_same_location() {
             line: None,
             description: "unsafe block 1".to_string(),
             recommended_attack: vec![],
-                    suppressed: false,
+            suppressed: false,
         },
         WeakPoint {
             category: WeakPointCategory::UnsafeCode,
@@ -244,7 +275,7 @@ fn prop_no_duplicate_weak_points_at_same_location() {
             line: None,
             description: "unsafe block 2".to_string(),
             recommended_attack: vec![],
-                    suppressed: false,
+            suppressed: false,
         },
     ];
 

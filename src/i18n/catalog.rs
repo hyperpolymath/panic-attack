@@ -31,7 +31,9 @@ use serde::{Deserialize, Serialize};
 /// the CLI `--lang` flag and by report generators that emit human-readable
 /// text (axial markdown, assault recommendations, adjudicate verdicts).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum Lang {
+    #[default]
     En,
     Es,
     Fr,
@@ -85,8 +87,16 @@ impl Lang {
     #[allow(dead_code)]
     pub fn all() -> &'static [Lang] {
         &[
-            Lang::En, Lang::Es, Lang::Fr, Lang::De, Lang::Ja,
-            Lang::Pt, Lang::Zh, Lang::Ko, Lang::It, Lang::Ru,
+            Lang::En,
+            Lang::Es,
+            Lang::Fr,
+            Lang::De,
+            Lang::Ja,
+            Lang::Pt,
+            Lang::Zh,
+            Lang::Ko,
+            Lang::It,
+            Lang::Ru,
         ]
     }
 
@@ -111,11 +121,6 @@ impl Lang {
     }
 }
 
-impl Default for Lang {
-    fn default() -> Self {
-        Lang::En
-    }
-}
 
 impl std::fmt::Display for Lang {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -162,7 +167,7 @@ pub fn t(lang: Lang, key: &str) -> &'static str {
 /// Non-static variant: returns the translation or the key itself if missing.
 /// Useful when you need to own the result.
 #[allow(dead_code)]
-pub fn t_or_key<'a>(lang: Lang, key: &'a str) -> &'a str {
+pub fn t_or_key(lang: Lang, key: &str) -> &str {
     let result = t(lang, key);
     if result.is_empty() {
         key
@@ -213,9 +218,18 @@ const EN: &[(&str, &str)] = &[
     ("axial.spelling", "Spelling"),
     ("axial.none", "none"),
     // Axial recommendations
-    ("rec.crash", "prioritize crash triage and backtrace collection"),
-    ("rec.panic", "audit panic/fatal paths for unsafe assumptions"),
-    ("rec.timeout", "review long-running paths and add watchdog instrumentation"),
+    (
+        "rec.crash",
+        "prioritize crash triage and backtrace collection",
+    ),
+    (
+        "rec.panic",
+        "audit panic/fatal paths for unsafe assumptions",
+    ),
+    (
+        "rec.timeout",
+        "review long-running paths and add watchdog instrumentation",
+    ),
     ("rec.none", "no critical reaction signals observed"),
     // Assault report labels
     ("assault.title", "Assault Report"),
@@ -271,9 +285,18 @@ const ES: &[(&str, &str)] = &[
     ("axial.recommendations", "Recomendaciones"),
     ("axial.spelling", "Ortografía"),
     ("axial.none", "ninguno"),
-    ("rec.crash", "priorizar triage de fallos y recolección de trazas"),
-    ("rec.panic", "auditar rutas panic/fatal por supuestos inseguros"),
-    ("rec.timeout", "revisar rutas largas y agregar instrumentación watchdog"),
+    (
+        "rec.crash",
+        "priorizar triage de fallos y recolección de trazas",
+    ),
+    (
+        "rec.panic",
+        "auditar rutas panic/fatal por supuestos inseguros",
+    ),
+    (
+        "rec.timeout",
+        "revisar rutas largas y agregar instrumentación watchdog",
+    ),
     ("rec.none", "no se observaron señales críticas"),
     ("assault.title", "Informe de Asalto"),
     ("assault.robustness", "Puntuación de Robustez"),
@@ -322,9 +345,18 @@ const FR: &[(&str, &str)] = &[
     ("axial.recommendations", "Recommandations"),
     ("axial.spelling", "Orthographe"),
     ("axial.none", "aucun"),
-    ("rec.crash", "prioriser le triage des crashs et la collecte des traces"),
-    ("rec.panic", "auditer les chemins panic/fatal pour hypothèses dangereuses"),
-    ("rec.timeout", "examiner les chemins longs et ajouter un watchdog"),
+    (
+        "rec.crash",
+        "prioriser le triage des crashs et la collecte des traces",
+    ),
+    (
+        "rec.panic",
+        "auditer les chemins panic/fatal pour hypothèses dangereuses",
+    ),
+    (
+        "rec.timeout",
+        "examiner les chemins longs et ajouter un watchdog",
+    ),
     ("rec.none", "aucun signal critique observé"),
     ("assault.title", "Rapport d'Assaut"),
     ("assault.robustness", "Score de Robustesse"),
@@ -373,9 +405,18 @@ const DE: &[(&str, &str)] = &[
     ("axial.recommendations", "Empfehlungen"),
     ("axial.spelling", "Rechtschreibung"),
     ("axial.none", "keine"),
-    ("rec.crash", "Crash-Triage und Backtrace-Erfassung priorisieren"),
-    ("rec.panic", "Panic/Fatal-Pfade auf unsichere Annahmen prüfen"),
-    ("rec.timeout", "langlaufende Pfade prüfen und Watchdog hinzufügen"),
+    (
+        "rec.crash",
+        "Crash-Triage und Backtrace-Erfassung priorisieren",
+    ),
+    (
+        "rec.panic",
+        "Panic/Fatal-Pfade auf unsichere Annahmen prüfen",
+    ),
+    (
+        "rec.timeout",
+        "langlaufende Pfade prüfen und Watchdog hinzufügen",
+    ),
     ("rec.none", "keine kritischen Reaktionssignale beobachtet"),
     ("assault.title", "Angriffsbericht"),
     ("assault.robustness", "Robustheitswert"),
@@ -424,9 +465,15 @@ const JA: &[(&str, &str)] = &[
     ("axial.recommendations", "推奨事項"),
     ("axial.spelling", "スペルチェック"),
     ("axial.none", "なし"),
-    ("rec.crash", "クラッシュのトリアージとバックトレース収集を優先する"),
+    (
+        "rec.crash",
+        "クラッシュのトリアージとバックトレース収集を優先する",
+    ),
     ("rec.panic", "panic/fatalパスの安全でない前提を監査する"),
-    ("rec.timeout", "長時間実行パスを確認しウォッチドッグを追加する"),
+    (
+        "rec.timeout",
+        "長時間実行パスを確認しウォッチドッグを追加する",
+    ),
     ("rec.none", "重大な反応シグナルは観測されなかった"),
     ("assault.title", "アサルトレポート"),
     ("assault.robustness", "堅牢性スコア"),
@@ -475,9 +522,18 @@ const PT: &[(&str, &str)] = &[
     ("axial.recommendations", "Recomendações"),
     ("axial.spelling", "Ortografia"),
     ("axial.none", "nenhum"),
-    ("rec.crash", "priorizar triagem de falhas e coleta de rastreamentos"),
-    ("rec.panic", "auditar caminhos panic/fatal por suposições inseguras"),
-    ("rec.timeout", "revisar caminhos longos e adicionar watchdog"),
+    (
+        "rec.crash",
+        "priorizar triagem de falhas e coleta de rastreamentos",
+    ),
+    (
+        "rec.panic",
+        "auditar caminhos panic/fatal por suposições inseguras",
+    ),
+    (
+        "rec.timeout",
+        "revisar caminhos longos e adicionar watchdog",
+    ),
     ("rec.none", "nenhum sinal crítico de reação observado"),
     ("assault.title", "Relatório de Assalto"),
     ("assault.robustness", "Pontuação de Robustez"),
@@ -628,9 +684,18 @@ const IT: &[(&str, &str)] = &[
     ("axial.recommendations", "Raccomandazioni"),
     ("axial.spelling", "Ortografia"),
     ("axial.none", "nessuno"),
-    ("rec.crash", "dare priorità al triage dei crash e alla raccolta dei backtrace"),
-    ("rec.panic", "verificare percorsi panic/fatal per ipotesi non sicure"),
-    ("rec.timeout", "esaminare percorsi a lunga esecuzione e aggiungere watchdog"),
+    (
+        "rec.crash",
+        "dare priorità al triage dei crash e alla raccolta dei backtrace",
+    ),
+    (
+        "rec.panic",
+        "verificare percorsi panic/fatal per ipotesi non sicure",
+    ),
+    (
+        "rec.timeout",
+        "esaminare percorsi a lunga esecuzione e aggiungere watchdog",
+    ),
     ("rec.none", "nessun segnale critico di reazione osservato"),
     ("assault.title", "Rapporto d'Assalto"),
     ("assault.robustness", "Punteggio di Robustezza"),
@@ -679,9 +744,18 @@ const RU: &[(&str, &str)] = &[
     ("axial.recommendations", "Рекомендации"),
     ("axial.spelling", "Правописание"),
     ("axial.none", "нет"),
-    ("rec.crash", "приоритизировать сортировку аварий и сбор трассировок"),
-    ("rec.panic", "проверить пути panic/fatal на небезопасные допущения"),
-    ("rec.timeout", "проверить долгие пути исполнения и добавить сторожевой таймер"),
+    (
+        "rec.crash",
+        "приоритизировать сортировку аварий и сбор трассировок",
+    ),
+    (
+        "rec.panic",
+        "проверить пути panic/fatal на небезопасные допущения",
+    ),
+    (
+        "rec.timeout",
+        "проверить долгие пути исполнения и добавить сторожевой таймер",
+    ),
     ("rec.none", "критических сигналов реакции не обнаружено"),
     ("assault.title", "Отчёт о штурме"),
     ("assault.robustness", "Оценка устойчивости"),
@@ -732,7 +806,10 @@ mod tests {
     #[test]
     fn japanese_added_correctly() {
         assert_eq!(t(Lang::Ja, "axial.title"), "Axialレポート");
-        assert_eq!(t(Lang::Ja, "rec.none"), "重大な反応シグナルは観測されなかった");
+        assert_eq!(
+            t(Lang::Ja, "rec.none"),
+            "重大な反応シグナルは観測されなかった"
+        );
     }
 
     #[test]

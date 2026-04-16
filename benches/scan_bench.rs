@@ -11,10 +11,24 @@ use panic_attack::types::Language;
 /// Benchmark language detection from file extension
 fn bench_language_detect(c: &mut Criterion) {
     let extensions = vec![
-        "main.rs", "lib.rs", "app.py", "index.js", "server.ex",
-        "types.idr", "Main.hs", "config.ncl", "build.zig", "test.gleam",
-        "script.sh", "model.jl", "style.css", "unknown.xyz",
-        "Component.res", "parser.ml", "proof.lean", "rules.lgt",
+        "main.rs",
+        "lib.rs",
+        "app.py",
+        "index.js",
+        "server.ex",
+        "types.idr",
+        "Main.hs",
+        "config.ncl",
+        "build.zig",
+        "test.gleam",
+        "script.sh",
+        "model.jl",
+        "style.css",
+        "unknown.xyz",
+        "Component.res",
+        "parser.ml",
+        "proof.lean",
+        "rules.lgt",
     ];
 
     c.bench_function("language_detect_18_files", |b| {
@@ -29,10 +43,18 @@ fn bench_language_detect(c: &mut Criterion) {
 /// Benchmark language family classification
 fn bench_language_family(c: &mut Criterion) {
     let languages = vec![
-        Language::Rust, Language::Elixir, Language::Gleam,
-        Language::ReScript, Language::Idris, Language::Zig,
-        Language::Haskell, Language::Python, Language::JavaScript,
-        Language::Shell, Language::Julia, Language::Nickel,
+        Language::Rust,
+        Language::Elixir,
+        Language::Gleam,
+        Language::ReScript,
+        Language::Idris,
+        Language::Zig,
+        Language::Haskell,
+        Language::Python,
+        Language::JavaScript,
+        Language::Shell,
+        Language::Julia,
+        Language::Nickel,
     ];
 
     c.bench_function("language_family_12_langs", |b| {

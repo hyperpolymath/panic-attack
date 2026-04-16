@@ -345,8 +345,8 @@ pub fn write_image(image: &SystemImage, path: &Path) -> Result<()> {
 pub fn load_image(path: &Path) -> Result<SystemImage> {
     let content =
         fs::read_to_string(path).with_context(|| format!("reading image {}", path.display()))?;
-    let image: SystemImage =
-        serde_json::from_str(&content).with_context(|| format!("parsing image {}", path.display()))?;
+    let image: SystemImage = serde_json::from_str(&content)
+        .with_context(|| format!("parsing image {}", path.display()))?;
     Ok(image)
 }
 

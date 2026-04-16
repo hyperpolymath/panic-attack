@@ -165,8 +165,7 @@ fn test_assemblyline_write_report() {
 
     // Verify the file exists and is valid JSON
     let content = fs::read_to_string(&output_path).expect("should read output file");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&content).expect("should be valid JSON");
+    let parsed: serde_json::Value = serde_json::from_str(&content).expect("should be valid JSON");
 
     assert!(parsed["repos_scanned"].is_number());
     assert!(parsed["results"].is_array());

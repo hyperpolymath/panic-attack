@@ -21,7 +21,7 @@ fn make_assail_report() -> AssailReport {
                 severity: Severity::Critical,
                 description: "2 unsafe blocks in src/main.rs".to_string(),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
-                    suppressed: false,
+                suppressed: false,
             },
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
@@ -31,7 +31,7 @@ fn make_assail_report() -> AssailReport {
                 severity: Severity::Medium,
                 description: "5 unwrap/expect calls in src/lib.rs".to_string(),
                 recommended_attack: vec![AttackAxis::Memory],
-                    suppressed: false,
+                suppressed: false,
             },
         ],
         statistics: ProgramStatistics {
@@ -48,7 +48,7 @@ fn make_assail_report() -> AssailReport {
         taint_matrix: TaintMatrix { rows: vec![] },
         recommended_attacks: vec![AttackAxis::Memory, AttackAxis::Concurrency],
         migration_metrics: None,
-            suppressed_count: 0,
+        suppressed_count: 0,
     }
 }
 
@@ -106,7 +106,9 @@ fn test_robustness_score_perfect() {
     // No unsafe blocks, no crashes → should be high score
     let mut assail = make_assail_report();
     assail.statistics.unsafe_blocks = 0;
-    assail.weak_points.retain(|w| w.severity != Severity::Critical);
+    assail
+        .weak_points
+        .retain(|w| w.severity != Severity::Critical);
     let results = vec![make_attack_result(AttackAxis::Cpu, true, 0)];
 
     let report = report::generate_assault_report(assail, results).unwrap();
@@ -144,7 +146,7 @@ fn test_robustness_score_clamped_to_zero() {
             severity: Severity::Critical,
             description: format!("critical issue {}", i),
             recommended_attack: vec![],
-                    suppressed: false,
+            suppressed: false,
         });
     }
     let results = vec![make_attack_result(AttackAxis::Memory, false, 5)];
@@ -203,7 +205,10 @@ fn test_yaml_serialization() {
     let report = report::generate_assault_report(assail, results).unwrap();
 
     let yaml = ReportOutputFormat::Yaml.serialize(&report).unwrap();
-    assert!(yaml.contains("robustness_score"), "YAML should contain score field");
+    assert!(
+        yaml.contains("robustness_score"),
+        "YAML should contain score field"
+    );
     assert!(yaml.contains("rust"), "YAML should contain language");
 }
 

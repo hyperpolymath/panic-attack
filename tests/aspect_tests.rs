@@ -69,7 +69,10 @@ fn aspect_very_long_lines_handling() {
     let temp_dir = TempDir::new().expect("temp dir");
     let long_line_file = temp_dir.path().join("long.rs");
 
-    let long_string = format!("fn long_func() {{\n    let x = \"{}\";\n}}\n", "x".repeat(10000));
+    let long_string = format!(
+        "fn long_func() {{\n    let x = \"{}\";\n}}\n",
+        "x".repeat(10000)
+    );
 
     fs::write(&long_line_file, long_string).expect("write long file");
 
@@ -165,8 +168,10 @@ fn aspect_performance_scales_with_file_count() {
     // (Basic sanity check: last time should be reasonable)
     if times.len() > 1 {
         // 10 files shouldn't take more than a few seconds
-        assert!(times[times.len() - 1].1 < 5000,
-                "scanning 10 small files should take <5 seconds");
+        assert!(
+            times[times.len() - 1].1 < 5000,
+            "scanning 10 small files should take <5 seconds"
+        );
     }
 }
 
@@ -190,7 +195,10 @@ fn aspect_memory_bounded_on_large_file() {
     // Should analyze without excessive memory allocation
     // (This is a basic sanity check; actual memory measurement requires instrumentation)
     let result = assail::analyze(&large_file);
-    assert!(result.is_ok() || result.is_err(), "must complete (ok or err, not panic)");
+    assert!(
+        result.is_ok() || result.is_err(),
+        "must complete (ok or err, not panic)"
+    );
 }
 
 // ============================================================================
@@ -219,10 +227,7 @@ fn aspect_parallel_analysis_correctness() {
         .collect();
 
     // Using rayon parallel iterator (same as assemblyline)
-    let _results: Vec<_> = files
-        .par_iter()
-        .map(|path| assail::analyze(path))
-        .collect();
+    let _results: Vec<_> = files.par_iter().map(|path| assail::analyze(path)).collect();
 
     // Should complete without data races or panics
     // (In practice, rayon + Rust's type system ensure this)
@@ -301,7 +306,9 @@ fn main() {
     let report = assail::analyze(&file).expect("analysis should succeed");
 
     // Should detect the actual unwrap() call
-    let has_unwrap = report.weak_points.iter()
+    let has_unwrap = report
+        .weak_points
+        .iter()
         .any(|wp| wp.description.to_lowercase().contains("unwrap"));
     // (Verification depends on implementation)
     let _ = has_unwrap;
@@ -359,5 +366,9 @@ fn aspect_double_extension_detection() {
     fs::write(&file1, "fn main() {}").expect("write file");
 
     let report = assail::analyze(&file1).expect("analysis should succeed");
-    assert_eq!(report.language, Language::Rust, ".rs should be detected even with .tar prefix");
+    assert_eq!(
+        report.language,
+        Language::Rust,
+        ".rs should be detected even with .tar prefix"
+    );
 }

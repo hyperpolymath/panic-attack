@@ -47,13 +47,21 @@ mod tests {
     fn test_all_strategies_have_descriptions() {
         for strategy in AttackStrategy::all() {
             let desc = strategy.description();
-            assert!(!desc.is_empty(), "{:?} should have a non-empty description", strategy);
+            assert!(
+                !desc.is_empty(),
+                "{:?} should have a non-empty description",
+                strategy
+            );
         }
     }
 
     #[test]
     fn test_six_strategies() {
-        assert_eq!(AttackStrategy::all().len(), 6, "should have exactly 6 attack strategies");
+        assert_eq!(
+            AttackStrategy::all().len(),
+            6,
+            "should have exactly 6 attack strategies"
+        );
     }
 
     #[test]

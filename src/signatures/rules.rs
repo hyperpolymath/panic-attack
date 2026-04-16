@@ -180,11 +180,7 @@ mod tests {
     fn test_all_rules_have_body_predicates() {
         let ruleset = RuleSet::new();
         for rule in ruleset.rules() {
-            assert!(
-                !rule.body.is_empty(),
-                "Rule '{}' has empty body",
-                rule.name
-            );
+            assert!(!rule.body.is_empty(), "Rule '{}' has empty body", rule.name);
         }
     }
 }

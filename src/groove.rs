@@ -77,8 +77,14 @@ fn manifest(port: u16) -> String {
 pub fn run(port: u16) -> anyhow::Result<()> {
     let addr: SocketAddr = format!("127.0.0.1:{}", port).parse()?;
     let listener = TcpListener::bind(addr)?;
-    log::info!("[groove] panic-attack groove endpoint listening on {}", addr);
-    log::info!("[groove] Probe: curl http://localhost:{}/.well-known/groove", port);
+    log::info!(
+        "[groove] panic-attack groove endpoint listening on {}",
+        addr
+    );
+    log::info!(
+        "[groove] Probe: curl http://localhost:{}/.well-known/groove",
+        port
+    );
 
     for stream in listener.incoming() {
         match stream {
@@ -97,10 +103,7 @@ pub fn run(port: u16) -> anyhow::Result<()> {
 }
 
 /// Handle a single groove HTTP request.
-fn handle_request(
-    stream: &mut TcpStream,
-    port: u16,
-) -> anyhow::Result<()> {
+fn handle_request(stream: &mut TcpStream, port: u16) -> anyhow::Result<()> {
     let mut buf = vec![0u8; MAX_REQUEST_SIZE];
     let n = stream.read(&mut buf)?;
     let request = std::str::from_utf8(&buf[..n])?;

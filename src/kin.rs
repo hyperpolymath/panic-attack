@@ -73,7 +73,14 @@ pub fn write_heartbeat(metrics: RunMetrics, errors: Vec<String>) -> Result<()> {
         version: env!("CARGO_PKG_VERSION"),
         last_run: Some(metrics),
         errors,
-        capabilities: vec!["scan", "assail", "assemblyline", "sarif", "kanren", "attestation"],
+        capabilities: vec![
+            "scan",
+            "assail",
+            "assemblyline",
+            "sarif",
+            "kanren",
+            "attestation",
+        ],
     };
 
     let json = serde_json::to_string_pretty(&heartbeat)?;
@@ -94,7 +101,14 @@ pub fn write_startup_heartbeat() -> Result<()> {
         version: env!("CARGO_PKG_VERSION"),
         last_run: None,
         errors: vec![],
-        capabilities: vec!["scan", "assail", "assemblyline", "sarif", "kanren", "attestation"],
+        capabilities: vec![
+            "scan",
+            "assail",
+            "assemblyline",
+            "sarif",
+            "kanren",
+            "attestation",
+        ],
     };
 
     let json = serde_json::to_string_pretty(&heartbeat)?;
@@ -115,7 +129,14 @@ pub fn write_error_heartbeat(error_msg: String) -> Result<()> {
         version: env!("CARGO_PKG_VERSION"),
         last_run: None,
         errors: vec![error_msg],
-        capabilities: vec!["scan", "assail", "assemblyline", "sarif", "kanren", "attestation"],
+        capabilities: vec![
+            "scan",
+            "assail",
+            "assemblyline",
+            "sarif",
+            "kanren",
+            "attestation",
+        ],
     };
 
     let json = serde_json::to_string_pretty(&heartbeat)?;

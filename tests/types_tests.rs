@@ -167,9 +167,15 @@ fn language_deserializes_from_lowercase() {
 #[test]
 fn language_roundtrip_serde() {
     let languages = vec![
-        Language::Rust, Language::Elixir, Language::Gleam,
-        Language::ReScript, Language::Idris, Language::Zig,
-        Language::Haskell, Language::Nickel, Language::Ephapax,
+        Language::Rust,
+        Language::Elixir,
+        Language::Gleam,
+        Language::ReScript,
+        Language::Idris,
+        Language::Zig,
+        Language::Haskell,
+        Language::Nickel,
+        Language::Ephapax,
     ];
 
     for lang in languages {
@@ -205,7 +211,7 @@ fn assail_report_serializes_to_json() {
         dependency_graph: Default::default(),
         taint_matrix: Default::default(),
         migration_metrics: None,
-            suppressed_count: 0,
+        suppressed_count: 0,
     };
 
     let json = serde_json::to_string(&report).unwrap();

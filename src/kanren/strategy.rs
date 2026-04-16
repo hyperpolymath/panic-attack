@@ -86,7 +86,7 @@ pub fn prioritise_files(report: &AssailReport, strategy: SearchStrategy) -> Vec<
     let mut scored: Vec<FileRisk> = report
         .file_statistics
         .iter()
-        .map(|fs| score_file(fs))
+        .map(score_file)
         .collect();
 
     // Sorting policy is strategy-dependent, but all strategies operate on the same base score set.

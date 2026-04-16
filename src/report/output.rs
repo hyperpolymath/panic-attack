@@ -45,9 +45,7 @@ impl ReportOutputFormat {
             ReportOutputFormat::Nickel => Ok(format_report_as_nickel(report)),
             // SARIF output targets GitHub Security tab and other SARIF consumers.
             // Uses the assail_report (static findings) since SARIF is for static analysis results.
-            ReportOutputFormat::Sarif => {
-                crate::report::sarif::to_sarif_json(&report.assail_report)
-            }
+            ReportOutputFormat::Sarif => crate::report::sarif::to_sarif_json(&report.assail_report),
         }
     }
 }
