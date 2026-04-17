@@ -102,25 +102,33 @@ module MassPanic {
     //     restarted because no per-repo state is durably recorded.
     //     Best for scheduled nightly sweeps over stable corpora.
     //
-    //   "queue" (planned, v3.0.0 — see chapel/README.md §Scheduling modes)
-    //     Dynamic work-pull via a shared atomic counter + JSONL journal.
-    //     Each locale claims the next unclaimed repo, writes a "claim"
-    //     entry to a per-locale journal shard, scans, writes "done".
-    //     `--resume` reads all shards and skips completed repos.
+    //   "queue"
+    //     Dynamic work-pull via a shared atomic counter + per-locale
+    //     JSONL journal shards. Each locale claims the next unclaimed
+    //     repo, writes a "claim" entry, scans, writes "done" with the
+    //     full RepoResult payload.  `--resume` replays every shard's
+    //     "done" entries and skips those repos on the next run.
     //     ~5–15% slower than static on clean runs; survives mid-scan
-    //     crashes and Ctrl+C without losing completed work. Best for
-    //     long interactive sweeps where you might hit a locale timeout
-    //     or want to pause and resume.
+    //     crashes and Ctrl+C — only the in-flight repo per locale is
+    //     lost. Best for long interactive sweeps or any run where you
+    //     might pause and resume.
     //
-    // When the queue implementation lands, selecting it will NOT make
-    // the static mode slower — the existing static path stays exactly
-    // as it is. The flag is additive.
+    // Selecting queue does NOT make static slower — the static path
+    // stays exactly as it was before the queue implementation. The
+    // flag is additive.
     config const scheduler: string = "static";
 
     // Resume from a previous --scheduler=queue run by skipping any repo
     // already marked "done" in the journal. Only meaningful with
     // --scheduler=queue; ignored (with a warning) in static mode.
     config const resume: bool = false;
+
+    // Journal directory for queue-scheduler shards. Defaults to
+    // <outputDir>/journal. Each run writes one shard per locale:
+    //   locale-<id>-<runId>.jsonl
+    // Per-run filenames avoid requiring append-mode I/O and keep
+    // crash-interrupted shards isolated from the next run's writes.
+    config const journalDir: string = "";
 
     // ---------------------------------------------------------------------------
     // Entry point
@@ -155,36 +163,24 @@ module MassPanic {
         // Load fingerprint cache for incremental scanning
         var cache = loadFingerprintCacheFromFile(cacheFile);
 
-        // Partition repos across locales (round-robin)
-        var partitions: [0..#numLocales] list(string);
-        for (repo, idx) in zip(repos, 0..) {
-            const localeId = idx % numLocales;
-            partitions[localeId].pushBack(repo);
-        }
-
-        // Distributed scan — each locale processes its partition
-        var allResults: [0..#repos.size] RepoResult;
-        var resultIdx: atomic int;
-
-        coforall loc in Locales with (ref allResults, ref resultIdx) do on loc {
-            const myPartition = partitions[loc.id];
-            for repo in myPartition {
-                var result = scanRepo(repo, cache);
-                const slot = resultIdx.fetchAdd(1);
-                if slot < repos.size then
-                    allResults[slot] = result;
-            }
+        // Dispatch to the selected scheduler. Both paths populate the
+        // same `results` list and share the downstream pipeline
+        // (sort → filter → image → report → snapshot).
+        var results: list(RepoResult);
+        if scheduler == "queue" {
+            runQueueScan(repos, cache, results);
+        } else {
+            runStaticScan(repos, cache, results);
         }
 
         // Collect and sort results
-        const actualCount = resultIdx.read();
-        var results = allResults[0..#actualCount];
-        sort(results, comparator=new ResultComparator());
+        var resultsArr = results.toArray();
+        sort(resultsArr, comparator=new ResultComparator());
 
         // Filter to only repos with findings if --findingsOnly.
         // Always build via list to avoid Chapel array-shape mismatch on assignment.
         var filteredList: list(RepoResult);
-        for r in results {
+        for r in resultsArr {
             if !findingsOnly || r.weakPointCount > 0 || r.error != "" then
                 filteredList.pushBack(r);
         }
@@ -248,7 +244,7 @@ module MassPanic {
                 writeln("           fastest on clean runs; no --resume support.");
                 writeln("           A crash or Ctrl+C loses all progress.");
                 writeln("           Use --scheduler=queue for resumable runs ",
-                        "(when available, ~5-15% slower).");
+                        "(~5-15% slower).");
             }
             if resume {
                 writeln("mass-panic: WARNING: --resume ignored — ",
@@ -256,31 +252,302 @@ module MassPanic {
             }
             return true;
         } else if scheduler == "queue" {
-            // The queue scheduler is a planned v3.0.0 feature — the
-            // flag is already accepted here so the UX is stable when
-            // the implementation lands, and so any tooling pinning
-            // --scheduler=queue can be written against today's CLI.
-            //
-            // Bailing out with a clear actionable message is strictly
-            // better than silently falling back to static — an
-            // operator who asked for resumable runs must not get a
-            // non-resumable one without consent.
-            writeln("mass-panic: ERROR: --scheduler=queue is not yet implemented.");
-            writeln("           Design: atomic work-pull + JSONL journal ",
-                    "shards per locale, --resume skips any repo already");
-            writeln("           marked \"done\". See ",
-                    "chapel/README.md §Scheduling modes for the full spec ",
-                    "and ROADMAP.adoc for the targeted landing (v3.0.0).");
-            writeln("           Options while you wait: rerun after a crash ",
-                    "with --scheduler=static (no incremental state), or use");
-            writeln("           the Rust `panic-attack assemblyline` path ",
-                    "on a single machine where Ctrl+C is rarer.");
-            return false;
+            if !quiet {
+                writeln("mass-panic: scheduler=queue");
+                writeln("           resumable via --resume; ",
+                        "per-locale JSONL shards at ", resolvedJournalDir());
+                writeln("           ~5-15% slower than static on clean runs ",
+                        "(one atomic + one journal write per repo).");
+                writeln("           A crash or Ctrl+C loses only the ",
+                        "in-flight repo per locale — everything already");
+                writeln("           marked \"done\" is skipped on the next ",
+                        "invocation with --resume.");
+            }
+            return true;
         } else {
             writeln("mass-panic: ERROR: unknown --scheduler=", scheduler,
                     " — expected 'static' or 'queue'");
             return false;
         }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Static scheduler — round-robin partition + coforall over locales.
+    // This is the existing behaviour, factored out of main() so that
+    // main() can dispatch uniformly to either scheduler.
+    // ---------------------------------------------------------------------------
+
+    proc runStaticScan(ref repos: list(string), ref cache: FingerprintCache,
+                        ref results: list(RepoResult)) {
+        // Partition repos across locales (round-robin)
+        var partitions: [0..#numLocales] list(string);
+        for (repo, idx) in zip(repos, 0..) {
+            const localeId = idx % numLocales;
+            partitions[localeId].pushBack(repo);
+        }
+
+        // Distributed scan — each locale processes its partition
+        var allResults: [0..#repos.size] RepoResult;
+        var resultIdx: atomic int;
+
+        coforall loc in Locales with (ref allResults, ref resultIdx) do on loc {
+            const myPartition = partitions[loc.id];
+            for repo in myPartition {
+                var result = scanRepo(repo, cache);
+                const slot = resultIdx.fetchAdd(1);
+                if slot < repos.size then
+                    allResults[slot] = result;
+            }
+        }
+
+        const actualCount = resultIdx.read();
+        for i in 0..#actualCount {
+            results.pushBack(allResults[i]);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Queue scheduler — shared-atomic work-pull + per-locale JSONL journal.
+    //
+    // Design (see chapel/README.md §Scheduling modes for the full spec):
+    //
+    //   1. One atomic work index lives on Locale 0. Every locale's
+    //      inner loop calls `workIdx.fetchAdd(1)`; remote RMA cost
+    //      (~μs) is dwarfed by per-repo scan cost (~100ms to 60s).
+    //
+    //   2. Each locale opens its own JSONL shard file for this run at
+    //      `<journalDir>/locale-<id>-<runId>.jsonl`. Per-run filenames
+    //      avoid requiring append-mode semantics across Chapel versions
+    //      and keep a crashed run's shard isolated from the next run.
+    //
+    //   3. For each claimed repo, the locale writes a {"state":"claim"}
+    //      entry, flushes, runs the scan, writes {"state":"done",…}
+    //      with the full RepoResult payload, flushes. Both flushes are
+    //      deliberate: we want the done entry on disk before the next
+    //      fetchAdd so that a kill -9 between iterations does not lose
+    //      the completed scan's result.
+    //
+    //   4. `--resume` loads every `locale-*.jsonl` shard in journalDir,
+    //      extracts the latest "done" entry per repo path, reconstructs
+    //      RepoResult records, and skips those repos on the new run.
+    //      Previous results are merged back into `results` so the final
+    //      report covers all repos, not only freshly-scanned ones.
+    //
+    // Losing only the in-flight repo per locale (rather than the whole
+    // run) is the whole point of queue mode; the claim/done pairing is
+    // the key invariant — never write "done" before the scan actually
+    // completed, and never write "claim" without then writing "done" or
+    // leaving a clear gap for the next resume to re-claim.
+    // ---------------------------------------------------------------------------
+
+    proc runQueueScan(ref repos: list(string), ref cache: FingerprintCache,
+                       ref results: list(RepoResult)) {
+        const jdir = resolvedJournalDir();
+        try { mkdir(jdir, parents=true); } catch { }
+
+        // Load prior "done" entries if --resume. These are authoritative
+        // RepoResult records from previous runs; we replay them into
+        // `results` before scanning the remaining (pending) repos.
+        var prior: map(string, RepoResult);
+        if resume {
+            prior = loadJournalDone(jdir);
+            if !quiet then
+                writeln("mass-panic: --resume: ", prior.size,
+                        " repo(s) previously marked done; skipping");
+        }
+
+        // Partition: anything not in prior is pending. Emit prior first —
+        // sort order does not matter, the downstream sort handles it.
+        for k in prior.keys() {
+            results.pushBack(try! prior[k]);
+        }
+
+        var pendingList: list(string);
+        for r in repos {
+            if !prior.contains(r) then pendingList.pushBack(r);
+        }
+        const pendingCount = pendingList.size;
+
+        if !quiet then
+            writeln("mass-panic: queue scheduler: ", pendingCount,
+                    " pending / ", repos.size, " total across ",
+                    numLocales, " locales");
+
+        if pendingCount == 0 then return;
+
+        // Freeze pending repos into a shared-visible array. Strings
+        // live wherever the coordinator built them; remote reads from
+        // workers are one-shot and cheap compared to scan cost.
+        var pendingRepos: [0..#pendingCount] string;
+        for (r, i) in zip(pendingList, 0..) { pendingRepos[i] = r; }
+
+        // One-shot runId for this invocation, used in shard filenames
+        // to separate this run's output from previous runs' shards.
+        const runId = dateString();
+
+        // Shared atomic work counter. Lives on the coordinator (Locale 0)
+        // by default; workers issue remote fetchAdd.
+        var workIdx: atomic int;
+        workIdx.write(0);
+
+        // Fresh-results slab, one RepoResult per pending repo.
+        var freshResults: [0..#pendingCount] RepoResult;
+        var resultSlot: atomic int;
+
+        coforall loc in Locales
+            with (ref freshResults, ref resultSlot, ref workIdx) do on loc {
+
+            const shardPath = joinPath(
+                jdir,
+                "locale-" + loc.id:string + "-" + runId + ".jsonl"
+            );
+
+            try {
+                var shardFile = open(shardPath, ioMode.cw);
+                var journal = shardFile.writer(locking=true);
+
+                while true {
+                    const idx = workIdx.fetchAdd(1);
+                    if idx >= pendingCount then break;
+
+                    const repo = pendingRepos[idx];
+
+                    const claimTs = dateString();
+                    try { writeJournalClaim(journal, loc.id, repo, claimTs); }
+                    catch { }
+                    try { journal.flush(); } catch { }
+
+                    var result = scanRepo(repo, cache);
+
+                    const doneTs = dateString();
+                    try { writeJournalDone(journal, loc.id, repo, doneTs, result); }
+                    catch { }
+                    try { journal.flush(); } catch { }
+
+                    const slot = resultSlot.fetchAdd(1);
+                    if slot < pendingCount then
+                        freshResults[slot] = result;
+                }
+
+                try { journal.close(); } catch { }
+                try { shardFile.close(); } catch { }
+            } catch e: Error {
+                writeln("mass-panic: locale ", loc.id,
+                        " journal error: ", e.message());
+            }
+        }
+
+        const freshCount = resultSlot.read();
+        for i in 0..#freshCount {
+            results.pushBack(freshResults[i]);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Journal helpers (queue scheduler)
+    // ---------------------------------------------------------------------------
+
+    // Resolve the journal directory, defaulting to <outputDir>/journal
+    // when --journalDir was not explicitly set.
+    proc resolvedJournalDir(): string {
+        if journalDir != "" then return journalDir;
+        return joinPath(outputDir, "journal");
+    }
+
+    // JSON-escape a string for embedding in a journal entry. Only
+    // backslash and double-quote need escaping for our inputs (repo
+    // paths, fingerprints, verdict/error strings from panic-attack
+    // output — control chars are rare enough that a round-trip is
+    // still readable if they appear; the loader uses a liberal parser).
+    proc journalEscape(s: string): string {
+        var out: string;
+        for ch in s {
+            if ch == "\\" then out += "\\\\";
+            else if ch == "\"" then out += "\\\"";
+            else out += ch;
+        }
+        return out;
+    }
+
+    // Write a {"state":"claim",…} journal entry on a single JSONL line.
+    proc writeJournalClaim(writer, localeId: int, repo: string, ts: string)
+        throws {
+        writer.writeln("{\"state\":\"claim\",\"locale\":", localeId,
+                       ",\"repo\":\"", journalEscape(repo),
+                       "\",\"ts\":\"", ts, "\"}");
+    }
+
+    // Write a {"state":"done",…} journal entry carrying the full
+    // RepoResult payload. Category list is omitted — imaging heat
+    // maps are regenerated from the scan output itself, not from the
+    // journal; the journal exists to say "this repo is complete, here
+    // are its counts" for resumed-run aggregation.
+    proc writeJournalDone(writer, localeId: int, repo: string, ts: string,
+                          const ref result: RepoResult) throws {
+        writer.writeln("{\"state\":\"done\",\"locale\":", localeId,
+                       ",\"repo\":\"", journalEscape(repo),
+                       "\",\"ts\":\"", ts,
+                       "\",\"fingerprint\":\"", journalEscape(result.fingerprint),
+                       "\",\"weak_point_count\":", result.weakPointCount,
+                       ",\"critical_count\":", result.criticalCount,
+                       ",\"high_count\":", result.highCount,
+                       ",\"total_files\":", result.totalFiles,
+                       ",\"total_lines\":", result.totalLines,
+                       ",\"crashes\":", result.crashes,
+                       ",\"skipped\":",
+                           if result.skipped then "true" else "false",
+                       ",\"verdict\":\"", journalEscape(result.verdict),
+                       "\",\"error\":\"", journalEscape(result.error), "\"}");
+    }
+
+    // Replay every `locale-*.jsonl` shard in `dir`, extract all
+    // "done" entries, and return the latest-wins map from repoPath
+    // to reconstructed RepoResult. A corrupt or half-written last
+    // line in one shard (e.g. kill -9 mid-write) is skipped without
+    // failing the whole load — the parser treats non-matching lines
+    // as silent no-ops.
+    proc loadJournalDone(dir: string): map(string, RepoResult) {
+        var done: map(string, RepoResult);
+        if !safeIsDir(dir) then return done;
+
+        for entry in listDir(dir, dirs=false, files=true) {
+            if !entry.startsWith("locale-") || !entry.endsWith(".jsonl") then
+                continue;
+            const shardPath = joinPath(dir, entry);
+            try {
+                var f = open(shardPath, ioMode.r);
+                var reader = f.reader(locking=false);
+                var line: string;
+                while reader.readLine(line, stripNewline=true) {
+                    const trimmed = line.strip();
+                    if trimmed == "" then continue;
+                    // Only interested in done entries; claims are just
+                    // in-flight markers and don't carry result fields.
+                    if trimmed.find("\"state\":\"done\"") == -1 then continue;
+
+                    var r: RepoResult;
+                    r.repoPath        = extractQuotedString(trimmed, "\"repo\":");
+                    if r.repoPath == "" then continue;
+                    r.repoName        = basename(r.repoPath);
+                    r.fingerprint     = extractQuotedString(trimmed, "\"fingerprint\":");
+                    r.verdict         = extractQuotedString(trimmed, "\"verdict\":");
+                    r.error           = extractQuotedString(trimmed, "\"error\":");
+                    r.weakPointCount  = extractInt(trimmed, "\"weak_point_count\":");
+                    r.criticalCount   = extractInt(trimmed, "\"critical_count\":");
+                    r.highCount       = extractInt(trimmed, "\"high_count\":");
+                    r.totalFiles      = extractInt(trimmed, "\"total_files\":");
+                    r.totalLines      = extractInt(trimmed, "\"total_lines\":");
+                    r.crashes         = extractInt(trimmed, "\"crashes\":");
+                    r.skipped         = trimmed.find("\"skipped\":true") != -1;
+                    // Latest wins (re-scan after partial failure overrides prior).
+                    done[r.repoPath] = r;
+                }
+            } catch {
+                writeln("mass-panic: WARNING: could not read journal shard ",
+                        shardPath);
+            }
+        }
+        return done;
     }
 
     // ---------------------------------------------------------------------------

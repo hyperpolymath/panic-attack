@@ -69,8 +69,9 @@ chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o 
 | `--repoDirectory` | | Directory to scan for .git repos |
 | `--panicAttackBin` | `panic-attack` | Path to panic-attack binary |
 | `--mode` | `assail` | Operation mode (see above) |
-| `--scheduler` | `static` | `static` (fast, not resumable) or `queue` (resumable, ~5–15% slower — v3.0.0) |
+| `--scheduler` | `static` | `static` (fast, not resumable) or `queue` (resumable, ~5–15% slower) |
 | `--resume` | `false` | Only with `--scheduler=queue`: skip repos already marked "done" in the journal |
+| `--journalDir` | `<outputDir>/journal` | Directory for queue-scheduler JSONL shards |
 | `--incremental` | `true` | Skip unchanged repos via BLAKE3 |
 | `--cacheFile` | | Fingerprint cache file path |
 | `--outputDir` | `mass-panic-results` | Output directory |
@@ -108,16 +109,20 @@ release has done.
 - **Right for:** scheduled nightly sweeps over a stable corpus,
   where the run finishes before anyone touches the terminal.
 
-### `--scheduler=queue` — planned, v3.0.0
+### `--scheduler=queue`
 
 Dynamic work-pull via a shared atomic counter plus a per-locale
 JSONL journal shard. Each locale claims the next unclaimed repo
 from a shared counter, writes a `{"state":"claim", …}` entry to
-its shard, runs the scan, writes `{"state":"done", …}`.
+its shard, runs the scan, writes `{"state":"done", …}` with the
+full RepoResult payload (weak-point count, severities, fingerprint,
+verdict, error).
 
-`--resume` reads every shard, builds the set of fingerprints
-already marked `done`, and skips them — so an interrupted run
-picks up where it left off.
+`--resume` reads every shard in `<journalDir>`, extracts the latest
+`done` entry per repo path, reconstructs the RepoResult records,
+and skips those repos on the new run — so an interrupted run picks
+up where it left off and the final report covers both the
+previously-completed repos and the freshly-scanned ones.
 
 - **Resumable.** Ctrl+C at t=3h drops ~1 repo of work; the next
   invocation with `--resume` reuses everything completed so far.
@@ -143,13 +148,18 @@ need.
 
 #### Current status
 
-`--scheduler=static` is implemented and is the existing behaviour.
-`--scheduler=queue` exits with an actionable error message pointing
-at this section and `ROADMAP.adoc` (targeted v3.0.0). The flag is
-already accepted today so that (a) any tooling that pins `--scheduler=queue`
-has a stable CLI contract to write against, and (b) the bail-out is
-noisy rather than silent — an operator who asked for resumable
-runs must not get a non-resumable one without consent.
+Both schedulers are implemented. `--scheduler=static` is the default
+and preserves the previous behaviour exactly — selecting `queue` does
+not make static slower. `--scheduler=queue` writes per-run shards
+(`locale-<id>-<runId>.jsonl`) so a crashed run's partial shard stays
+isolated from the next run's writes; `--resume` replays every shard
+in the journal directory and merges prior results with fresh ones.
+
+The atomic work counter lives on the coordinator (Locale 0); every
+claim is one remote fetchAdd (microseconds) against a scan cost of
+100ms–60s, so the dispatch overhead is well under 1% on any real
+workload. The ~5–15% figure above accounts for the per-repo journal
+write + flush, not the atomic itself.
 
 ### Startup banner
 
@@ -160,18 +170,17 @@ repo discovery:
 mass-panic: scheduler=static (default)
             fastest on clean runs; no --resume support.
             A crash or Ctrl+C loses all progress.
-            Use --scheduler=queue for resumable runs (when available, ~5-15% slower).
+            Use --scheduler=queue for resumable runs (~5-15% slower).
 ```
 
-Or, if you attempt queue mode today:
+Or for queue mode:
 
 ```
-mass-panic: ERROR: --scheduler=queue is not yet implemented.
-           Design: atomic work-pull + JSONL journal shards per locale, --resume skips any repo already
-           marked "done". See chapel/README.md §Scheduling modes for the full spec and ROADMAP.adoc for
-           the targeted landing (v3.0.0).
-           Options while you wait: rerun after a crash with --scheduler=static (no incremental state), or use
-           the Rust `panic-attack assemblyline` path on a single machine where Ctrl+C is rarer.
+mass-panic: scheduler=queue
+           resumable via --resume; per-locale JSONL shards at mass-panic-results/journal
+           ~5-15% slower than static on clean runs (one atomic + one journal write per repo).
+           A crash or Ctrl+C loses only the in-flight repo per locale — everything already
+           marked "done" is skipped on the next invocation with --resume.
 ```
 
 The banner is suppressed under `--quiet`.
