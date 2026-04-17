@@ -516,7 +516,7 @@ impl Analyzer {
                 | Language::Ephapax
                 | Language::BetLang
                 | Language::ErrorLang
-                | Language::VQL
+                | Language::VCL
                 | Language::FBQL => {
                     self.analyze_nextgen_dsl(
                         &content,
@@ -781,12 +781,21 @@ impl Analyzer {
             || file_path.contains("_mock.") // Mock files
             || file_path.contains("_stub."); // Stub files
         
-        // Strip string literal contents before counting so that detection-tool
-        // source files (which embed patterns as string literals) do not trigger
-        // their own rules.  Stats that measure code structure rather than
-        // dangerous patterns (allocation sites, I/O, threading) still use the
-        // raw content because those patterns are safe to count in any context.
-        let code_only = Self::strip_string_literals_rs(content);
+        // Strip string literal contents AND comments before counting so that
+        // detection-tool source files (which embed patterns as string literals)
+        // do not trigger their own rules, and so that rule names quoted in
+        // `// ...` or `/* ... */` doc comments — meta-tests, audit prose,
+        // architectural headers — do not falsely fire.  See
+        // `007-lang/audits/audit-ffi-unsafe.md` §3 for the motivating case
+        // (a meta-test whose stated purpose is "the absence of `unsafe` in
+        // this file IS the assertion" was flagged as containing 1 unsafe
+        // block because comments discussed the word "unsafe").
+        //
+        // Stats that measure code structure rather than dangerous patterns
+        // (allocation sites, I/O, threading) still use the raw content
+        // because those patterns are safe to count in any context.
+        let without_strings = Self::strip_string_literals_rs(content);
+        let code_only = strip_proof_comments(&without_strings, "//", Some(("/*", "*/")));
 
         stats.unsafe_blocks += code_only.matches("unsafe {").count();
         stats.unsafe_blocks += code_only.matches("unsafe fn").count();
@@ -3296,10 +3305,24 @@ impl Analyzer {
             }
         }
         
+        // Strip string literals and // line comments before counting built-in
+        // unsafe-ops, so that mentions of `@cImport`, `@ptrCast`, `@intToPtr`,
+        // `@ptrToInt` in doc comments or prose (file headers, architectural
+        // notes, build-script commentary) do not trigger false-positive
+        // findings. See `007-lang/audits/audit-ffi-unsafe.md` §4 for the
+        // motivating case (a build.zig whose only `@cImport` occurrences
+        // were in comment text describing the file's role was flagged as
+        // "2 C interop imports"). Zig has no block comments, so only `//`
+        // line comments need stripping.
+        let code_only_zig = {
+            let without_strings = strip_simple_double_quoted_strings(content);
+            strip_proof_comments(&without_strings, "//", None)
+        };
+
         // Unsafe pointer operations (excluding those in test blocks and test-only helpers)
-        let ptr_ops = content.matches("@intToPtr").count()
-            + content.matches("@ptrToInt").count()
-            + content.matches("@ptrCast").count()
+        let ptr_ops = code_only_zig.matches("@intToPtr").count()
+            + code_only_zig.matches("@ptrToInt").count()
+            + code_only_zig.matches("@ptrCast").count()
             - test_ptr_ops
             - helper_ptr_ops;
         stats.unsafe_blocks += ptr_ops;
@@ -3318,7 +3341,7 @@ impl Analyzer {
         }
 
         // C interop (excluding those in test blocks and test-only helpers)
-        let c_import = content.matches("@cImport").count() - test_c_imports - helper_c_imports;
+        let c_import = code_only_zig.matches("@cImport").count() - test_c_imports - helper_c_imports;
         stats.unsafe_blocks += c_import;
 
         if c_import > 0 {
@@ -4874,6 +4897,43 @@ fn count_line_pattern(content: &str, pattern: &str) -> usize {
 /// nested comments, or escapes. That is acceptable here because we only need
 /// the comment regions removed; mis-handling a string literal that happens to
 /// contain `believe_me` would still be a true positive.
+/// Strip `"..."` double-quoted string literals, honouring `\` escape
+/// sequences. Preserves the opening and closing `"` so that later passes can
+/// still see the delimiters, but replaces the contents with the empty string
+/// (i.e. `"foo"` becomes `""`). Used by analyzers whose target language has
+/// simple C-style string syntax (Zig, C, JavaScript, most brace languages).
+/// For Rust's richer literal syntax (raw strings, byte strings, char
+/// literals, lifetimes) use [`Analyzer::strip_string_literals_rs`] instead.
+fn strip_simple_double_quoted_strings(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    let chars: Vec<char> = content.chars().collect();
+    let n = chars.len();
+    let mut i = 0;
+    while i < n {
+        if chars[i] == '"' {
+            out.push('"');
+            i += 1;
+            while i < n {
+                if chars[i] == '\\' && i + 1 < n {
+                    i += 2; // skip escape sequence
+                } else if chars[i] == '"' {
+                    break;
+                } else {
+                    i += 1; // skip string content
+                }
+            }
+            if i < n {
+                out.push('"');
+                i += 1;
+            }
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &str)>) -> String {
     // First strip block comments greedily, left-to-right.
     let mut without_blocks = String::with_capacity(content.len());
