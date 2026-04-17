@@ -13,6 +13,8 @@
 ||| produces correct results.
 module PanicAttack.ABI.ClassificationSoundness
 
+import Data.Nat
+
 %default total
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -122,17 +124,26 @@ sevTotal Critical Critical = Left SevRefl
 -- Monotonicity of numeric encoding
 -- ═══════════════════════════════════════════════════════════════════════
 
+-- Reflexivity of LTE on Nat. Idris2 0.8.0's Data.Nat does not expose
+-- a top-level `lteRefl`; we construct it by structural recursion.
+lteRefl : (n : Nat) -> LTE n n
+lteRefl Z     = LTEZero
+lteRefl (S k) = LTESucc (lteRefl k)
+
 ||| The numeric encoding preserves ordering:
 ||| if a <= b then severityToNat a <= severityToNat b.
 public export
-encodingMonotone : SevLTE a b -> LTE (severityToNat a) (severityToNat b)
-encodingMonotone SevRefl  = lteRefl
-encodingMonotone LowMed   = LTESucc LTEZero
-encodingMonotone LowHigh  = LTESucc LTEZero
-encodingMonotone LowCrit  = LTESucc LTEZero
-encodingMonotone MedHigh  = LTESucc (LTESucc LTEZero)
-encodingMonotone MedCrit  = LTESucc (LTESucc LTEZero)
-encodingMonotone HighCrit = LTESucc (LTESucc (LTESucc LTEZero))
+encodingMonotone : {a : Severity} -> {b : Severity} ->
+                   SevLTE a b -> LTE (severityToNat a) (severityToNat b)
+encodingMonotone {a} SevRefl = lteRefl (severityToNat a)
+-- severityToNat: Low=0, Medium=1, High=2, Critical=3
+-- LTEZero : LTE 0 n ; LTESucc : LTE m n -> LTE (S m) (S n)
+encodingMonotone LowMed   = LTEZero                           -- LTE 0 1
+encodingMonotone LowHigh  = LTEZero                           -- LTE 0 2
+encodingMonotone LowCrit  = LTEZero                           -- LTE 0 3
+encodingMonotone MedHigh  = LTESucc LTEZero                   -- LTE 1 2
+encodingMonotone MedCrit  = LTESucc LTEZero                   -- LTE 1 3
+encodingMonotone HighCrit = LTESucc (LTESucc LTEZero)         -- LTE 2 3
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- Maximum (aggregation) soundness

@@ -47,7 +47,7 @@ data Lang
   -- Nextgen custom DSLs
   | WokeLang | Eclexia | MyLang | JuliaTheViper | Oblibeny
   | Anvomidav | AffineScript | Ephapax | BetLang | ErrorLang
-  | VQL | FBQL
+  | VCL | FBQL
   -- Catch-all
   | Unknown
 
@@ -116,7 +116,7 @@ analyzerFor AffineScript  = SpecificAnalyzer
 analyzerFor Ephapax       = SpecificAnalyzer
 analyzerFor BetLang       = SpecificAnalyzer
 analyzerFor ErrorLang     = SpecificAnalyzer
-analyzerFor VQL           = SpecificAnalyzer
+analyzerFor VCL           = SpecificAnalyzer
 analyzerFor FBQL          = SpecificAnalyzer
 analyzerFor Unknown       = GenericAnalyzer
 
@@ -170,27 +170,27 @@ data WPCategory
   | UncheckedError
   | InfiniteRecursion
   | UnsafeTypeCoercion
-  ||| Formal verification drift: banned proof escape hatches or mirror files
-  ||| substituting assertions for proofs. Detected in .idr, .lean, .agda,
-  ||| .thy, .v, and Julia mirror files.
+  -- PA021 ProofDrift: banned proof escape hatches or mirror files
+  -- substituting assertions for proofs. Detected in .idr/.lean/.agda/.thy/.v
+  -- and Julia mirror files.
   | ProofDrift
-  ||| Cryptographic primitive misuse: weak hash (MD5/SHA-1) in security
-  ||| context, constant-time comparison violation (== on secret values),
-  ||| key/nonce reuse. Detected in Rust, Python, JavaScript, Go, Elixir.
+  -- PA022 CryptoMisuse: weak hash (MD5/SHA-1) in security context,
+  -- constant-time comparison violations, key/nonce reuse.
+  -- Detected in Rust, Python, JavaScript, Go, Elixir.
   | CryptoMisuse
-  ||| Supply chain integrity: unpinned deps, absent lock files, unverified
-  ||| manifests. Cargo git deps without rev=, absent Cargo.lock, Julia
-  ||| Manifest.toml without hash entries, flake.nix without narHash,
-  ||| deno.json unpinned specifiers. Detected in Rust, Julia, Nix, JavaScript.
+  -- PA023 SupplyChain: unpinned deps, absent lock files, unverified
+  -- manifests. Cargo git deps without rev=, absent Cargo.lock, Julia
+  -- Manifest.toml without hash, flake.nix without narHash, deno.json
+  -- unpinned specifiers. Detected in Rust, Julia, Nix, JavaScript.
   | SupplyChain
-  ||| Structured-data parsing boundary: unchecked CBOR/MessagePack
-  ||| deserialization (serde_cbor, ciborium, rmp_serde in Rust), JSON.parse
-  ||| without try-catch (JavaScript), JSON3.read without error handling (Julia).
+  -- PA024 InputBoundary: unchecked CBOR/MessagePack deserialization
+  -- (serde_cbor, ciborium, rmp_serde in Rust), JSON.parse without
+  -- try/catch (JavaScript), JSON3.read without error handling (Julia).
   | InputBoundary
-  ||| Mutation and chaos coverage gap: test suites with no mutation-test
-  ||| tooling (no cargo-mutants config in Rust), no property-based testing
-  ||| in Elixir (ExUnitProperties/StreamData absent), or Julia @testset blocks
-  ||| with only type-check assertions and no value diversity.
+  -- PA025 MutationGap: test suites with no mutation-test tooling
+  -- (no cargo-mutants in Rust), no property-based testing in Elixir
+  -- (ExUnitProperties/StreamData absent), or Julia @testset blocks
+  -- with only type-check assertions and no value diversity.
   | MutationGap
 
 ||| Witness that a detection rule exists for a weak point category.
