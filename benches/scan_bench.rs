@@ -83,12 +83,13 @@ fn bench_self_scan(c: &mut Criterion) {
 
 /// Benchmark taint analysis engine
 fn bench_taint_analysis(c: &mut Criterion) {
+    use panic_attack::kanren::core::FactDB;
     use panic_attack::kanren::taint::TaintAnalyzer;
 
-    c.bench_function("taint_sources_iteration", |b| {
-        let analyzer = TaintAnalyzer::new();
+    c.bench_function("taint_query_flows_empty", |b| {
+        let db = FactDB::new();
         b.iter(|| {
-            let _sources = black_box(analyzer.sources());
+            let _flows = black_box(TaintAnalyzer::query_flows(&db));
         })
     });
 }
@@ -122,6 +123,7 @@ fn bench_location_extraction(c: &mut Criterion) {
             line: None,
             description: "test".to_string(),
             recommended_attack: vec![],
+            suppressed: false,
         };
         100
     ];
@@ -140,18 +142,19 @@ fn bench_statistics_calculation(c: &mut Criterion) {
     c.bench_function("stats_field_access", |b| {
         let stats = panic_attack::types::ProgramStatistics {
             total_lines: 10000,
-            unwrap_calls: 50,
-            expect_calls: 20,
             unsafe_blocks: 5,
+            panic_sites: 0,
+            unwrap_calls: 50,
+            allocation_sites: 12,
+            io_operations: 4,
             threading_constructs: 3,
-            panic_paths: 0,
         };
 
         b.iter(|| {
             let _ = black_box(stats.total_lines);
             let _ = black_box(stats.unwrap_calls);
-            let _ = black_box(stats.expect_calls);
             let _ = black_box(stats.unsafe_blocks);
+            let _ = black_box(stats.panic_sites);
         })
     });
 }
