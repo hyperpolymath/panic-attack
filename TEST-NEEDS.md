@@ -27,11 +27,11 @@
 - Key findings: 5 weak points in core shape IR library. Memory and Disk attack axes recommended. Clean crate with minimal attack surface.
 
 **3. burble (Elixir/ReScript/Idris2 — WebRTC comms)**
-- Command: `panic-attack assail /var/mnt/eclipse/repos/burble/src`
+- Command: `panic-attack assail /var/mnt/eclipse/repos/developer-ecosystem/burble/src`
 - Key findings: 2 weak points detected. Minimal attack surface in the Idris2 ABI layer. Memory and Cpu axes only.
 
 **4. stapeln (Idris2/Zig — container orchestration)**
-- Command: `panic-attack assail /var/mnt/eclipse/repos/stapeln/ffi/zig/src`
+- Command: `panic-attack assail /var/mnt/eclipse/repos/fleet-ecosystem/stapeln/ffi/zig/src`
 - Key findings: Zero weak points in Zig FFI layer. Only Cpu axis recommended. Demonstrates Zig's safety properties.
 
 **5. boj-server (ReScript/Deno/Idris2 — MCP server)**
@@ -39,7 +39,7 @@
 - Key findings: 5 weak points in Idris2 ABI layer (SafeHTTP, SafeCORS, etc.). Cpu and Memory axes recommended.
 
 **6. standards (Rust — k9-svc LSP)**
-- Command: `panic-attack assail /var/mnt/eclipse/repos/standards/k9-svc/lsp/src`
+- Command: `panic-attack assail /var/mnt/eclipse/repos/developer-ecosystem/standards/k9-svc/lsp/src`
 - Key findings: 1 weak point in LSP server. Disk, Cpu, Memory axes recommended. Very clean codebase.
 
 ## Current State
