@@ -41,7 +41,7 @@
     (rule "Author attribution MUST be correct"
       (always "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>")
       (never "hyperpolymath as author name")
-      (never "j.d.a.jewell@open.ac.uk"))
+      (never "jonathan.jewell@gmail.com"))
 
     (rule "Weak points MUST have file locations"
       (never "location: None")
