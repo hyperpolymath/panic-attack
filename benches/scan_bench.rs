@@ -81,6 +81,84 @@ fn bench_self_scan(c: &mut Criterion) {
     });
 }
 
+/// Benchmark the UnboundedAllocation heuristic end-to-end on a single
+/// file. After the substring -> word-boundary regex refactor (Task #25),
+/// this gives a per-file analysis number for tight dev loops — smaller
+/// than the full `assail_self_scan` which walks all of src/.
+///
+/// Uses `tempfile` to write a synthetic .rs file and analyse its
+/// parent directory; the per-iter overhead includes one stat() and
+/// one file open, which is the realistic cost path.
+fn bench_unbounded_allocation_detector(c: &mut Criterion) {
+    use std::io::Write;
+
+    // Synthetic source that exercises the detector in both directions:
+    // contains tokio's `unbounded_channel` (must NOT fire — word-boundary),
+    // the detector's own `has_unbounded_allocations` identifier
+    // (must NOT fire — trailing `_`), and a bounded `.take(LIMIT)` read.
+    let clean_rust_source = r#"
+use std::io::Read;
+use tokio::sync::mpsc;
+
+const READ_LIMIT: u64 = 64 * 1024 * 1024;
+
+pub fn make_channel() -> mpsc::UnboundedSender<u8> {
+    let (tx, _) = mpsc::unbounded_channel();
+    tx
+}
+
+pub fn load(path: &str) -> std::io::Result<String> {
+    let mut buf = String::new();
+    std::fs::File::open(path)?.take(READ_LIMIT).read_to_string(&mut buf)?;
+    Ok(buf)
+}
+
+pub fn analyze(body: &str) -> bool {
+    let has_unbounded_allocations = body.contains("x");
+    let unbounded_vec_patterns = body.len();
+    has_unbounded_allocations && unbounded_vec_patterns > 0
+}
+"#;
+
+    let clean_dir = tempfile::tempdir().expect("tempdir");
+    let clean_file = clean_dir.path().join("clean.rs");
+    std::fs::File::create(&clean_file)
+        .unwrap()
+        .write_all(clean_rust_source.as_bytes())
+        .unwrap();
+
+    c.bench_function("unbounded_detector_clean_file", |b| {
+        b.iter(|| {
+            let _ = black_box(panic_attack::assail::analyze(clean_dir.path()));
+        })
+    });
+
+    // Dirty source: bare `unbounded()` fn + unbounded fs::read_to_string.
+    // Detector SHOULD fire. Positive-signal path.
+    let dirty_rust_source = r#"
+pub fn unbounded() -> Vec<u8> {
+    Vec::new()
+}
+
+pub fn slurp(path: &str) -> std::io::Result<String> {
+    std::fs::read_to_string(path)
+}
+"#;
+
+    let dirty_dir = tempfile::tempdir().expect("tempdir");
+    let dirty_file = dirty_dir.path().join("dirty.rs");
+    std::fs::File::create(&dirty_file)
+        .unwrap()
+        .write_all(dirty_rust_source.as_bytes())
+        .unwrap();
+
+    c.bench_function("unbounded_detector_dirty_file", |b| {
+        b.iter(|| {
+            let _ = black_box(panic_attack::assail::analyze(dirty_dir.path()));
+        })
+    });
+}
+
 /// Benchmark taint analysis engine
 fn bench_taint_analysis(c: &mut Criterion) {
     use panic_attack::kanren::core::FactDB;
@@ -164,6 +242,7 @@ criterion_group!(
     bench_language_detect,
     bench_language_family,
     bench_self_scan,
+    bench_unbounded_allocation_detector,
     bench_taint_analysis,
     bench_rule_evaluation,
     bench_location_extraction,
