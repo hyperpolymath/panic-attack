@@ -185,6 +185,7 @@ but panic-attack flags these as generic UnsafeCode findings.
 * [ ] Per-node temporal diff: load full SystemImage JSON for per-repo health breakdown
 * [ ] Multi-machine orchestration: gasnet/ofi multi-locale Chapel run across cluster nodes
 * [ ] VeriSimDB HTTP push from Chapel metalayer (currently file-only)
+* [ ] `--scheduler=queue` — resumable dynamic work-pull scheduler for mass-panic. Atomic fetch-add work index shared across locales; per-locale JSONL journal shards recording `{claim, done}` state per repo; `--resume` skips any repo already marked `done`. ~5–15% slower than static on clean runs, survives mid-sweep crashes and Ctrl+C. Flag and both-directions banner already wired (2026-04-17); queue path targeted for v3.0.0. See `chapel/README.md` §Scheduling modes for the full spec.
 
 == v3.1.0 -- Ecosystem Integration
 

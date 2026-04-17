@@ -94,6 +94,34 @@ module MassPanic {
     // PanLL export alongside raw output
     config const panllExport: bool = false;
 
+    // Scheduler — controls how work is distributed across locales.
+    //
+    //   "static" (default)
+    //     Round-robin partition + `coforall` over Locales. Fast, clean,
+    //     but a mid-scan crash loses progress — the whole run must be
+    //     restarted because no per-repo state is durably recorded.
+    //     Best for scheduled nightly sweeps over stable corpora.
+    //
+    //   "queue" (planned, v3.0.0 — see chapel/README.md §Scheduling modes)
+    //     Dynamic work-pull via a shared atomic counter + JSONL journal.
+    //     Each locale claims the next unclaimed repo, writes a "claim"
+    //     entry to a per-locale journal shard, scans, writes "done".
+    //     `--resume` reads all shards and skips completed repos.
+    //     ~5–15% slower than static on clean runs; survives mid-scan
+    //     crashes and Ctrl+C without losing completed work. Best for
+    //     long interactive sweeps where you might hit a locale timeout
+    //     or want to pause and resume.
+    //
+    // When the queue implementation lands, selecting it will NOT make
+    // the static mode slower — the existing static path stays exactly
+    // as it is. The flag is additive.
+    config const scheduler: string = "static";
+
+    // Resume from a previous --scheduler=queue run by skipping any repo
+    // already marked "done" in the journal. Only meaningful with
+    // --scheduler=queue; ignored (with a warning) in static mode.
+    config const resume: bool = false;
+
     // ---------------------------------------------------------------------------
     // Entry point
     // ---------------------------------------------------------------------------
@@ -104,6 +132,13 @@ module MassPanic {
             runDiff();
             return;
         }
+
+        // Validate --scheduler and print the running-mode banner. Both
+        // modes get an explicit banner (not only the non-default one)
+        // because the tradeoff is real in both directions — static is
+        // fast but not resumable; queue is resumable but slower. See
+        // chapel/README.md §Scheduling modes for the full discussion.
+        if !selectAndAnnounceScheduler() then return;
 
         const startTime = timeSinceEpoch().totalSeconds();
 
@@ -179,6 +214,73 @@ module MassPanic {
 
         if !quiet then
             printSummary(report, image);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Scheduler selection — validate --scheduler and print the
+    // running-mode banner in both directions. See chapel/README.md
+    // §Scheduling modes for the full tradeoff discussion.
+    //
+    // Why both modes get a banner (not only the non-default one):
+    //
+    //   The static default is fast and ergonomically invisible, but
+    //   its non-resumability is a real correctness property of the run
+    //   — operators need to *know* that a Ctrl+C at t=3h is wasted
+    //   work. Silently accepting the default is how people lose
+    //   overnight sweeps and don't realise until morning.
+    //
+    //   The queue mode pays a ~5–15% throughput tax for resilience,
+    //   so we tell operators running that path that they are trading
+    //   clean-run speed for crash recovery. If their run completes
+    //   cleanly they might prefer static next time.
+    //
+    // The banner is suppressed under --quiet, along with everything
+    // else.
+    // ---------------------------------------------------------------------------
+
+    // Returns true if mass-panic should proceed with scanning, false
+    // if it should bail cleanly. Writing the banner/error messages is
+    // the side effect.
+    proc selectAndAnnounceScheduler(): bool {
+        if scheduler == "static" {
+            if !quiet {
+                writeln("mass-panic: scheduler=static (default)");
+                writeln("           fastest on clean runs; no --resume support.");
+                writeln("           A crash or Ctrl+C loses all progress.");
+                writeln("           Use --scheduler=queue for resumable runs ",
+                        "(when available, ~5-15% slower).");
+            }
+            if resume {
+                writeln("mass-panic: WARNING: --resume ignored — ",
+                        "requires --scheduler=queue");
+            }
+            return true;
+        } else if scheduler == "queue" {
+            // The queue scheduler is a planned v3.0.0 feature — the
+            // flag is already accepted here so the UX is stable when
+            // the implementation lands, and so any tooling pinning
+            // --scheduler=queue can be written against today's CLI.
+            //
+            // Bailing out with a clear actionable message is strictly
+            // better than silently falling back to static — an
+            // operator who asked for resumable runs must not get a
+            // non-resumable one without consent.
+            writeln("mass-panic: ERROR: --scheduler=queue is not yet implemented.");
+            writeln("           Design: atomic work-pull + JSONL journal ",
+                    "shards per locale, --resume skips any repo already");
+            writeln("           marked \"done\". See ",
+                    "chapel/README.md §Scheduling modes for the full spec ",
+                    "and ROADMAP.adoc for the targeted landing (v3.0.0).");
+            writeln("           Options while you wait: rerun after a crash ",
+                    "with --scheduler=static (no incremental state), or use");
+            writeln("           the Rust `panic-attack assemblyline` path ",
+                    "on a single machine where Ctrl+C is rarer.");
+            return false;
+        } else {
+            writeln("mass-panic: ERROR: unknown --scheduler=", scheduler,
+                    " — expected 'static' or 'queue'");
+            return false;
+        }
     }
 
     // ---------------------------------------------------------------------------
