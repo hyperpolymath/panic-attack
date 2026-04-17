@@ -83,7 +83,7 @@ fn language_detect_nextgen_dsls() {
     assert_eq!(Language::detect("linear.eph"), Language::Ephapax);
     assert_eq!(Language::detect("game.bet"), Language::BetLang);
     assert_eq!(Language::detect("script.woke"), Language::WokeLang);
-    assert_eq!(Language::detect("query.vql"), Language::VQL);
+    assert_eq!(Language::detect("query.vcl"), Language::VCL);
     assert_eq!(Language::detect("types.aff"), Language::AffineScript);
 }
 

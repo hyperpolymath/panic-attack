@@ -86,7 +86,7 @@ pub enum Language {
     BetLang,
     ErrorLang,
     #[allow(non_camel_case_types)]
-    VQL,
+    VCL,
     #[allow(non_camel_case_types)]
     FBQL,
 
@@ -171,7 +171,7 @@ impl Language {
             "ephapax" | "eph" => Language::Ephapax,
             "bet" => Language::BetLang,
             "err" => Language::ErrorLang,
-            "vql" => Language::VQL,
+            "vcl" => Language::VCL,
             "fbql" => Language::FBQL,
 
             _ => Language::Unknown,
@@ -218,7 +218,7 @@ impl Language {
             | Language::Ephapax
             | Language::BetLang
             | Language::ErrorLang
-            | Language::VQL
+            | Language::VCL
             | Language::FBQL => "nextgen-dsl",
             Language::Unknown => "unknown",
         }
