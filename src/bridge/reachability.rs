@@ -11,8 +11,16 @@
 
 use super::{ImportSite, ReachabilityEvidence, ReachabilityStatus};
 use anyhow::Result;
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 use walkdir::WalkDir;
+
+/// Upper bound on single-file reads during reachability scans.
+/// Rust source files are almost always well under 16 MiB; capping at 64 MiB
+/// prevents a pathological or malicious input (e.g. a minified vendor blob
+/// masquerading as .rs) from exhausting memory during a mass-panic sweep.
+const SOURCE_FILE_READ_LIMIT: u64 = 64 * 1024 * 1024;
 
 /// Check whether a crate is actually imported in the project's Rust source files.
 ///
@@ -50,8 +58,17 @@ pub fn check_reachability(project_dir: &Path, crate_name: &str) -> Result<Reacha
             continue;
         }
 
-        // Read file and scan for import patterns
-        let content = match std::fs::read_to_string(path) {
+        // Read file and scan for import patterns. Cap per-file size to
+        // avoid an arbitrarily-large file consuming memory; take(N) is
+        // an upper bound, not a guarantee the file is <= N bytes — if a
+        // file is larger we silently truncate to the first N bytes and
+        // scan that prefix (imports live at the top of a Rust file).
+        let content = match File::open(path).and_then(|f| {
+            let mut buf = String::new();
+            f.take(SOURCE_FILE_READ_LIMIT)
+                .read_to_string(&mut buf)
+                .map(|_| buf)
+        }) {
             Ok(c) => c,
             Err(_) => continue, // Skip unreadable files (binary, encoding issues)
         };

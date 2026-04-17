@@ -143,11 +143,26 @@ pub fn query_osv_batch(deps: &[LockedDependency]) -> Result<Vec<Vulnerability>> 
 
         let status = resp.status().as_u16();
         if !(200..300).contains(&status) {
-            let buf = resp.body_mut().read_to_string().unwrap_or_default();
+            // Cap error-body reads at 64 KiB — for error paths we only
+            // need enough context to report, not the full OSV error blob.
+            let buf = resp
+                .body_mut()
+                .with_config()
+                .limit(64 * 1024)
+                .read_to_string()
+                .unwrap_or_default();
             anyhow::bail!("OSV API returned HTTP {}: {}", status, buf);
         }
 
-        let response_text = resp.body_mut().read_to_string()?;
+        // Cap success-body reads at 256 MiB. OSV batch responses for
+        // ~1000-dep projects run a few MiB at most; 256 MiB is an order
+        // of magnitude beyond any realistic response and prevents a
+        // misbehaving or hostile OSV endpoint from exhausting memory.
+        let response_text = resp
+            .body_mut()
+            .with_config()
+            .limit(256 * 1024 * 1024)
+            .read_to_string()?;
         let response: OsvBatchResponse = serde_json::from_str(&response_text)?;
 
         // Map OSV results back to dependencies

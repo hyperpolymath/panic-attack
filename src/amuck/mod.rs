@@ -4,10 +4,21 @@
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
+
+/// Upper bound on mutation-target source file reads. Amuck operates on a
+/// single source file at a time; 64 MiB is well beyond any realistic
+/// target and prevents a hostile or runaway input from exhausting memory.
+const TARGET_SOURCE_READ_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// Upper bound on mutation spec JSON/YAML reads. Specs are curated,
+/// short documents — 4 MiB is two orders of magnitude beyond realistic
+/// spec size and still catches a malformed or hostile config.
+const SPEC_FILE_READ_LIMIT: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AmuckPreset {
@@ -114,9 +125,18 @@ pub fn run(config: AmuckConfig) -> Result<AmuckReport> {
         ));
     }
 
-    // Source text is loaded once and each combo is applied from the pristine baseline.
-    let source = fs::read_to_string(&config.target)
-        .with_context(|| format!("reading target file {}", config.target.display()))?;
+    // Source text is loaded once and each combo is applied from the pristine
+    // baseline. Cap to TARGET_SOURCE_READ_LIMIT — a larger file is truncated
+    // rather than swallowed whole, and mutations apply to that prefix only.
+    let source = {
+        let mut buf = String::new();
+        File::open(&config.target)
+            .with_context(|| format!("opening target file {}", config.target.display()))?
+            .take(TARGET_SOURCE_READ_LIMIT)
+            .read_to_string(&mut buf)
+            .with_context(|| format!("reading target file {}", config.target.display()))?;
+        buf
+    };
 
     let mut combos = if let Some(spec_path) = &config.spec_path {
         let spec = load_spec(spec_path)?;
@@ -281,8 +301,16 @@ fn mutation_path(target: &Path, output_dir: &Path, id: usize) -> PathBuf {
 }
 
 fn load_spec(path: &Path) -> Result<MutationSpecFile> {
-    let content =
-        fs::read_to_string(path).with_context(|| format!("reading spec {}", path.display()))?;
+    // Cap spec reads at SPEC_FILE_READ_LIMIT — specs are short curated docs.
+    let content = {
+        let mut buf = String::new();
+        File::open(path)
+            .with_context(|| format!("opening spec {}", path.display()))?
+            .take(SPEC_FILE_READ_LIMIT)
+            .read_to_string(&mut buf)
+            .with_context(|| format!("reading spec {}", path.display()))?;
+        buf
+    };
     let spec =
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("json") => serde_json::from_str(&content)
