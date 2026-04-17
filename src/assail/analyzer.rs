@@ -906,15 +906,64 @@ impl Analyzer {
             });
         }
 
-        // mem::transmute — type-punning bypasses Rust's type system entirely
+        // mem::transmute — type-punning bypasses Rust's type system entirely.
+        //
+        // JIT-aware classification: when the file is in a Cranelift JIT
+        // context AND the transmute targets a function pointer type, this
+        // is the canonical pattern for invoking a JIT-emitted function —
+        // there is no `unsafe`-free way to call a pointer returned by a
+        // code-generation framework. In that context the finding is
+        // downgraded from Critical to High and a classification suffix is
+        // appended so reviewers know to look at the JIT soundness invariants
+        // (signature match, lifetime ownership, thread affinity) rather
+        // than treating the transmute as arbitrary type-punning.
+        //
+        // Both signals are required:
+        //   1. JIT context — file imports cranelift_jit / cranelift_module
+        //      or constructs a JITModule.
+        //   2. Function-pointer target — the transmute target is `fn(...)`,
+        //      either via turbofish (`transmute::<_, fn(...) -> R>`) or via
+        //      a `let x: fn(...) -> R = transmute(...)` binding.
+        //
+        // See 007-lang/audits/audit-ffi-unsafe.md §2 for the motivating
+        // case (jit_compiler.rs's Cranelift dispatch).
         if code_only.contains("transmute(") || code_only.contains("transmute::<") {
+            let in_jit_context = code_only.contains("cranelift_jit::JITModule")
+                || code_only.contains("cranelift_module::Module")
+                || code_only.contains("JITModule::new(")
+                || (code_only.contains("cranelift_jit")
+                    && code_only.contains("get_finalized_function"));
+
+            let transmute_targets_fn_ptr = code_only.contains("transmute::<_, fn(")
+                || code_only.contains("transmute::<_, unsafe fn(")
+                || code_only.contains("transmute::<*const u8, fn(")
+                || code_only.contains("transmute::<*mut u8, fn(")
+                || (code_only.contains(": fn(") && code_only.contains("= std::mem::transmute("))
+                || (code_only.contains(": fn(") && code_only.contains("= mem::transmute("))
+                || (code_only.contains(": unsafe fn(") && code_only.contains("transmute("));
+
+            let (severity, description) = if in_jit_context && transmute_targets_fn_ptr {
+                (
+                    Severity::High,
+                    format!(
+                        "mem::transmute usage in {} (Cranelift JIT function-pointer dispatch — verify signature match + module ownership invariants per audit-ffi-unsafe.md classification)",
+                        file_path
+                    ),
+                )
+            } else {
+                (
+                    Severity::Critical,
+                    format!("mem::transmute usage in {}", file_path),
+                )
+            };
+
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
                 category: WeakPointCategory::UnsafeCode,
                 location: Some(file_path.to_string()),
-                severity: Severity::Critical,
-                description: format!("mem::transmute usage in {}", file_path),
+                severity,
+                description,
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
             });
@@ -5331,6 +5380,180 @@ fn few_unwraps() {
         assert!(
             panic_points.is_empty(),
             "Should NOT trigger PanicPath when unwrap count is <= 5"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // mem::transmute: JIT-aware classification
+    // (Cranelift function-pointer dispatch downgrades Critical → High)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn analyze_rust_transmute_in_jit_context_downgrades_to_high() {
+        let analyzer = Analyzer {
+            target: std::path::PathBuf::from("jit_compiler.rs"),
+            language: crate::types::Language::Rust,
+            verbose: false,
+            browser_extension: false,
+        };
+        // Canonical Cranelift JIT dispatch pattern: a function pointer
+        // returned by JITModule::get_finalized_function() is transmuted
+        // to a typed `fn(...) -> R` so it can be invoked from Rust.
+        let content = r#"
+use cranelift_jit::JITModule;
+use cranelift_module::Module;
+
+pub struct CompiledFunction {
+    fn_ptr: *const u8,
+    param_count: usize,
+    _module: JITModule,
+}
+
+pub fn call(compiled: &CompiledFunction, args: &[i64]) -> Option<i64> {
+    unsafe {
+        match compiled.param_count {
+            0 => {
+                let f: fn() -> i64 = std::mem::transmute(compiled.fn_ptr);
+                Some(f())
+            }
+            1 => {
+                let f: fn(i64) -> i64 = std::mem::transmute(compiled.fn_ptr);
+                Some(f(args[0]))
+            }
+            _ => None,
+        }
+    }
+}
+"#;
+        let mut stats = ProgramStatistics {
+            total_lines: 0,
+            unsafe_blocks: 0,
+            panic_sites: 0,
+            unwrap_calls: 0,
+            allocation_sites: 0,
+            io_operations: 0,
+            threading_constructs: 0,
+        };
+        let mut weak_points = Vec::new();
+        analyzer
+            .analyze_rust(content, &mut stats, &mut weak_points, "jit_compiler.rs")
+            .unwrap();
+
+        let transmute_findings: Vec<_> = weak_points
+            .iter()
+            .filter(|wp| wp.description.contains("mem::transmute"))
+            .collect();
+
+        assert_eq!(
+            transmute_findings.len(),
+            1,
+            "Exactly one mem::transmute finding expected"
+        );
+        assert_eq!(
+            transmute_findings[0].severity,
+            Severity::High,
+            "JIT-context transmute targeting fn(...) -> R should downgrade Critical → High"
+        );
+        assert!(
+            transmute_findings[0]
+                .description
+                .contains("Cranelift JIT function-pointer dispatch"),
+            "Downgraded finding should carry the JIT classification suffix; got: {}",
+            transmute_findings[0].description
+        );
+    }
+
+    #[test]
+    fn analyze_rust_transmute_outside_jit_context_stays_critical() {
+        let analyzer = Analyzer {
+            target: std::path::PathBuf::from("util.rs"),
+            language: crate::types::Language::Rust,
+            verbose: false,
+            browser_extension: false,
+        };
+        // Arbitrary type-punning transmute, NO Cranelift markers anywhere.
+        // Must remain Critical — the JIT-aware downgrade should never
+        // suppress real type-punning bugs.
+        let content = r#"
+fn pun_u64_to_two_u32s(x: u64) -> (u32, u32) {
+    unsafe { std::mem::transmute(x) }
+}
+"#;
+        let mut stats = ProgramStatistics {
+            total_lines: 0,
+            unsafe_blocks: 0,
+            panic_sites: 0,
+            unwrap_calls: 0,
+            allocation_sites: 0,
+            io_operations: 0,
+            threading_constructs: 0,
+        };
+        let mut weak_points = Vec::new();
+        analyzer
+            .analyze_rust(content, &mut stats, &mut weak_points, "util.rs")
+            .unwrap();
+
+        let transmute_findings: Vec<_> = weak_points
+            .iter()
+            .filter(|wp| wp.description.contains("mem::transmute"))
+            .collect();
+
+        assert_eq!(transmute_findings.len(), 1);
+        assert_eq!(
+            transmute_findings[0].severity,
+            Severity::Critical,
+            "Non-JIT transmute must stay Critical — JIT-aware downgrade must not over-suppress"
+        );
+        assert!(
+            !transmute_findings[0]
+                .description
+                .contains("Cranelift JIT"),
+            "Non-JIT finding must not carry the JIT classification suffix"
+        );
+    }
+
+    #[test]
+    fn analyze_rust_jit_marker_without_fn_ptr_target_stays_critical() {
+        // Edge case: file IS a JIT file (cranelift_jit imported) but the
+        // transmute target is NOT a function pointer — could be a real bug
+        // in JIT code. Stay Critical.
+        let analyzer = Analyzer {
+            target: std::path::PathBuf::from("jit_misc.rs"),
+            language: crate::types::Language::Rust,
+            verbose: false,
+            browser_extension: false,
+        };
+        let content = r#"
+use cranelift_jit::JITModule;
+
+fn pun_in_jit_file(x: u64) -> [u8; 8] {
+    unsafe { std::mem::transmute(x) }
+}
+"#;
+        let mut stats = ProgramStatistics {
+            total_lines: 0,
+            unsafe_blocks: 0,
+            panic_sites: 0,
+            unwrap_calls: 0,
+            allocation_sites: 0,
+            io_operations: 0,
+            threading_constructs: 0,
+        };
+        let mut weak_points = Vec::new();
+        analyzer
+            .analyze_rust(content, &mut stats, &mut weak_points, "jit_misc.rs")
+            .unwrap();
+
+        let transmute_findings: Vec<_> = weak_points
+            .iter()
+            .filter(|wp| wp.description.contains("mem::transmute"))
+            .collect();
+
+        assert_eq!(transmute_findings.len(), 1);
+        assert_eq!(
+            transmute_findings[0].severity,
+            Severity::Critical,
+            "JIT-context but no fn-ptr target — must stay Critical (could be real bug)"
         );
     }
 
