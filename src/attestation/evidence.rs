@@ -18,6 +18,12 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::time::Instant;
 
+/// Upper bound on /proc/self/{stat,status} reads. Kernel-bounded in
+/// practice to a few KiB; 64 KiB silently truncates any pathological
+/// kernel entry without breaking the best-effort metric.
+#[cfg(target_os = "linux")]
+const PROC_FILE_READ_LIMIT: u64 = 64 * 1024;
+
 /// Checkpoint interval — one checkpoint per this many files.
 const CHECKPOINT_INTERVAL: usize = 100;
 
@@ -195,7 +201,13 @@ impl EvidenceAccumulator {
 fn get_cpu_time_ms() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
-        let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+        use std::io::Read;
+        let mut stat = String::new();
+        std::fs::File::open("/proc/self/stat")
+            .ok()?
+            .take(PROC_FILE_READ_LIMIT)
+            .read_to_string(&mut stat)
+            .ok()?;
         let fields: Vec<&str> = stat.split_whitespace().collect();
         // Fields 13 (utime) and 14 (stime) are in clock ticks
         if fields.len() > 14 {
@@ -216,7 +228,13 @@ fn get_cpu_time_ms() -> Option<u64> {
 fn get_peak_rss() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
-        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+        use std::io::Read;
+        let mut status = String::new();
+        std::fs::File::open("/proc/self/status")
+            .ok()?
+            .take(PROC_FILE_READ_LIMIT)
+            .read_to_string(&mut status)
+            .ok()?;
         for line in status.lines() {
             if line.starts_with("VmHWM:") {
                 let kb_str = line

@@ -8,8 +8,15 @@ use crate::kanren::core::{FactDB, LogicFact, LogicRule, RuleMetadata, Term};
 use crate::report;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
+
+/// Upper bound on report reads during adjudication. Reports are JSON
+/// documents emitted by earlier panic-attack phases; 64 MiB is well
+/// beyond realistic sizes and prevents a tampered input from exhausting
+/// memory before even being parsed.
+const REPORT_FILE_READ_LIMIT: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct AdjudicateConfig {
@@ -229,8 +236,15 @@ fn parse_input_report(path: &Path) -> Result<ParsedReport> {
         return Ok(ParsedReport::Assault(assault));
     }
 
-    let content =
-        fs::read_to_string(path).with_context(|| format!("reading report {}", path.display()))?;
+    let content = {
+        let mut buf = String::new();
+        File::open(path)
+            .with_context(|| format!("opening report {}", path.display()))?
+            .take(REPORT_FILE_READ_LIMIT)
+            .read_to_string(&mut buf)
+            .with_context(|| format!("reading report {}", path.display()))?;
+        buf
+    };
     if let Ok(amuck) = serde_json::from_str::<AmuckReport>(&content) {
         return Ok(ParsedReport::Amuck(amuck));
     }

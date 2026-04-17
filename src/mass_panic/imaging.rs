@@ -20,8 +20,14 @@ use crate::assemblyline::AssemblylineReport;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::Path;
+
+/// Upper bound on SystemImage JSON reads. Images scale with repo count
+/// plus edges; 256 MiB handles a datacenter-scale image and still bounds
+/// tampered inputs wholesale.
+const IMAGE_FILE_READ_LIMIT: u64 = 256 * 1024 * 1024;
 
 /// A SystemImage is a point-in-time "functional scan" of an entire codebase.
 /// Each scan produces one image. Multiple images over time create a navigable
@@ -343,8 +349,15 @@ pub fn write_image(image: &SystemImage, path: &Path) -> Result<()> {
 
 /// Load a SystemImage from a JSON file.
 pub fn load_image(path: &Path) -> Result<SystemImage> {
-    let content =
-        fs::read_to_string(path).with_context(|| format!("reading image {}", path.display()))?;
+    let content = {
+        let mut buf = String::new();
+        File::open(path)
+            .with_context(|| format!("opening image {}", path.display()))?
+            .take(IMAGE_FILE_READ_LIMIT)
+            .read_to_string(&mut buf)
+            .with_context(|| format!("reading image {}", path.display()))?;
+        buf
+    };
     let image: SystemImage = serde_json::from_str(&content)
         .with_context(|| format!("parsing image {}", path.display()))?;
     Ok(image)

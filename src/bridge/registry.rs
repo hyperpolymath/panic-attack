@@ -9,9 +9,16 @@
 //! See docs/patch-bridge-design.md Section 8 for full lifecycle specification.
 
 use super::{AssessedCve, Classification};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+
+/// Upper bound on mitigation-registry reads. Registries track active
+/// CVEs with lifecycle metadata; 16 MiB handles tens of thousands of
+/// entries and bounds tampered inputs wholesale.
+const REGISTRY_FILE_READ_LIMIT: u64 = 16 * 1024 * 1024;
 
 /// A registered mitigation for an active CVE.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,7 +81,15 @@ impl MitigationRegistry {
     pub fn load(project_dir: &Path) -> Result<Self> {
         let path = registry_path(project_dir);
         if path.exists() {
-            let content = std::fs::read_to_string(&path)?;
+            let content = {
+                let mut buf = String::new();
+                File::open(&path)
+                    .with_context(|| format!("opening registry {}", path.display()))?
+                    .take(REGISTRY_FILE_READ_LIMIT)
+                    .read_to_string(&mut buf)
+                    .with_context(|| format!("reading registry {}", path.display()))?;
+                buf
+            };
             Ok(serde_json::from_str(&content)?)
         } else {
             Ok(Self::new())

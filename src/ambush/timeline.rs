@@ -5,9 +5,14 @@
 use crate::types::{AttackAxis, IntensityLevel};
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
-use std::fs;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+/// Upper bound on timeline-spec reads. Timelines are short curated
+/// JSON/YAML; 4 MiB is far beyond realistic sizes.
+const TIMELINE_FILE_READ_LIMIT: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct TimelinePlan {
@@ -54,8 +59,15 @@ pub fn load_timeline_with_default(
     path: &Path,
     default_intensity: Option<IntensityLevel>,
 ) -> Result<TimelinePlan> {
-    let content =
-        fs::read_to_string(path).with_context(|| format!("reading timeline {}", path.display()))?;
+    let content = {
+        let mut buf = String::new();
+        File::open(path)
+            .with_context(|| format!("opening timeline {}", path.display()))?
+            .take(TIMELINE_FILE_READ_LIMIT)
+            .read_to_string(&mut buf)
+            .with_context(|| format!("reading timeline {}", path.display()))?;
+        buf
+    };
     let spec: TimelineSpec = if path.extension().and_then(|s| s.to_str()) == Some("yaml")
         || path.extension().and_then(|s| s.to_str()) == Some("yml")
     {

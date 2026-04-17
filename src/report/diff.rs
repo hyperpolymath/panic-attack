@@ -7,12 +7,26 @@ use anyhow::{Context, Result};
 use serde_json;
 use serde_yaml;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs;
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 
+/// Upper bound on assault report JSON/YAML reads. Reports are emitted by
+/// panic-attack itself; 64 MiB is two orders of magnitude beyond any
+/// realistic report size and protects against a tampered or malformed
+/// input loaded into memory wholesale.
+const REPORT_FILE_READ_LIMIT: u64 = 64 * 1024 * 1024;
+
 pub fn load_report(path: &Path) -> Result<AssaultReport> {
-    let content =
-        fs::read_to_string(path).with_context(|| format!("reading report {}", path.display()))?;
+    let content = {
+        let mut buf = String::new();
+        File::open(path)
+            .with_context(|| format!("opening report {}", path.display()))?
+            .take(REPORT_FILE_READ_LIMIT)
+            .read_to_string(&mut buf)
+            .with_context(|| format!("reading report {}", path.display()))?;
+        buf
+    };
     // Diff loader accepts JSON/YAML to match report export formats.
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("yaml") | Some("yml") => serde_yaml::from_str(&content)

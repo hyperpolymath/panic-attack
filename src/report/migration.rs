@@ -8,10 +8,24 @@
 
 use crate::types::{DeprecatedCategory, MigrationDiff, MigrationSnapshot, ReScriptConfigFormat};
 
+/// Upper bound on migration-snapshot reads. Snapshots are small JSON
+/// summaries produced by panic-attack; 4 MiB is an order of magnitude
+/// beyond any realistic snapshot and bounds a tampered or malformed
+/// input wholesale.
+const SNAPSHOT_FILE_READ_LIMIT: u64 = 4 * 1024 * 1024;
+
 /// Load a migration snapshot from a JSON file
 pub fn load_snapshot(path: &std::path::Path) -> anyhow::Result<MigrationSnapshot> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("reading migration snapshot {}", path.display()))?;
+    use std::io::Read;
+    let content = {
+        let mut buf = String::new();
+        std::fs::File::open(path)
+            .with_context(|| format!("opening migration snapshot {}", path.display()))?
+            .take(SNAPSHOT_FILE_READ_LIMIT)
+            .read_to_string(&mut buf)
+            .with_context(|| format!("reading migration snapshot {}", path.display()))?;
+        buf
+    };
     let snapshot: MigrationSnapshot = serde_json::from_str(&content)
         .with_context(|| format!("parsing migration snapshot {}", path.display()))?;
     Ok(snapshot)

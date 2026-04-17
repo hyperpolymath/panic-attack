@@ -15,8 +15,14 @@
 use crate::mass_panic::imaging::SystemImage;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
+
+/// Upper bound on temporal-index reads. The index is a JSON catalog of
+/// snapshot entries; 64 MiB handles hundreds of thousands of snapshots
+/// and bounds a tampered input loaded into memory wholesale.
+const TEMPORAL_INDEX_READ_LIMIT: u64 = 64 * 1024 * 1024;
 
 /// Lightweight summary of a snapshot for the temporal index.
 /// Contains enough information for timeline browsing without
@@ -305,8 +311,15 @@ fn load_index(path: &Path) -> Result<TemporalIndex> {
     if !path.exists() {
         return Err(anyhow!("temporal index not found at {}", path.display()));
     }
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("reading temporal index {}", path.display()))?;
+    let content = {
+        let mut buf = String::new();
+        File::open(path)
+            .with_context(|| format!("opening temporal index {}", path.display()))?
+            .take(TEMPORAL_INDEX_READ_LIMIT)
+            .read_to_string(&mut buf)
+            .with_context(|| format!("reading temporal index {}", path.display()))?;
+        buf
+    };
     let index: TemporalIndex = serde_json::from_str(&content)
         .with_context(|| format!("parsing temporal index {}", path.display()))?;
     Ok(index)

@@ -13,8 +13,33 @@ use regex::Regex;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+
+/// Upper bound on source-file reads during per-file scanning. Source
+/// files are almost always well under 16 MiB; capping at 64 MiB bounds
+/// a pathological/malicious input without losing realistic content.
+const SOURCE_FILE_READ_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// Upper bound on manifest / config file reads (Cargo.toml, pyproject.toml,
+/// flake.nix, deno.json, mix.exs, rebar.config, etc). Manifests are short
+/// curated documents; 4 MiB is far beyond realistic sizes.
+const MANIFEST_FILE_READ_LIMIT: u64 = 4 * 1024 * 1024;
+
+/// Bounded replacement for `fs::read_to_string(path).ok()` — returns
+/// `Some(content)` on success (up to `limit` bytes), `None` on I/O error
+/// or if the file is absent. Used by the analyzer to cap every file read
+/// against an explicit byte ceiling rather than trusting the filesystem.
+fn read_bounded(path: &Path, limit: u64) -> Option<String> {
+    let mut buf = String::new();
+    fs::File::open(path)
+        .ok()?
+        .take(limit)
+        .read_to_string(&mut buf)
+        .ok()?;
+    Some(buf)
+}
 
 // Thread-local accumulators for migration analysis.
 // These collect deprecated/modern API counts across all files during a single
@@ -78,7 +103,7 @@ pub fn build_migration_metrics(target: &Path) -> MigrationMetrics {
             None
         }
     };
-    let config_content = config_path.and_then(|p| fs::read_to_string(p).ok());
+    let config_content = config_path.and_then(|p| read_bounded(&p, MANIFEST_FILE_READ_LIMIT));
 
     let version_bracket = Analyzer::detect_rescript_version(
         config_format,
@@ -4498,7 +4523,7 @@ impl Analyzer {
 
         // ── Cargo.toml: git deps without explicit rev= ────────────────────
         let cargo_toml_path = project_root.join("Cargo.toml");
-        if let Ok(content) = fs::read_to_string(&cargo_toml_path) {
+        if let Some(content) = read_bounded(&cargo_toml_path, MANIFEST_FILE_READ_LIMIT) {
             let git_dep_count =
                 content.matches("git = \"").count() + content.matches("git=\"").count();
             let rev_count = content.matches("rev = \"").count() + content.matches("rev=\"").count();
@@ -4541,7 +4566,7 @@ impl Analyzer {
 
         // ── Julia Manifest.toml: missing git-tree-sha1 hash entries ──────────
         let manifest_toml_path = project_root.join("Manifest.toml");
-        if let Ok(content) = fs::read_to_string(&manifest_toml_path) {
+        if let Some(content) = read_bounded(&manifest_toml_path, MANIFEST_FILE_READ_LIMIT) {
             // A valid v2 Manifest.toml has `git-tree-sha1` for each pinned dep.
             // If [[deps.*]] sections are present but no git-tree-sha1 appears,
             // the manifest is not providing cryptographic pinning.
@@ -4566,7 +4591,7 @@ impl Analyzer {
 
         // ── deno.json: unpinned import map entries ────────────────────────────
         let deno_json_path = project_root.join("deno.json");
-        if let Ok(content) = fs::read_to_string(&deno_json_path) {
+        if let Some(content) = read_bounded(&deno_json_path, MANIFEST_FILE_READ_LIMIT) {
             // Count import values in the "imports" section that lack a version pin.
             // Pinned deno.land specifiers contain '@' (e.g. std@0.177.0).
             // Pinned npm specifiers contain '@' after 'npm:' (e.g. npm:express@4).
@@ -4623,7 +4648,7 @@ impl Analyzer {
 
         // ── Rust: Cargo.toml with [dev-dependencies] / [[bin]] but no mutation tool ──
         let cargo_toml_path = project_root.join("Cargo.toml");
-        if let Ok(content) = fs::read_to_string(&cargo_toml_path) {
+        if let Some(content) = read_bounded(&cargo_toml_path, MANIFEST_FILE_READ_LIMIT) {
             // Only check projects that have a test infrastructure (dev-deps present
             // or test directories present).
             let has_test_infrastructure =
@@ -4689,7 +4714,7 @@ impl Analyzer {
 
         // Cargo.toml (Rust)
         let cargo_toml = target_dir.join("Cargo.toml");
-        if let Ok(content) = fs::read_to_string(&cargo_toml) {
+        if let Some(content) = read_bounded(&cargo_toml, MANIFEST_FILE_READ_LIMIT) {
             if content.contains("tokio") {
                 frameworks.insert(Framework::Networking);
             }
@@ -4719,7 +4744,7 @@ impl Analyzer {
 
         // mix.exs (Elixir)
         let mix_exs = target_dir.join("mix.exs");
-        if let Ok(content) = fs::read_to_string(&mix_exs) {
+        if let Some(content) = read_bounded(&mix_exs, MANIFEST_FILE_READ_LIMIT) {
             if content.contains(":phoenix") {
                 frameworks.insert(Framework::Phoenix);
                 frameworks.insert(Framework::WebServer);
@@ -4742,7 +4767,7 @@ impl Analyzer {
 
         // rebar.config (Erlang)
         let rebar_config = target_dir.join("rebar.config");
-        if let Ok(content) = fs::read_to_string(&rebar_config) {
+        if let Some(content) = read_bounded(&rebar_config, MANIFEST_FILE_READ_LIMIT) {
             if content.contains("cowboy") {
                 frameworks.insert(Framework::Cowboy);
                 frameworks.insert(Framework::WebServer);
@@ -4751,7 +4776,7 @@ impl Analyzer {
 
         // gleam.toml (Gleam)
         let gleam_toml = target_dir.join("gleam.toml");
-        if let Ok(content) = fs::read_to_string(&gleam_toml) {
+        if let Some(content) = read_bounded(&gleam_toml, MANIFEST_FILE_READ_LIMIT) {
             if content.contains("wisp") || content.contains("mist") {
                 frameworks.insert(Framework::WebServer);
             }
@@ -4759,7 +4784,7 @@ impl Analyzer {
 
         // package.json (JS/TS/ReScript)
         let pkg_json = target_dir.join("package.json");
-        if let Ok(content) = fs::read_to_string(&pkg_json) {
+        if let Some(content) = read_bounded(&pkg_json, MANIFEST_FILE_READ_LIMIT) {
             if content.contains("\"express\"")
                 || content.contains("\"fastify\"")
                 || content.contains("\"koa\"")
@@ -4783,7 +4808,7 @@ impl Analyzer {
         // requirements.txt / pyproject.toml (Python)
         for manifest in &["requirements.txt", "pyproject.toml", "setup.py"] {
             let path = target_dir.join(manifest);
-            if let Ok(content) = fs::read_to_string(&path) {
+            if let Some(content) = read_bounded(&path, MANIFEST_FILE_READ_LIMIT) {
                 if content.contains("flask")
                     || content.contains("django")
                     || content.contains("fastapi")
@@ -4812,9 +4837,9 @@ impl Analyzer {
         // string literals in tests and analyzer patterns.
         for file in files {
             let file_lang = Language::detect(file.to_str().unwrap_or(""));
-            let content = match fs::read_to_string(file) {
-                Ok(c) => c,
-                Err(_) => continue,
+            let content = match read_bounded(file, SOURCE_FILE_READ_LIMIT) {
+                Some(c) => c,
+                None => continue,
             };
 
             match file_lang {

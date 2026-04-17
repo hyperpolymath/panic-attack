@@ -6,8 +6,14 @@ use crate::kanren::core::{LogicEngine, LogicFact, LogicRule, RuleMetadata, Term}
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json;
-use std::fs;
+use std::fs::File;
+use std::io::Read;
 use std::path::Path;
+
+/// Upper bound on rule-catalog reads. The miniKanren catalog is a
+/// curated JSON document; 4 MiB is far beyond any realistic catalog
+/// and bounds tampered or malformed input.
+const RULE_CATALOG_READ_LIMIT: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 pub struct RuleSpec {
@@ -91,7 +97,15 @@ impl RuleCatalog {
     }
 
     pub fn from_file(path: &Path) -> Result<Self> {
-        let data = fs::read_to_string(path).context("reading rule catalog")?;
+        let data = {
+            let mut buf = String::new();
+            File::open(path)
+                .context("opening rule catalog")?
+                .take(RULE_CATALOG_READ_LIMIT)
+                .read_to_string(&mut buf)
+                .context("reading rule catalog")?;
+            buf
+        };
         let specs: Vec<RuleSpec> = serde_json::from_str(&data).context("parsing rule catalog")?;
         Ok(Self {
             rules: specs.into_iter().map(|spec| spec.to_logic_rule()).collect(),
