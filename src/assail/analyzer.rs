@@ -838,9 +838,12 @@ impl Analyzer {
         
         // Flag unbounded allocation patterns as high-risk.
         //
-        // The check runs against `code_only` (comments + string literals already
-        // stripped) so that dangerous-word keywords embedded in doc comments,
-        // string literals, or generated source text do not falsely fire.
+        // The check runs against `code_no_test_mods` — `code_only` (comments
+        // + string literals already stripped) with any `#[cfg(test)] mod <x>
+        // { … }` body also stripped. This way dangerous-word keywords
+        // embedded in doc comments, string literals, or inline test modules
+        // (`#[test] fn validate_detects_left_recursion()` inside a production
+        // source file's `mod tests` block, etc.) do not falsely fire.
         //
         // The earlier version also paired bare `for` / `while let` / `loop`
         // tokens with `push(` or `Vec::new` as standalone heuristics. Those
@@ -850,23 +853,28 @@ impl Analyzer {
         // Dropped in favour of the explicit-keyword / tiny-capacity /
         // unlimited-read signals below, which remain specific enough to be
         // useful.
-        let has_unbounded_allocations = code_only.contains("unbounded")
-            || code_only.contains("no_bound")
-            || code_only.contains("no_limit")
-            || code_only.contains("boundless")
-            || code_only.contains("unlimited")
-            || code_only.contains("unconstrained")
+        let code_no_test_mods = Self::strip_cfg_test_modules_rs(&code_only);
+        let has_unbounded_allocations = code_no_test_mods.contains("unbounded")
+            || code_no_test_mods.contains("no_bound")
+            || code_no_test_mods.contains("no_limit")
+            || code_no_test_mods.contains("boundless")
+            || code_no_test_mods.contains("unlimited")
+            || code_no_test_mods.contains("unconstrained")
             // `infinite` matches Rust std `f64::is_infinite()`, which is
             // benign. Require the word in a non-method-call context.
-            || (code_only.contains("infinite") && !code_only.contains("is_infinite"))
+            || (code_no_test_mods.contains("infinite")
+                && !code_no_test_mods.contains("is_infinite"))
             // Unterminated recursion lacking any depth guard.
-            || (code_only.contains("recursion") && !code_only.contains("depth"))
+            || (code_no_test_mods.contains("recursion")
+                && !code_no_test_mods.contains("depth"))
             // Suspiciously small initial capacity for a growing vector.
-            || code_only.contains("with_capacity(0)")
-            || code_only.contains("with_capacity(1)")
+            || code_no_test_mods.contains("with_capacity(0)")
+            || code_no_test_mods.contains("with_capacity(1)")
             // Network / I/O primitives that slurp without a cap.
-            || (code_only.contains("read_to_end") && !code_only.contains("limit"))
-            || (code_only.contains("read_to_string") && !code_only.contains("limit"));
+            || (code_no_test_mods.contains("read_to_end")
+                && !code_no_test_mods.contains("limit"))
+            || (code_no_test_mods.contains("read_to_string")
+                && !code_no_test_mods.contains("limit"));
         
         if has_unbounded_allocations && !is_test_file {
             weak_points.push(WeakPoint {
@@ -1159,6 +1167,166 @@ impl Analyzer {
             }
         }
         out
+    }
+
+    /// Strip the bodies of `#[cfg(test)] mod <name> { … }` blocks from
+    /// `content`, leaving the attribute, `mod` keyword, name, and
+    /// enclosing braces in place but replacing everything between the
+    /// braces with whitespace. Newlines in the body are preserved so
+    /// line numbers downstream stay stable.
+    ///
+    /// This is the Rust analogue of Zig's `count_unsafe_in_test_blocks`
+    /// and is used to treat an inline `#[cfg(test)] mod tests { … }`
+    /// inside a production file as test context for substring-based
+    /// dangerous-pattern checks — the same way a whole file under
+    /// `/tests/` is already treated as test context by `is_test_file`.
+    ///
+    /// Recognised attribute forms include `#[cfg(test)]`,
+    /// `#[cfg(any(test, …))]`, `#[cfg(all(test, …))]`, etc. Attributes
+    /// whose only `test` mention is inside `not(test)` are left in
+    /// place (`#[cfg(not(test))]` is production-only).
+    ///
+    /// Precondition: `content` should already have string literals and
+    /// comments stripped, so brace counting is not confused by `{` or
+    /// `}` inside those. If applied raw, it falls back to emitting the
+    /// attribute verbatim whenever it cannot find a balanced body.
+    fn strip_cfg_test_modules_rs(content: &str) -> String {
+        let bytes = content.as_bytes();
+        let n = bytes.len();
+        let mut out: Vec<u8> = Vec::with_capacity(n);
+        let mut i = 0;
+
+        while i < n {
+            if i + 6 > n || &bytes[i..i + 6] != b"#[cfg(" {
+                out.push(bytes[i]);
+                i += 1;
+                continue;
+            }
+
+            let attr_start = i;
+            let args_start = i + 6;
+            let mut j = args_start;
+            let mut paren_depth: i32 = 1;
+            while j < n && paren_depth > 0 {
+                match bytes[j] {
+                    b'(' => paren_depth += 1,
+                    b')' => paren_depth -= 1,
+                    _ => {}
+                }
+                j += 1;
+            }
+            if paren_depth != 0 || j >= n || bytes[j] != b']' {
+                out.push(bytes[i]);
+                i += 1;
+                continue;
+            }
+
+            let args_end = j - 1;
+            let attr_end = j + 1;
+            let args = &bytes[args_start..args_end];
+            let is_test_attr = Self::cfg_args_select_test(args);
+            if !is_test_attr {
+                out.extend_from_slice(&bytes[attr_start..attr_end]);
+                i = attr_end;
+                continue;
+            }
+
+            let mut k = attr_end;
+            while k < n && (bytes[k] as char).is_whitespace() {
+                k += 1;
+            }
+            if k + 3 <= n && &bytes[k..k + 3] == b"pub" {
+                k += 3;
+                if k < n && bytes[k] == b'(' {
+                    let mut d = 1;
+                    k += 1;
+                    while k < n && d > 0 {
+                        match bytes[k] {
+                            b'(' => d += 1,
+                            b')' => d -= 1,
+                            _ => {}
+                        }
+                        k += 1;
+                    }
+                }
+                while k < n && (bytes[k] as char).is_whitespace() {
+                    k += 1;
+                }
+            }
+
+            if k + 4 > n || &bytes[k..k + 4] != b"mod " {
+                out.extend_from_slice(&bytes[attr_start..attr_end]);
+                i = attr_end;
+                continue;
+            }
+            k += 4;
+            while k < n && (bytes[k] as char).is_whitespace() {
+                k += 1;
+            }
+            while k < n && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_') {
+                k += 1;
+            }
+            while k < n && (bytes[k] as char).is_whitespace() {
+                k += 1;
+            }
+
+            if k >= n || bytes[k] != b'{' {
+                out.extend_from_slice(&bytes[attr_start..attr_end]);
+                i = attr_end;
+                continue;
+            }
+
+            let body_start = k + 1;
+            let mut brace_depth: i32 = 1;
+            let mut m = body_start;
+            while m < n && brace_depth > 0 {
+                match bytes[m] {
+                    b'{' => brace_depth += 1,
+                    b'}' => brace_depth -= 1,
+                    _ => {}
+                }
+                m += 1;
+            }
+            if brace_depth != 0 {
+                out.extend_from_slice(&bytes[attr_start..attr_end]);
+                i = attr_end;
+                continue;
+            }
+
+            out.extend_from_slice(&bytes[attr_start..body_start]);
+            for b in &bytes[body_start..m - 1] {
+                out.push(if *b == b'\n' { b'\n' } else { b' ' });
+            }
+            out.push(b'}');
+            i = m;
+        }
+
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    /// Classify the argument list of `#[cfg(...)]` as selecting for
+    /// `test` (true) or not (false). Uses [`strip_not_test_groups`] to
+    /// drop `not(test)` groups first, then looks for a bareword `test`.
+    fn cfg_args_select_test(args: &[u8]) -> bool {
+        let text = std::str::from_utf8(args).unwrap_or("");
+        let scrubbed = strip_not_test_groups(text);
+        let b = scrubbed.as_bytes();
+        let len = b.len();
+        let mut idx = 0;
+        while idx + 4 <= len {
+            if &b[idx..idx + 4] == b"test" {
+                let before_ok = idx == 0
+                    || (!b[idx - 1].is_ascii_alphanumeric() && b[idx - 1] != b'_');
+                let after_idx = idx + 4;
+                let after_ok = after_idx >= len
+                    || (!b[after_idx].is_ascii_alphanumeric() && b[after_idx] != b'_');
+                if before_ok && after_ok {
+                    return true;
+                }
+            }
+            idx += 1;
+        }
+        false
     }
 
     fn analyze_c_cpp(
@@ -5033,6 +5201,52 @@ fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &
     out
 }
 
+/// Rewrite `args` by replacing every `not(test)` group (with
+/// whitespace-tolerant matching) with a single space. Used by
+/// [`Analyzer::cfg_args_select_test`] so `cfg(not(test))` and
+/// `cfg(all(not(test), …))` do not mis-classify as test-active.
+fn strip_not_test_groups(args: &str) -> String {
+    let bytes = args.as_bytes();
+    let n = bytes.len();
+    let mut out = Vec::with_capacity(n);
+    let mut i = 0;
+
+    while i < n {
+        if i + 3 <= n && &bytes[i..i + 3] == b"not" {
+            let after_kw = i + 3;
+            let before_ok = i == 0
+                || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_');
+            let mut k = after_kw;
+            while k < n && (bytes[k] as char).is_whitespace() {
+                k += 1;
+            }
+            if before_ok && k < n && bytes[k] == b'(' {
+                let mut depth: i32 = 1;
+                let mut m = k + 1;
+                while m < n && depth > 0 {
+                    match bytes[m] {
+                        b'(' => depth += 1,
+                        b')' => depth -= 1,
+                        _ => {}
+                    }
+                    m += 1;
+                }
+                if depth == 0 {
+                    let inside = &args[k + 1..m - 1];
+                    if inside.trim() == "test" {
+                        out.push(b' ');
+                        i = m;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Returns true if the ±200 character window around `pos` contains security
 /// vocabulary, indicating that a weak cryptographic primitive (MD5, SHA1) is
 /// being used in a security-sensitive context rather than for benign purposes
@@ -5876,5 +6090,156 @@ let force_cast (x : 'a) : 'b = Obj.magic x
             proof_drift.is_empty(),
             "Hand-written Obj.magic (no Coq markers) should NOT be ProofDrift"
         );
+    }
+
+    // ---------------------------------------------------------------
+    // strip_cfg_test_modules_rs + cfg_args_select_test + strip_not_test_groups
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn cfg_test_basic_attribute_is_test() {
+        assert!(Analyzer::cfg_args_select_test(b"test"));
+    }
+
+    #[test]
+    fn cfg_any_including_test_is_test() {
+        assert!(Analyzer::cfg_args_select_test(b"any(test, feature = \"x\")"));
+        assert!(Analyzer::cfg_args_select_test(b"any(feature = \"x\", test)"));
+    }
+
+    #[test]
+    fn cfg_all_including_test_is_test() {
+        assert!(Analyzer::cfg_args_select_test(
+            b"all(test, not(debug_assertions))"
+        ));
+    }
+
+    #[test]
+    fn cfg_not_test_is_not_test() {
+        assert!(!Analyzer::cfg_args_select_test(b"not(test)"));
+    }
+
+    #[test]
+    fn cfg_all_not_test_with_features_is_not_test() {
+        assert!(!Analyzer::cfg_args_select_test(
+            b"all(not(test), feature = \"foo\")"
+        ));
+    }
+
+    #[test]
+    fn cfg_feature_only_is_not_test() {
+        assert!(!Analyzer::cfg_args_select_test(b"feature = \"foo\""));
+    }
+
+    #[test]
+    fn cfg_test_substring_in_identifier_is_not_test() {
+        // `testable` contains `test` but is not a bareword match.
+        assert!(!Analyzer::cfg_args_select_test(b"feature = testable"));
+    }
+
+    #[test]
+    fn strip_cfg_test_modules_elides_inline_test_mod() {
+        let src = "\
+pub fn prod_fn() { 42 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn choreography_unbounded_loop() {
+        let x = 1;
+    }
+}
+";
+        let out = Analyzer::strip_cfg_test_modules_rs(src);
+        assert!(out.contains("pub fn prod_fn"), "production code preserved");
+        assert!(!out.contains("unbounded"), "test-fn identifier stripped");
+        assert!(!out.contains("#[test]"), "test attribute stripped");
+        assert_eq!(out.lines().count(), src.lines().count(),
+            "line count preserved so downstream line numbers stay stable");
+    }
+
+    #[test]
+    fn strip_cfg_test_modules_preserves_cfg_not_test() {
+        let src = "\
+#[cfg(not(test))]
+mod production_only {
+    fn infinite_loop() {}
+}
+";
+        let out = Analyzer::strip_cfg_test_modules_rs(src);
+        assert!(
+            out.contains("infinite_loop"),
+            "cfg(not(test)) is production — must NOT be stripped"
+        );
+    }
+
+    #[test]
+    fn strip_cfg_test_modules_handles_any_test() {
+        let src = "\
+#[cfg(any(test, feature = \"debug\"))]
+mod tests {
+    fn unbounded_thing() {}
+}
+";
+        let out = Analyzer::strip_cfg_test_modules_rs(src);
+        assert!(!out.contains("unbounded_thing"), "any(test, …) stripped");
+    }
+
+    #[test]
+    fn strip_cfg_test_modules_handles_nested_braces() {
+        let src = "\
+#[cfg(test)]
+mod tests {
+    fn nested() {
+        let x = match y {
+            1 => { 2 }
+            _ => { 3 }
+        };
+    }
+}
+trailing_production_code();
+";
+        let out = Analyzer::strip_cfg_test_modules_rs(src);
+        assert!(!out.contains("nested"), "body with nested braces stripped");
+        assert!(
+            out.contains("trailing_production_code"),
+            "code after the test mod survives"
+        );
+    }
+
+    #[test]
+    fn strip_cfg_test_modules_ignores_mod_decl_without_body() {
+        let src = "#[cfg(test)]\nmod tests;\nfn prod() {}";
+        let out = Analyzer::strip_cfg_test_modules_rs(src);
+        assert!(out.contains("mod tests;"));
+        assert!(out.contains("fn prod"));
+    }
+
+    #[test]
+    fn strip_cfg_test_modules_handles_pub_mod() {
+        let src = "\
+#[cfg(test)]
+pub mod tests {
+    fn unbounded_thing() {}
+}
+";
+        let out = Analyzer::strip_cfg_test_modules_rs(src);
+        assert!(!out.contains("unbounded_thing"), "pub mod body stripped");
+    }
+
+    #[test]
+    fn strip_not_test_groups_removes_not_test() {
+        assert_eq!(strip_not_test_groups("not(test)").trim(), "");
+        assert_eq!(
+            strip_not_test_groups("all(not(test), feature = \"x\")"),
+            "all( , feature = \"x\")"
+        );
+    }
+
+    #[test]
+    fn strip_not_test_groups_preserves_other_not() {
+        let out = strip_not_test_groups("all(test, not(debug_assertions))");
+        assert!(out.contains("not(debug_assertions)"));
+        assert!(out.contains("test"));
     }
 }
