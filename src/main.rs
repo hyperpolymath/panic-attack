@@ -49,10 +49,27 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use clap_complete_nushell::Nushell;
 use std::collections::HashMap;
-use std::fs;
-use std::io::{self, Write};
+use std::fs::{self, File};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+/// Upper bound on report JSON reads in the CLI. Reports are aggregated
+/// scan outputs; 64 MiB is two orders of magnitude beyond any realistic
+/// size and bounds tampered or malformed input before parsing.
+const REPORT_FILE_READ_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// Read a file into a String, capped at `limit` bytes. Silent-truncates
+/// if the file is larger; returns I/O errors as-is via `?`.
+fn read_report_bounded(path: &Path) -> Result<String> {
+    let mut buf = String::new();
+    File::open(path)
+        .with_context(|| format!("opening {}", path.display()))?
+        .take(REPORT_FILE_READ_LIMIT)
+        .read_to_string(&mut buf)
+        .with_context(|| format!("reading {}", path.display()))?;
+    Ok(buf)
+}
 use types::*;
 
 macro_rules! qprintln {
@@ -1609,7 +1626,7 @@ fn run_main() -> Result<()> {
                 report_path.display()
             );
 
-            let content = fs::read_to_string(&report_path)?;
+            let content = read_report_bounded(&report_path)?;
             let crash: CrashReport = serde_json::from_str(&content)?;
 
             let signatures = signatures::detect_signatures(&crash);
@@ -1633,7 +1650,7 @@ fn run_main() -> Result<()> {
         }
 
         Commands::Report { report } => {
-            let content = fs::read_to_string(&report)?;
+            let content = read_report_bounded(&report)?;
             let assault_report: AssaultReport = serde_json::from_str(&content)?;
             if !cli.quiet {
                 report::print_report(
@@ -1646,13 +1663,13 @@ fn run_main() -> Result<()> {
         }
 
         Commands::Tui { report } => {
-            let content = fs::read_to_string(&report)?;
+            let content = read_report_bounded(&report)?;
             let assault_report: AssaultReport = serde_json::from_str(&content)?;
             ReportTui::run(&assault_report)?;
         }
 
         Commands::Gui { report } => {
-            let content = fs::read_to_string(&report)?;
+            let content = read_report_bounded(&report)?;
             let assault_report: AssaultReport = serde_json::from_str(&content)?;
             report::ReportGui::run(assault_report)?;
         }
@@ -1865,9 +1882,7 @@ fn run_main() -> Result<()> {
             create_issues,
             github_owner,
         } => {
-            let content = fs::read_to_string(&report_path).with_context(|| {
-                format!("reading assemblyline report {}", report_path.display())
-            })?;
+            let content = read_report_bounded(&report_path)?;
             let asmline_report: assemblyline::AssemblylineReport =
                 serde_json::from_str(&content)
                     .with_context(|| "parsing assemblyline report JSON")?;

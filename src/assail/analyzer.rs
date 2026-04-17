@@ -41,6 +41,70 @@ fn read_bounded(path: &Path, limit: u64) -> Option<String> {
     Some(buf)
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// UnboundedAllocation detector — word-boundary keyword matchers
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Historical context: the detector originally did substring matches like
+// `code_only.contains("unbounded")`. This fires on any identifier
+// containing those letters — including the detector's own variable names
+// (`has_unbounded_allocations`, `unbounded_vec_patterns`) and normal
+// tokio usage (`tokio::sync::mpsc::unbounded_channel`). On a self-scan,
+// analyzer.rs was the last residual Critical after the `.take(LIMIT)`
+// sweep closed the real unbounded reads.
+//
+// Fix: word-boundary regex matches. `\bunbounded\b` does NOT match
+// `unbounded_channel` or `unbounded_vec_patterns` because `_` is a word
+// character in regex, so the trailing `_` blocks the closing boundary.
+// It DOES match bare `unbounded` (e.g., `fn unbounded()`, `type T = Unbounded;`),
+// which is what we actually want the alarm for.
+//
+// The regexes are compiled once via OnceLock and reused across every
+// file in a scan — per-call overhead is a single pointer read.
+
+/// Match the unbounded-allocation alarm keywords as whole words only.
+/// Keywords: unbounded, no_bound, no_limit, boundless, unlimited, unconstrained.
+static UNBOUNDED_KEYWORDS_RE: OnceLock<Regex> = OnceLock::new();
+
+/// Match `infinite` as a whole word (not part of `is_infinite`, `infinite_loop_v2`, etc.).
+static INFINITE_WORD_RE: OnceLock<Regex> = OnceLock::new();
+
+/// Match `recursion` as a whole word.
+static RECURSION_WORD_RE: OnceLock<Regex> = OnceLock::new();
+
+/// Match `limit` as a word prefix, case-insensitively, to disarm
+/// read_to_* checks when the file has explicit bounds. Matches `limit`,
+/// `Limit`, `LIMIT`, `READ_LIMIT`, `limit_bytes`, `limits`; does NOT match
+/// `unlimited` or `sublimit` (those start inside a word).
+static LIMIT_WORD_RE: OnceLock<Regex> = OnceLock::new();
+
+fn has_unbounded_keyword(code: &str) -> bool {
+    UNBOUNDED_KEYWORDS_RE
+        .get_or_init(|| {
+            Regex::new(r"\b(unbounded|no_bound|no_limit|boundless|unlimited|unconstrained)\b")
+                .expect("static regex is valid")
+        })
+        .is_match(code)
+}
+
+fn has_infinite_word(code: &str) -> bool {
+    INFINITE_WORD_RE
+        .get_or_init(|| Regex::new(r"\binfinite\b").expect("static regex is valid"))
+        .is_match(code)
+}
+
+fn has_recursion_word(code: &str) -> bool {
+    RECURSION_WORD_RE
+        .get_or_init(|| Regex::new(r"\brecursion\b").expect("static regex is valid"))
+        .is_match(code)
+}
+
+fn has_limit_word(code: &str) -> bool {
+    LIMIT_WORD_RE
+        .get_or_init(|| Regex::new(r"(?i)\blimit").expect("static regex is valid"))
+        .is_match(code)
+}
+
 // Thread-local accumulators for migration analysis.
 // These collect deprecated/modern API counts across all files during a single
 // analyze() run, then get consumed by build_migration_metrics().
@@ -889,23 +953,23 @@ impl Analyzer {
         // of the explicit-keyword / tiny-capacity / unlimited-read
         // signals below, which remain specific enough to be useful.
         //
-        // `read_to_*` is disarmed by either the lexical `limit` token
+        // `read_to_*` is disarmed by either a `limit`-prefixed word
+        // (case-insensitive, e.g. `LIMIT`, `READ_LIMIT`, `limit_bytes`)
         // OR `.take(` in the same file — both are valid bounded-read
         // patterns; `.take(N).read_to_end(&mut buf)` is the canonical
-        // idiom.
-        let read_is_bounded =
-            code_only.contains("limit") || code_only.contains(".take(");
-        let has_unbounded_allocations = code_only.contains("unbounded")
-            || code_only.contains("no_bound")
-            || code_only.contains("no_limit")
-            || code_only.contains("boundless")
-            || code_only.contains("unlimited")
-            || code_only.contains("unconstrained")
+        // idiom. Word-boundary match avoids disarming on `unlimited`.
+        let read_is_bounded = has_limit_word(&code_only) || code_only.contains(".take(");
+        // Keyword alarms use word-boundary regex so the detector's own
+        // variable names (`has_unbounded_allocations`, `unbounded_vec_*`)
+        // and legitimate tokio types (`unbounded_channel`) don't trip
+        // the substring heuristic. Bare keyword usage as an identifier
+        // still fires, which is the intended signal.
+        let has_unbounded_allocations = has_unbounded_keyword(&code_only)
             // `infinite` matches Rust std `f64::is_infinite()`, which is
             // benign. Require the word in a non-method-call context.
-            || (code_only.contains("infinite") && !code_only.contains("is_infinite"))
+            || (has_infinite_word(&code_only) && !code_only.contains("is_infinite"))
             // Unterminated recursion lacking any depth guard.
-            || (code_only.contains("recursion") && !code_only.contains("depth"))
+            || (has_recursion_word(&code_only) && !code_only.contains("depth"))
             // Suspiciously small initial capacity for a growing vector.
             || code_only.contains("with_capacity(0)")
             || code_only.contains("with_capacity(1)")
@@ -6399,6 +6463,116 @@ pub fn load(path: &str) -> std::io::Result<String> {
         assert!(
             !ub_findings.is_empty(),
             "unbounded read_to_string in production must still fire"
+        );
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Word-boundary detector regression tests (Task #25 — zero-FN gate)
+    //
+    // Lock in that the substring -> word-boundary refactor does not
+    // reintroduce self-reference FPs or drop real signal.
+    // ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn analyze_rust_unbounded_as_identifier_substring_does_not_fire() {
+        // Self-reference FP regression: the detector's own variable
+        // names (and tokio's `unbounded_channel`) previously tripped
+        // the substring check. Word-boundary regex must not match
+        // these because the trailing `_` is a word char.
+        let src = "\
+use tokio::sync::mpsc;
+
+pub fn make_channel() -> (mpsc::UnboundedSender<u8>, mpsc::UnboundedReceiver<u8>) {
+    mpsc::unbounded_channel()
+}
+
+pub fn analyze(body: &str) -> bool {
+    let has_unbounded_allocations = body.contains(\"x\");
+    let unbounded_vec_patterns = body.len();
+    let unbounded_string_patterns = unbounded_vec_patterns * 2;
+    has_unbounded_allocations || unbounded_string_patterns > 0
+}
+";
+        let findings = analyze_rust_file("src/lib.rs", src);
+        let ub_findings: Vec<_> = findings
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+            .collect();
+        assert!(
+            ub_findings.is_empty(),
+            "identifiers containing `unbounded` as substring must not fire: {:?}",
+            ub_findings
+        );
+    }
+
+    #[test]
+    fn analyze_rust_unbounded_as_bare_identifier_still_fires() {
+        // Sanity: when `unbounded` is actually a bare word/identifier
+        // (not inside a longer name), we still flag it.
+        let src = "\
+pub fn unbounded() -> Vec<u8> {
+    Vec::new()
+}
+";
+        let findings = analyze_rust_file("src/lib.rs", src);
+        let ub_findings: Vec<_> = findings
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+            .collect();
+        assert!(
+            !ub_findings.is_empty(),
+            "bare `unbounded` identifier should still fire the alarm"
+        );
+    }
+
+    #[test]
+    fn analyze_rust_unlimited_does_not_disarm_limit_check() {
+        // `unlimited` must NOT disarm read_to_string bound check — the
+        // word-prefix regex for `limit` should only match at word
+        // boundaries. Previously the substring `.contains("limit")`
+        // disarmed via the tail of `unlimited`.
+        let src = "\
+pub fn slurp_unlimited(path: &str) -> std::io::Result<String> {
+    std::fs::read_to_string(path)
+}
+";
+        let findings = analyze_rust_file("src/read.rs", src);
+        let ub_findings: Vec<_> = findings
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+            .collect();
+        assert!(
+            !ub_findings.is_empty(),
+            "`unlimited` in an identifier must not disarm the read check — \
+             unbounded read_to_string is still unbounded: {:?}",
+            ub_findings
+        );
+    }
+
+    #[test]
+    fn analyze_rust_uppercase_limit_const_disarms_read_check() {
+        // A `const READ_LIMIT: u64` should disarm the read_to_string
+        // check via the case-insensitive \blimit regex.
+        let src = "\
+use std::io::Read;
+
+const READ_LIMIT: u64 = 64 * 1024;
+
+pub fn load(path: &str) -> std::io::Result<String> {
+    let mut buf = String::new();
+    std::fs::File::open(path)?.take(READ_LIMIT).read_to_string(&mut buf)?;
+    Ok(buf)
+}
+";
+        let findings = analyze_rust_file("src/read.rs", src);
+        let ub_findings: Vec<_> = findings
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+            .collect();
+        assert!(
+            ub_findings.is_empty(),
+            "`.take(READ_LIMIT)` plus `READ_LIMIT` constant must disarm: {:?}",
+            ub_findings
         );
     }
 }
