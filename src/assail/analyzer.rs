@@ -920,18 +920,24 @@ impl Analyzer {
         let panic_sites = code_only.matches("panic!(").count() + code_only.matches("unreachable!(").count();
         let unwrap_calls = code_only.matches(".unwrap()").count() + code_only.matches(".expect(").count();
         
-        // Apply test file suppression
+        // Apply test file suppression. In test files, normal
+        // assert-macro use pushes panic/unwrap counts high with no
+        // production-code signal, so we suppress the counts unless they
+        // exceed a "clearly excessive" threshold — only the delta above
+        // the threshold is attributed to the file's statistics.
+        //
+        // Panic and unwrap thresholds are evaluated independently: a
+        // test file with 30 panics + 5 unwraps should report 10 panics
+        // (30 − 20) and 0 unwraps, not suppress everything because the
+        // unwrap count is normal. The previous version declared both
+        // thresholds but only compared panics, silently dropping any
+        // excessive unwrap signal.
         let (effective_panic_sites, effective_unwrap_calls) = if is_test_file {
-            // In test files, only count excessive usage that might indicate real issues
-            // Suppress normal test patterns but flag extreme cases
-            let panic_threshold = 20;  // More than 20 panics might indicate poor test design
-            let unwrap_threshold = 10; // More than 10 unwraps might indicate poor test design
-            
-            if panic_sites > panic_threshold {
-                (panic_sites - panic_threshold, unwrap_calls)
-            } else {
-                (0, 0) // Suppress normal test patterns
-            }
+            let panic_threshold = 20;
+            let unwrap_threshold = 10;
+            let eff_panics = panic_sites.saturating_sub(panic_threshold);
+            let eff_unwraps = unwrap_calls.saturating_sub(unwrap_threshold);
+            (eff_panics, eff_unwraps)
         } else {
             (panic_sites, unwrap_calls) // Production code: count all
         };
@@ -943,13 +949,13 @@ impl Analyzer {
         let vec_new_count = content.matches("Vec::new()").count();
         let box_new_count = content.matches("Box::new(").count();
         let string_new_count = content.matches("String::new()").count();
-        
-        // Detect potential unbounded allocations
-        let unbounded_vec_patterns = content.matches("Vec::with_capacity(").count();
-        let unbounded_box_patterns = content.matches("Box::new(").count(); // Box can be unbounded
-        let unbounded_string_patterns = content.matches("String::with_capacity(").count();
-        
-        // Count allocations but flag unbounded patterns separately
+
+        // Count allocations; unbounded-pattern *classification* (tiny
+        // with_capacity, unlimited-read keywords, etc.) happens in the
+        // `has_unbounded_allocations` block below — not as a per-site
+        // counter. The previous `unbounded_*_patterns` locals duplicated
+        // the count without feeding into any finding and have been
+        // removed to clear dead-code warnings.
         stats.allocation_sites += vec_new_count + box_new_count + string_new_count;
         
         // Flag unbounded allocation patterns as high-risk. `code_only`

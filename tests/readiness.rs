@@ -105,7 +105,11 @@ fn readiness_c_assail_detects_unsafe() {
 #[test]
 fn readiness_c_assail_detects_unwrap() {
     let dir = TempDir::new().unwrap();
-    // Need >5 unwrap/expect calls to exceed the reporting threshold
+    // Fixture name must NOT match the `is_test_file` heuristic
+    // (`_test.rs` / `_tests.rs` / `/tests/` / `_spec.` / …) — the
+    // analyser suppresses normal test-file panic/unwrap counts so the
+    // PanicPath category only surfaces on production code. This
+    // fixture exercises the production-code path.
     let code = r#"
 fn main() {
     let _a = Some(1).unwrap();
@@ -117,7 +121,7 @@ fn main() {
     let _g = Some(7).expect("seven");
 }
 "#;
-    let src = dir.path().join("unwrap_test.rs");
+    let src = dir.path().join("unwrap_fixture.rs");
     fs::write(&src, code).unwrap();
     let report = assail::analyze(&src).expect("assail should succeed");
     assert!(
