@@ -836,26 +836,37 @@ impl Analyzer {
         // Count allocations but flag unbounded patterns separately
         stats.allocation_sites += vec_new_count + box_new_count + string_new_count;
         
-        // Flag unbounded allocation patterns as high-risk - Enhanced detection
-        let has_unbounded_allocations = content.contains("while let") && content.contains("push(") ||
-                                      content.contains("for") && content.contains("push(") ||
-                                      content.contains("unbounded") ||
-                                      content.contains("no_bound") ||
-                                      content.contains("no_limit") ||
-                                      content.contains("infinite") ||
-                                      content.contains("boundless") ||
-                                      content.contains("unlimited") ||
-                                      content.contains("unconstrained") ||
-                                      // Common unbounded loop + allocation patterns
-                                      (content.contains("loop") && content.contains("Vec::new")) ||
-                                      (content.contains("loop") && content.contains("push")) ||
-                                      (content.contains("recursion") && !content.contains("depth")) ||
-                                      // Suspicious capacity patterns
-                                      content.contains("with_capacity(0)") ||
-                                      content.contains("with_capacity(1)") ||
-                                      // Network-related unbounded patterns
-                                      (content.contains("read_to_end") && !content.contains("limit")) ||
-                                      (content.contains("read_to_string") && !content.contains("limit"));
+        // Flag unbounded allocation patterns as high-risk.
+        //
+        // The check runs against `code_only` (comments + string literals already
+        // stripped) so that dangerous-word keywords embedded in doc comments,
+        // string literals, or generated source text do not falsely fire.
+        //
+        // The earlier version also paired bare `for` / `while let` / `loop`
+        // tokens with `push(` or `Vec::new` as standalone heuristics. Those
+        // pairs co-occur in essentially every non-trivial Rust file (bounded
+        // `for x in collection { v.push(y) }` is normal code), so they
+        // generated ~60 critical findings per average repo with no signal.
+        // Dropped in favour of the explicit-keyword / tiny-capacity /
+        // unlimited-read signals below, which remain specific enough to be
+        // useful.
+        let has_unbounded_allocations = code_only.contains("unbounded")
+            || code_only.contains("no_bound")
+            || code_only.contains("no_limit")
+            || code_only.contains("boundless")
+            || code_only.contains("unlimited")
+            || code_only.contains("unconstrained")
+            // `infinite` matches Rust std `f64::is_infinite()`, which is
+            // benign. Require the word in a non-method-call context.
+            || (code_only.contains("infinite") && !code_only.contains("is_infinite"))
+            // Unterminated recursion lacking any depth guard.
+            || (code_only.contains("recursion") && !code_only.contains("depth"))
+            // Suspiciously small initial capacity for a growing vector.
+            || code_only.contains("with_capacity(0)")
+            || code_only.contains("with_capacity(1)")
+            // Network / I/O primitives that slurp without a cap.
+            || (code_only.contains("read_to_end") && !code_only.contains("limit"))
+            || (code_only.contains("read_to_string") && !code_only.contains("limit"));
         
         if has_unbounded_allocations && !is_test_file {
             weak_points.push(WeakPoint {
