@@ -1034,9 +1034,9 @@ impl Analyzer {
         // This Rust function explicitly skips ALL JWT verification (signature,
         // expiry, audience, issuer).  Its name documents the risk; any call
         // site is a CryptoMisuse finding regardless of context.
-        // Uses `content` directly — this identifier never appears inside a
-        // string literal, so string-stripping would only produce false negatives.
-        if content.contains("dangerous_insecure_decode") {
+        // Use `code_only` so the detector doesn't flag string literals that
+        // mention the identifier (analyzer self-reference, test fixtures, etc).
+        if code_only.contains("dangerous_insecure_decode") {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
