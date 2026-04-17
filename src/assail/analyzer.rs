@@ -795,7 +795,20 @@ impl Analyzer {
         // (allocation sites, I/O, threading) still use the raw content
         // because those patterns are safe to count in any context.
         let without_strings = Self::strip_string_literals_rs(content);
-        let code_only = strip_proof_comments(&without_strings, "//", Some(("/*", "*/")));
+        let without_comments =
+            strip_proof_comments(&without_strings, "//", Some(("/*", "*/")));
+        // Apply inline-test-mod stripping globally so `#[cfg(test)] mod
+        // tests { … }` is treated as test context by every substring-based
+        // dangerous-pattern check below — the Rust analogue of Zig's
+        // `count_unsafe_in_test_blocks`. See
+        // `Analyzer::strip_cfg_test_modules_rs` doc-comment for the
+        // recognised attribute forms. Previously scoped only to the
+        // unbounded-allocation check; widened 2026-04-17 after the same
+        // FP class was projected to affect unsafe / panic / unwrap /
+        // crypto counts too (a `#[test] fn exercises_unsafe_wrapper()`
+        // inside a production file would otherwise count toward that
+        // file's unsafe-block total).
+        let code_only = Self::strip_cfg_test_modules_rs(&without_comments);
 
         stats.unsafe_blocks += code_only.matches("unsafe {").count();
         stats.unsafe_blocks += code_only.matches("unsafe fn").count();
@@ -836,45 +849,44 @@ impl Analyzer {
         // Count allocations but flag unbounded patterns separately
         stats.allocation_sites += vec_new_count + box_new_count + string_new_count;
         
-        // Flag unbounded allocation patterns as high-risk.
+        // Flag unbounded allocation patterns as high-risk. `code_only`
+        // already has string literals, comments, and `#[cfg(test)] mod
+        // tests` bodies stripped, so keyword substring checks below do
+        // not fire on doc comments, generated source strings, or
+        // test-mod identifiers.
         //
-        // The check runs against `code_no_test_mods` — `code_only` (comments
-        // + string literals already stripped) with any `#[cfg(test)] mod <x>
-        // { … }` body also stripped. This way dangerous-word keywords
-        // embedded in doc comments, string literals, or inline test modules
-        // (`#[test] fn validate_detects_left_recursion()` inside a production
-        // source file's `mod tests` block, etc.) do not falsely fire.
+        // The earlier version also paired bare `for` / `while let` /
+        // `loop` tokens with `push(` or `Vec::new` as standalone
+        // heuristics. Those pairs co-occur in essentially every
+        // non-trivial Rust file (bounded `for x in collection {
+        // v.push(y) }` is normal code), so they generated ~60 critical
+        // findings per average repo with no signal. Dropped in favour
+        // of the explicit-keyword / tiny-capacity / unlimited-read
+        // signals below, which remain specific enough to be useful.
         //
-        // The earlier version also paired bare `for` / `while let` / `loop`
-        // tokens with `push(` or `Vec::new` as standalone heuristics. Those
-        // pairs co-occur in essentially every non-trivial Rust file (bounded
-        // `for x in collection { v.push(y) }` is normal code), so they
-        // generated ~60 critical findings per average repo with no signal.
-        // Dropped in favour of the explicit-keyword / tiny-capacity /
-        // unlimited-read signals below, which remain specific enough to be
-        // useful.
-        let code_no_test_mods = Self::strip_cfg_test_modules_rs(&code_only);
-        let has_unbounded_allocations = code_no_test_mods.contains("unbounded")
-            || code_no_test_mods.contains("no_bound")
-            || code_no_test_mods.contains("no_limit")
-            || code_no_test_mods.contains("boundless")
-            || code_no_test_mods.contains("unlimited")
-            || code_no_test_mods.contains("unconstrained")
+        // `read_to_*` is disarmed by either the lexical `limit` token
+        // OR `.take(` in the same file — both are valid bounded-read
+        // patterns; `.take(N).read_to_end(&mut buf)` is the canonical
+        // idiom.
+        let read_is_bounded =
+            code_only.contains("limit") || code_only.contains(".take(");
+        let has_unbounded_allocations = code_only.contains("unbounded")
+            || code_only.contains("no_bound")
+            || code_only.contains("no_limit")
+            || code_only.contains("boundless")
+            || code_only.contains("unlimited")
+            || code_only.contains("unconstrained")
             // `infinite` matches Rust std `f64::is_infinite()`, which is
             // benign. Require the word in a non-method-call context.
-            || (code_no_test_mods.contains("infinite")
-                && !code_no_test_mods.contains("is_infinite"))
+            || (code_only.contains("infinite") && !code_only.contains("is_infinite"))
             // Unterminated recursion lacking any depth guard.
-            || (code_no_test_mods.contains("recursion")
-                && !code_no_test_mods.contains("depth"))
+            || (code_only.contains("recursion") && !code_only.contains("depth"))
             // Suspiciously small initial capacity for a growing vector.
-            || code_no_test_mods.contains("with_capacity(0)")
-            || code_no_test_mods.contains("with_capacity(1)")
+            || code_only.contains("with_capacity(0)")
+            || code_only.contains("with_capacity(1)")
             // Network / I/O primitives that slurp without a cap.
-            || (code_no_test_mods.contains("read_to_end")
-                && !code_no_test_mods.contains("limit"))
-            || (code_no_test_mods.contains("read_to_string")
-                && !code_no_test_mods.contains("limit"));
+            || (code_only.contains("read_to_end") && !read_is_bounded)
+            || (code_only.contains("read_to_string") && !read_is_bounded);
         
         if has_unbounded_allocations && !is_test_file {
             weak_points.push(WeakPoint {
@@ -6241,5 +6253,127 @@ pub mod tests {
         let out = strip_not_test_groups("all(test, not(debug_assertions))");
         assert!(out.contains("not(debug_assertions)"));
         assert!(out.contains("test"));
+    }
+
+    // ---------------------------------------------------------------
+    // End-to-end: inline #[cfg(test)] mod is test context for *every*
+    // substring-based check in analyze_rust, not just unbounded-alloc.
+    // ---------------------------------------------------------------
+
+    fn analyze_rust_file(path: &str, content: &str) -> Vec<WeakPoint> {
+        let tmp = TempDir::new().unwrap();
+        let file_path = tmp.path().join(path);
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&file_path, content).unwrap();
+        let analyzer = Analyzer::new(tmp.path()).unwrap();
+        let report = analyzer.analyze().unwrap();
+        report.weak_points
+    }
+
+    #[test]
+    fn analyze_rust_ignores_unsafe_inside_cfg_test_mod() {
+        // Production code: zero unsafe blocks. Test code: one unsafe
+        // block. The file as a whole should NOT be flagged for
+        // UnsafeCode because the unsafe block is test-context.
+        let src = "\
+pub fn safe_prod() -> i64 { 1 + 2 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exercises_raw_pointer() {
+        let x: u64 = 42;
+        let ptr = &x as *const u64;
+        unsafe {
+            assert_eq!(*ptr, 42);
+        }
+    }
+}
+";
+        let findings = analyze_rust_file("src/lib.rs", src);
+        let unsafe_findings: Vec<_> = findings
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnsafeCode)
+            .collect();
+        assert!(
+            unsafe_findings.is_empty(),
+            "unsafe inside #[cfg(test)] mod must not count: {:?}",
+            unsafe_findings
+        );
+    }
+
+    #[test]
+    fn analyze_rust_ignores_unbounded_keyword_in_cfg_test_mod() {
+        let src = "\
+pub fn prod() -> i64 { 42 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn choreography_unbounded_loop() {
+        assert_eq!(1, 1);
+    }
+}
+";
+        let findings = analyze_rust_file("src/lib.rs", src);
+        let ub_findings: Vec<_> = findings
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+            .collect();
+        assert!(
+            ub_findings.is_empty(),
+            "`unbounded` in test-fn identifier must not count: {:?}",
+            ub_findings
+        );
+    }
+
+    #[test]
+    fn analyze_rust_take_disarms_read_to_string() {
+        // `.take(N).read_to_string(...)` is a bounded read — must not
+        // trigger UnboundedAllocation even without the word `limit`.
+        let src = "\
+use std::io::Read;
+
+const CAP: u64 = 64 * 1024 * 1024;
+
+pub fn load(path: &str) -> std::io::Result<String> {
+    let mut buf = String::new();
+    std::fs::File::open(path)?.take(CAP).read_to_string(&mut buf)?;
+    Ok(buf)
+}
+";
+        let findings = analyze_rust_file("src/read.rs", src);
+        let ub_findings: Vec<_> = findings
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+            .collect();
+        assert!(
+            ub_findings.is_empty(),
+            "`.take(N).read_to_string(...)` is bounded and must not fire: {:?}",
+            ub_findings
+        );
+    }
+
+    #[test]
+    fn analyze_rust_read_to_string_without_bound_still_fires() {
+        // Sanity: the rule still catches the genuine pattern.
+        let src = "\
+pub fn load(path: &str) -> std::io::Result<String> {
+    std::fs::read_to_string(path)
+}
+";
+        let findings = analyze_rust_file("src/read.rs", src);
+        let ub_findings: Vec<_> = findings
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+            .collect();
+        assert!(
+            !ub_findings.is_empty(),
+            "unbounded read_to_string in production must still fire"
+        );
     }
 }
