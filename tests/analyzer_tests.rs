@@ -210,6 +210,84 @@ fn test_framework_detection_database() {
 }
 
 #[test]
+fn test_todo_in_string_literal_does_not_trigger_unchecked_error() {
+    // Regression test for 007-lang false positive: parser.rs contained
+    // 155 `.expect("TODO: handle error")` calls. The old detector did
+    // `content.matches("TODO").count()` on raw content, so each string
+    // literal incremented the TODO count. This pattern is common in
+    // stub code and shouldn't be classified as UncheckedError.
+    let dir = TempDir::new().unwrap();
+    let content = r#"
+pub fn parse_stubbed(input: &str) -> String {
+    let first = input.split(',').next().expect("TODO: handle error");
+    let second = input.split('.').next().expect("TODO: handle error");
+    let third = input.split('/').next().expect("TODO: handle error");
+    let fourth = input.split(':').next().expect("TODO: handle error");
+    let fifth = input.split(';').next().expect("TODO: handle error");
+    let sixth = input.split('-').next().expect("TODO: handle error");
+    let seventh = input.split('_').next().expect("TODO: handle error");
+    let eighth = input.split('+').next().expect("TODO: handle error");
+    let ninth = input.split('*').next().expect("TODO: handle error");
+    let tenth = input.split('!').next().expect("TODO: handle error");
+    let eleventh = input.split('?').next().expect("TODO: handle error");
+    format!("{}{}{}{}{}{}{}{}{}{}{}",
+        first, second, third, fourth, fifth, sixth,
+        seventh, eighth, ninth, tenth, eleventh)
+}
+"#;
+    let file = create_test_file(&dir, "stubby.rs", content);
+    let report = assail::analyze(&file).expect("analysis should succeed");
+
+    let unchecked: Vec<_> = report
+        .weak_points
+        .iter()
+        .filter(|wp| wp.category == WeakPointCategory::UncheckedError)
+        .collect();
+
+    assert!(
+        unchecked.is_empty(),
+        "TODO inside .expect() string literals must not count as \
+         UncheckedError markers: got {:?}",
+        unchecked
+    );
+}
+
+#[test]
+fn test_real_todo_comments_still_detected() {
+    // Sanity: actual `// TODO` comments in the 11+ threshold still fire.
+    let dir = TempDir::new().unwrap();
+    let content = r#"
+// TODO: implement proper error handling
+// TODO: add tests for edge cases
+// TODO: optimise hot path
+// TODO: document invariants
+// FIXME: this leaks memory on panic
+// FIXME: race condition in iterator
+// FIXME: buffer overflow possible
+// HACK: using unsafe pointer cast as workaround
+// HACK: bypassing type check with transmute
+// HACK: relying on undocumented behaviour
+// XXX: this block needs review
+// XXX: performance critical but correctness unclear
+pub fn stub() -> i32 { 42 }
+"#;
+    let file = create_test_file(&dir, "debt.rs", content);
+    let report = assail::analyze(&file).expect("analysis should succeed");
+
+    let unchecked: Vec<_> = report
+        .weak_points
+        .iter()
+        .filter(|wp| wp.category == WeakPointCategory::UncheckedError)
+        .collect();
+
+    assert!(
+        !unchecked.is_empty(),
+        "real // TODO / // FIXME / // HACK / // XXX comments above \
+         the threshold should still fire the detector"
+    );
+}
+
+#[test]
 fn test_per_file_stats_populated() {
     let dir = TempDir::new().unwrap();
     let content = r#"

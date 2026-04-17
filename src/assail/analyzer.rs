@@ -243,6 +243,20 @@ static RE_SHELL_UNQUOTED_VAR: OnceLock<Regex> = OnceLock::new();
 static RE_HTTP_URL: OnceLock<Regex> = OnceLock::new();
 static RE_HTTP_LOCALHOST: OnceLock<Regex> = OnceLock::new();
 static RE_HARDCODED_SECRET: OnceLock<Regex> = OnceLock::new();
+/// Match TODO/FIXME/HACK/XXX markers only when preceded by a
+/// comment-starter on the same line. Excludes string-literal matches
+/// like `.expect("TODO: handle error")` which were previously
+/// inflating the UncheckedError count for every `.expect(...)` call
+/// that mentioned TODO in its message (observed on 007-lang:
+/// parser.rs has 155 `.expect("TODO: ...")` patterns, each of which
+/// was being double-counted as both PanicPath (correct) and
+/// UncheckedError (FP).
+///
+/// Comment-starters handled: `//` (Rust/C/JS/...), `/*` (block),
+/// `#` (Python/Ruby/Shell/Nix/Elixir-preamble), `--` (Haskell/Ada/
+/// SQL/Lua/Idris), `;;` (Lisp/Scheme/Racket), `%%` (Erlang/Matlab).
+/// Does not handle OCaml `(* *)` or Forth `\` — edge cases for later.
+static RE_TODO_COMMENT: OnceLock<Regex> = OnceLock::new();
 
 pub struct Analyzer {
     target: PathBuf,
@@ -4543,11 +4557,15 @@ impl Analyzer {
             });
         }
 
-        // TODO/FIXME/HACK/XXX markers
-        let todo_count = content.matches("TODO").count()
-            + content.matches("FIXME").count()
-            + content.matches("HACK").count()
-            + content.matches("XXX").count();
+        // TODO/FIXME/HACK/XXX markers — count only when the marker
+        // appears on a line that also contains a comment-starter, so
+        // string literals like `.expect("TODO: handle error")` don't
+        // inflate the count. See RE_TODO_COMMENT definition above.
+        let todo_re = RE_TODO_COMMENT.get_or_init(|| {
+            Regex::new(r"(?m)^[^\n]*?(//|/\*|\*|#|--|;;|%%)[^\n]*?\b(TODO|FIXME|HACK|XXX)\b")
+                .expect("static regex is valid")
+        });
+        let todo_count = todo_re.find_iter(content).count();
         if todo_count > 10 {
             weak_points.push(WeakPoint {
                 file: None,
