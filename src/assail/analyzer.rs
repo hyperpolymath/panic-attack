@@ -5346,6 +5346,7 @@ fn few_unwraps() {
             target: std::path::PathBuf::from("auth.rs"),
             language: crate::types::Language::Rust,
             verbose: false,
+            browser_extension: false,
         };
         let content = r#"
 use jsonwebtoken::{dangerous_insecure_decode, DecodingKey, TokenData};
