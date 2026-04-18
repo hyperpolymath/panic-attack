@@ -1,0 +1,16 @@
+```mermaid
+graph TD
+    A[SystemImage] --> B[ImageNode: Repository]
+    A --> C[ImageEdge: Functional Connectivity]
+    A --> D[Risk Distribution]
+    B --> E[Health Score: 0.0-1.0]
+    B --> F[Risk Intensity: Sigmoid]
+    B --> G[Weak-Point Density]
+    C --> H[Risk Proximity Edge]
+    C --> I[Shared Pattern Edge]
+    D --> J[Healthy: <0.2]
+    D --> K[Low: 0.2-0.4]
+    D --> L[Moderate: 0.4-0.6]
+    D --> M[High: 0.6-0.8]
+    D --> N[Critical: ≥0.8]
+```

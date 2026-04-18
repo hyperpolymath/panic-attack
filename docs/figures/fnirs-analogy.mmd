@@ -1,0 +1,29 @@
+```mermaid
+graph LR
+    subgraph fNIRS
+        A[Cortical Region] --> B[Blood Oxygenation]
+        A --> C[Neural Activation Density]
+        A --> D[Hemodynamic Response]
+        A --> E[Optode Placement]
+        A --> F[Functional Connectivity Channel]
+        A --> G[Functional Map]
+        A --> H[Time Series]
+    end
+    subgraph mass-panic
+        A2[Repository] --> B2[Health Score]
+        A2 --> C2[Weak-Point Density]
+        A2 --> D2[Change Velocity]
+        A2 --> E2[Scanner Coverage]
+        A2 --> F2[Dependency Edge]
+        A2 --> G2[SystemImage]
+        A2 --> H2[Temporal Snapshot Sequence]
+    end
+    A -->|Analogy| A2
+    B -->|Analogy| B2
+    C -->|Analogy| C2
+    D -->|Analogy| D2
+    E -->|Analogy| E2
+    F -->|Analogy| F2
+    G -->|Analogy| G2
+    H -->|Analogy| H2
+```
