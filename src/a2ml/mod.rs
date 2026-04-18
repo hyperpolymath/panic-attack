@@ -860,6 +860,7 @@ mod tests {
                 allocation_sites: 0,
                 io_operations: 0,
                 threading_constructs: 0,
+                ffi_safe_wrapper: false,
             }],
             recommended_attacks: vec![AttackAxis::Concurrency],
             dependency_graph: DependencyGraph::default(),

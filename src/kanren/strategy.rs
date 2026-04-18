@@ -258,6 +258,7 @@ mod tests {
             allocation_sites: 0,
             io_operations: 0,
             threading_constructs: 0,
+            ffi_safe_wrapper: false,
         }
     }
 
@@ -280,6 +281,7 @@ mod tests {
             allocation_sites: 0,
             io_operations: 0,
             threading_constructs: 0,
+            ffi_safe_wrapper: false,
         };
         let risk = score_file(&fs);
         assert!((risk.risk_score - 0.0).abs() < 0.01);

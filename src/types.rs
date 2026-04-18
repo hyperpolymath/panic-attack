@@ -442,6 +442,18 @@ pub struct FileStatistics {
     pub allocation_sites: usize,
     pub io_operations: usize,
     pub threading_constructs: usize,
+    /// Structural flag: this file is a Rust FFI safe-wrapper around an
+    /// `extern "C"` boundary. True when the file declares an extern-C
+    /// block, uses FFI idioms (`CStr` / `CString` / `c_char` /
+    /// `from_raw_parts`), every `unsafe {` block carries a preceding
+    /// `// SAFETY:` comment, and there are no `mem::transmute` calls
+    /// (those have their own JIT-context classification). The kanren
+    /// context extractor reads this flag to assert
+    /// `context(path, ffi_safe_wrapper)`, and Rule 13 then suppresses
+    /// `UnsafeCode` findings on the file. Motivating case:
+    /// `007-lang/audits/audit-ffi-unsafe.md §1` (zig_bridge.rs).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ffi_safe_wrapper: bool,
 }
 
 /// Assail analysis results

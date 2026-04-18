@@ -349,6 +349,18 @@ pub fn apply_suppression(report: &mut AssailReport) {
             _ => continue,
         };
 
+        // Flip every matching weak point, not just the first. Facts in
+        // the kanren DB are deduped by (name, args), so a single
+        // `suppressed(Category, File)` derivation represents "every
+        // finding of this (category, file) tuple is a false positive"
+        // — NOT "one arbitrary finding is a FP." The previous
+        // `break`-after-first behaviour meant a file with multiple
+        // findings of the same category (e.g. zig_bridge.rs with both
+        // "N unsafe blocks" and "Raw pointer cast" UnsafeCode
+        // findings) would only have one finding flipped per call, and
+        // the second would stay active unless a downstream pass ran
+        // the suppression again. Removing the `break` makes the
+        // behaviour idempotent in a single pass.
         for wp in &mut report.weak_points {
             if wp.suppressed {
                 continue;
@@ -358,7 +370,6 @@ pub fn apply_suppression(report: &mut AssailReport) {
             if wp_cat == category_str && wp_loc == location_str {
                 wp.suppressed = true;
                 count += 1;
-                break;
             }
         }
     }

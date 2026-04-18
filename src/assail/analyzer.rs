@@ -657,6 +657,14 @@ impl Analyzer {
                 || file_stats.io_operations > 0
                 || file_stats.threading_constructs > 0;
 
+            // Rust-only structural signal: is this an FFI safe-wrapper
+            // around an `extern "C"` boundary? Computed once per file
+            // here because the per-language analyzers don't have the
+            // FileStatistics container in scope. See
+            // `is_rust_ffi_safe_wrapper` for the four detection criteria.
+            let ffi_safe_wrapper = matches!(file_lang, Language::Rust)
+                && Self::is_rust_ffi_safe_wrapper(&content);
+
             if has_findings {
                 file_statistics.push(FileStatistics {
                     file_path: rel_path,
@@ -667,6 +675,7 @@ impl Analyzer {
                     allocation_sites: file_stats.allocation_sites,
                     io_operations: file_stats.io_operations,
                     threading_constructs: file_stats.threading_constructs,
+                    ffi_safe_wrapper,
                 });
             }
         }
@@ -1172,6 +1181,146 @@ impl Analyzer {
         }
 
         Ok(())
+    }
+
+    /// Detect whether a Rust file is an FFI safe-wrapper around an
+    /// `extern "C"` boundary.
+    ///
+    /// Every `unsafe` block inside such a file is structurally required
+    /// (you cannot call `extern "C"` or dereference a C-returned pointer
+    /// without one), and the findings — "N unsafe blocks" and "Raw
+    /// pointer cast" — are not bugs but the price of the FFI boundary.
+    /// When this returns `true`, `FileStatistics.ffi_safe_wrapper` is
+    /// set, `extract_context_facts` asserts
+    /// `context(path, ffi_safe_wrapper)`, and suppression Rule 13
+    /// flips matching `UnsafeCode` findings to `suppressed = true`.
+    ///
+    /// Detection criteria (ALL must hold):
+    ///
+    /// 1. File declares an `extern "C"` boundary
+    ///    (`unsafe extern "C" {` / `extern "C" {` / `extern "C" fn`),
+    ///    confirmed against the code-only view so a doc-comment or
+    ///    string-literal mention of the token doesn't satisfy it.
+    ///
+    /// 2. File uses FFI idioms: at least one of `CStr::from_ptr(` /
+    ///    `CString::new(` / `c_char` / `std::os::raw::` / `std::ffi::`
+    ///    / `slice::from_raw_parts(` / `from_raw_parts(`.
+    ///
+    /// 3. Every `unsafe {` block has a `// SAFETY:` comment within the
+    ///    three lines preceding it. Standard Rust-stdlib convention;
+    ///    clippy's `undocumented_unsafe_blocks` lint enforces it.
+    ///    Counted on the raw content because comment-stripped views
+    ///    drop the SAFETY markers.
+    ///
+    /// 4. File does NOT contain `mem::transmute(` / `transmute::<`
+    ///    (those have their own JIT-context classification — see the
+    ///    transmute block in `analyze_rust` and
+    ///    `audit-ffi-unsafe.md §2`).
+    ///
+    /// Motivating case: `007-lang/audits/audit-ffi-unsafe.md §1`
+    /// (`crates/oo7-core/src/zig_bridge.rs`) — 8 unsafe blocks + raw
+    /// pointer cast, all extern-C calls with per-line SAFETY
+    /// invariants. Pre-2026-04-18 these surfaced as 2 High active
+    /// findings; post-rule they are structurally suppressed.
+    ///
+    /// Non-motivating counter-cases (must NOT be flagged):
+    ///
+    /// * `unsafe` without any `extern "C"` boundary (criterion 1
+    ///   fails).
+    /// * `extern "C"` used only for declaring exported Rust functions
+    ///   (no FFI consumption — criterion 2 fails unless C-interop
+    ///   types are also used).
+    /// * FFI wrapper whose unsafe blocks lack SAFETY comments
+    ///   (criterion 3 fails — undocumented unsafe code must still
+    ///   surface).
+    /// * File that uses `mem::transmute` (criterion 4 fails — the JIT
+    ///   classification covers that shape).
+    fn is_rust_ffi_safe_wrapper(content: &str) -> bool {
+        // Criterion 4 first (cheapest).
+        if content.contains("mem::transmute(")
+            || content.contains("transmute::<")
+            || content.contains("= std::mem::transmute(")
+            || content.contains("= mem::transmute(")
+        {
+            return false;
+        }
+
+        // Work on a code-only view for criteria 1-2 so a doc-comment
+        // mention of `extern "C"` doesn't falsely satisfy the check.
+        let without_strings = Self::strip_string_literals_rs(content);
+        let code_only = strip_proof_comments(&without_strings, "//", Some(("/*", "*/")));
+
+        // Criterion 1: extern-<ABI> boundary declaration.
+        //
+        // `strip_string_literals_rs` collapses every string literal
+        // body to an empty body while preserving the `"` delimiters,
+        // so real code like `extern "C" {` becomes `extern "" {` in
+        // the stripped view, whereas an `extern "C"` token that only
+        // appears inside a string literal disappears entirely (the
+        // whole enclosing literal collapses to `""`). Checking the
+        // stripped form `extern "" {` accepts any real extern-ABI
+        // declaration (`"C"`, `"system"`, `"stdcall"`, etc.) and
+        // correctly rejects the string-literal-only case.
+        let declares_extern_c = code_only.contains("extern \"\" {")
+            || code_only.contains("extern \"\" fn");
+        if !declares_extern_c {
+            return false;
+        }
+
+        // Criterion 2: FFI idioms.
+        let uses_ffi_idioms = code_only.contains("CStr::from_ptr(")
+            || code_only.contains("CString::new(")
+            || code_only.contains("c_char")
+            || code_only.contains("std::os::raw::")
+            || code_only.contains("std::ffi::")
+            || code_only.contains("use std::os::raw")
+            || code_only.contains("use std::ffi")
+            || code_only.contains("slice::from_raw_parts(")
+            || code_only.contains("from_raw_parts(");
+        if !uses_ffi_idioms {
+            return false;
+        }
+
+        // Criterion 3: every `unsafe {` block has a `// SAFETY:` comment
+        // in the preceding three lines. Counted on raw content because
+        // SAFETY comments are by definition comments; they're stripped
+        // out of code_only. `unsafe fn` / `unsafe extern` /
+        // `unsafe impl` / `unsafe trait` declarations don't count as
+        // unsafe blocks in the operational sense.
+        let lines: Vec<&str> = content.lines().collect();
+        let mut unsafe_block_count = 0usize;
+        let mut documented_count = 0usize;
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.contains("unsafe {")
+                && !trimmed.contains("unsafe fn")
+                && !trimmed.contains("unsafe extern")
+                && !trimmed.contains("unsafe impl")
+                && !trimmed.contains("unsafe trait")
+            {
+                unsafe_block_count += 1;
+                let preceding_window = idx.saturating_sub(3);
+                let documented = lines[preceding_window..idx].iter().any(|l| {
+                    let lt = l.trim();
+                    lt.starts_with("// SAFETY:")
+                        || lt.starts_with("// Safety:")
+                        || lt.starts_with("// safety:")
+                        || lt.starts_with("/// SAFETY:")
+                        || lt.starts_with("/// Safety:")
+                });
+                if documented {
+                    documented_count += 1;
+                }
+            }
+        }
+
+        // A file with zero unsafe blocks isn't an FFI wrapper in the
+        // operational sense the detector cares about. Return false to
+        // be conservative.
+        if unsafe_block_count == 0 {
+            return false;
+        }
+        documented_count == unsafe_block_count
     }
 
     /// Strip the contents (but not the delimiters) of Rust string literals from
@@ -6850,6 +6999,237 @@ pub fn load(path: &str) -> std::io::Result<String> {
             ub_findings.is_empty(),
             "`.take(READ_LIMIT)` plus `READ_LIMIT` constant must disarm: {:?}",
             ub_findings
+        );
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // is_rust_ffi_safe_wrapper detector tests
+    //
+    // Covers each of the four criteria and confirms the detector
+    // rejects the adjacent counter-cases where at least one criterion
+    // fails. Motivating case: 007-lang zig_bridge.rs shape (see
+    // `007-lang/audits/audit-ffi-unsafe.md §1`).
+    // ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_rust_ffi_safe_wrapper_positive_zig_bridge_shape() {
+        // Mirrors the zig_bridge.rs structure: extern-C block, FFI
+        // idioms (CStr/CString/c_char/from_raw_parts), every unsafe
+        // block SAFETY-documented, no transmute.
+        let src = r#"
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+
+unsafe extern "C" {
+    fn oo7c_compile(source: *const c_char, target: u8) -> *mut c_char;
+    fn oo7c_free_result(ptr: *mut c_char);
+}
+
+pub fn compile(src: &str) -> Option<String> {
+    let c_src = CString::new(src).ok()?;
+    // SAFETY: c_src is a valid null-terminated C string; return is checked for null.
+    let raw = unsafe { oo7c_compile(c_src.as_ptr(), 0) };
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: raw is non-null and null-terminated per liboo7c contract.
+    let out = unsafe { CStr::from_ptr(raw).to_str().ok().map(String::from) };
+    // SAFETY: raw was allocated by oo7c_compile; free exactly once.
+    unsafe { oo7c_free_result(raw) };
+    out
+}
+"#;
+        assert!(
+            Analyzer::is_rust_ffi_safe_wrapper(src),
+            "zig_bridge.rs-shaped FFI wrapper must pass all four criteria"
+        );
+    }
+
+    #[test]
+    fn is_rust_ffi_safe_wrapper_rejects_no_extern_c() {
+        // Criterion 1 fails: no extern-C boundary.
+        let src = r#"
+use std::ffi::CStr;
+// SAFETY: static null-terminated string
+unsafe { let _ = CStr::from_bytes_with_nul_unchecked(b"hi\0"); }
+"#;
+        assert!(
+            !Analyzer::is_rust_ffi_safe_wrapper(src),
+            "Must reject: no extern-C declaration"
+        );
+    }
+
+    #[test]
+    fn is_rust_ffi_safe_wrapper_rejects_no_ffi_idioms() {
+        // Criterion 2 fails: declares extern "C" fn (exported Rust fn)
+        // but does not consume FFI types.
+        let src = r#"
+#[no_mangle]
+pub extern "C" fn exported_rust_fn(x: i32) -> i32 {
+    x + 1
+}
+
+fn internal() {
+    // SAFETY: pure local ptr math
+    unsafe {
+        let p: *const i32 = std::ptr::null();
+        let _ = p;
+    }
+}
+"#;
+        assert!(
+            !Analyzer::is_rust_ffi_safe_wrapper(src),
+            "Must reject: no FFI idioms (CStr/CString/c_char/from_raw_parts/ffi)"
+        );
+    }
+
+    #[test]
+    fn is_rust_ffi_safe_wrapper_rejects_undocumented_unsafe() {
+        // Criterion 3 fails: FFI wrapper shape but the second unsafe
+        // block lacks a SAFETY comment. Undocumented unsafe code must
+        // still surface, so the detector must refuse to classify this
+        // as a safe-wrapper.
+        let src = r#"
+use std::ffi::CStr;
+use std::os::raw::c_char;
+
+unsafe extern "C" {
+    fn oo7c_version() -> *const c_char;
+}
+
+pub fn ver() -> &'static str {
+    // SAFETY: static string
+    unsafe {
+        let p = oo7c_version();
+        CStr::from_ptr(p).to_str().unwrap_or("?")
+    }
+}
+
+pub fn ver2() -> *const c_char {
+    unsafe { oo7c_version() }
+}
+"#;
+        assert!(
+            !Analyzer::is_rust_ffi_safe_wrapper(src),
+            "Must reject: second unsafe block lacks preceding // SAFETY: comment"
+        );
+    }
+
+    #[test]
+    fn is_rust_ffi_safe_wrapper_rejects_transmute_present() {
+        // Criterion 4 fails: FFI shape AND mem::transmute — defer to
+        // the JIT classification instead.
+        let src = r#"
+use std::ffi::CStr;
+use std::os::raw::c_char;
+
+unsafe extern "C" {
+    fn get_callback() -> *const u8;
+}
+
+pub fn call() {
+    // SAFETY: callback has known i64 -> i64 signature
+    unsafe {
+        let p = get_callback();
+        let f: fn(i64) -> i64 = std::mem::transmute(p);
+        let _ = f(0);
+    }
+}
+"#;
+        assert!(
+            !Analyzer::is_rust_ffi_safe_wrapper(src),
+            "Must reject: mem::transmute present (JIT classification applies)"
+        );
+    }
+
+    #[test]
+    fn is_rust_ffi_safe_wrapper_rejects_extern_c_in_string_literal() {
+        // Adversarial: a non-FFI file that mentions `extern "C" {` only
+        // inside a string literal (e.g., a code-generator template).
+        // The code-only view strips string contents, so criterion 1
+        // must not be satisfied by literals alone.
+        let src = r#"
+const TEMPLATE: &str = "unsafe extern \"C\" { fn foo(); }";
+
+fn demo() {
+    // SAFETY: pure local
+    unsafe {
+        let x: i32 = 1;
+        let _ = x;
+    }
+}
+"#;
+        assert!(
+            !Analyzer::is_rust_ffi_safe_wrapper(src),
+            "Must reject: extern-C inside string literal only, no real FFI boundary"
+        );
+    }
+
+    #[test]
+    fn is_rust_ffi_safe_wrapper_accepts_uppercase_and_lowercase_safety() {
+        // Tolerance: the SAFETY scan accepts `// SAFETY:`, `// Safety:`,
+        // and `// safety:`. All three should pass criterion 3.
+        let src = r#"
+use std::ffi::CStr;
+use std::os::raw::c_char;
+
+unsafe extern "C" {
+    fn get_a() -> *const c_char;
+    fn get_b() -> *const c_char;
+    fn get_c() -> *const c_char;
+}
+
+pub fn a() -> *const c_char {
+    // SAFETY: static string
+    unsafe { get_a() }
+}
+
+pub fn b() -> *const c_char {
+    // Safety: static string
+    unsafe { get_b() }
+}
+
+pub fn c() -> *const c_char {
+    // safety: static string
+    unsafe { get_c() }
+}
+"#;
+        assert!(
+            Analyzer::is_rust_ffi_safe_wrapper(src),
+            "Must accept mixed-case SAFETY markers"
+        );
+    }
+
+    #[test]
+    fn is_rust_ffi_safe_wrapper_ignores_unsafe_fn_and_unsafe_extern() {
+        // The unsafe-block counter must not count `unsafe fn`,
+        // `unsafe extern "C" {`, `unsafe impl`, or `unsafe trait`.
+        // Only operational `unsafe { ... }` expressions/statements.
+        // Here: one unsafe block, SAFETY-documented; an `unsafe fn`
+        // declaration; an `unsafe extern` block. Should accept.
+        let src = r#"
+use std::ffi::CStr;
+use std::os::raw::c_char;
+
+unsafe extern "C" {
+    fn get_x() -> *const c_char;
+}
+
+pub unsafe fn raw_get_x() -> *const c_char {
+    get_x()
+}
+
+pub fn safe_get_x() -> Option<String> {
+    // SAFETY: static null-terminated string
+    unsafe {
+        let p = get_x();
+        CStr::from_ptr(p).to_str().ok().map(String::from)
+    }
+}
+"#;
+        assert!(
+            Analyzer::is_rust_ffi_safe_wrapper(src),
+            "unsafe fn / unsafe extern must not count toward the unsafe-block tally"
         );
     }
 }
