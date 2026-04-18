@@ -178,11 +178,43 @@ Three self-contained modes — none requires the others:
 ## v2.5.0 Detection Categories (COMPLETE — 25 categories total)
 
 All five detection categories shipped in v2.5.0 (2026-04-12):
-- **ProofDrift (PA021)**: Proof escape hatches in Isabelle/Coq/Lean/Agda/Idris2; Julia mirror patterns; Obj.magic in Coq-extracted OCaml (distinguished from hand-written via `type __ = Obj.t` marker)
+- **ProofDrift (PA021)**: Proof escape hatches in Isabelle/Coq/Lean/Agda/Idris2; Julia mirror patterns; Obj.magic in Coq-extracted OCaml (distinguished from hand-written via `type __ = Obj.t` marker). Rocq-specific refinement (2026-04-18): the detector is Section-aware (`Variable`/`Hypothesis`/`Parameter` inside a `Section ... End` are discharged, not counted) and classifies module-level `Parameter` declarations by stated type (carrier types, decidability witnesses, non-Prop function symbols are abstractions; Prop-valued remains counted). See `count_rocq_unverified_postulates` in `src/assail/analyzer.rs`.
 - **CryptoMisuse (PA022)**: Weak hash (MD5/SHA-1) in security context; timing-unsafe == on secrets; JWT sig bypass — `dangerous_insecure_decode` (Rust), `ParseUnverified` (Go), `verify_signature:False`/`algorithms=["none"]` (Python), `jwt.decode` without `jwt.verify` / `decodeJwt` without `jwtVerify` (JS)
 - **SupplyChain (PA023)**: Unpinned deps, absent lock files, unverified manifests
 - **InputBoundary (PA024)**: Unchecked CBOR/MessagePack (Rust), JSON.parse without try-catch (JS/Julia)
 - **MutationGap (PA025)**: No cargo-mutants config (Rust), all-type-only assertions (Julia), no property testing (Elixir)
+
+## User-Classification Registry (2026-04-18)
+
+Optional project-local classification file that flips audited findings
+to `suppressed = true` after the kanren structural-suppression pass:
+
+- Path: `<project>/audits/assail-classifications.a2ml` (preferred) or
+  `<project>/.panic-attack-classifications.a2ml` (fallback).
+- Format (A2ML S-expression):
+  ```
+  (assail-classifications
+    (classification
+      (file "crates/foo/src/bar.rs")
+      (category "UnsafeCode")
+      (audit "audits/audit-ffi-unsafe.md §1")
+      (rationale "one-line summary")))
+  ```
+- Public API: `UserClassification`, `load_user_classifications(root)`,
+  `apply_user_classifications(&mut report, root)` in `src/assail/mod.rs`.
+- Called automatically by `analyze()` / `analyze_verbose()` after
+  `apply_suppression`.
+
+**Pattern intent**: the registry lives in a separate file from the
+source under scan, so adding a new unsafe block cannot self-suppress —
+the registry edit is a reviewable companion change. This keeps
+suppressions non-gameable by single-side edits while still letting
+repositories record honest audits of legitimate-FFI and other
+genuinely-sound residuals.
+
+**Reference implementation**: `hyperpolymath/007`
+`audits/assail-classifications.a2ml` (cross-references
+`audits/audit-ffi-unsafe.md §1` for `zig_bridge.rs` UnsafeCode).
 
 ## Integration Points
 

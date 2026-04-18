@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] — 2026-04-18
+
+### Added
+- **User-classification registry** (`assail::UserClassification`,
+  `load_user_classifications`, `apply_user_classifications`): panic-attack
+  now reads an optional project-local classification file at every assail
+  pass and flips matching findings to `suppressed = true` after the kanren
+  structural-suppression pass. Two lookup paths:
+  - `<project_root>/audits/assail-classifications.a2ml` (preferred)
+  - `<project_root>/.panic-attack-classifications.a2ml` (fallback)
+  File format is a simple A2ML S-expression with `(classification (file …)
+  (category …) (audit …) (rationale …))` blocks; `;;` line comments
+  ignored. The registry pattern lets repositories record audited findings
+  out-of-band from the source under scan so a PR adding a new unsafe
+  block cannot self-suppress without a reviewable companion edit to
+  the registry.
+- **Rocq scaffold classifier** (`analyze_coq` +
+  `count_rocq_unverified_postulates` + `is_rocq_abstraction_parameter`):
+  the Rocq detector no longer counts Section-scoped `Variable` /
+  `Hypothesis` / `Parameter` declarations (they discharge at `End
+  Section`) and classifies module-level `Parameter` declarations by
+  stated type: carrier types (`Type`, `Set`), decidability witnesses
+  (`forall _, { _ = _ } + { _ <> _ }`), and function types with a
+  concrete non-Prop codomain are treated as abstraction parameters.
+  Prop-valued declarations (classical excluded-middle, choice,
+  unresolved theorem statements) remain counted. Removes the
+  false-positive stream that surfaced on every canonical-proof-suite
+  scaffold.
+
+### Changed
+- **Suppression pipeline**: `analyze()` and `analyze_verbose()` now
+  chain `apply_suppression` → `apply_user_classifications` in that
+  order; the explicit post-analyze calls in `assail::analyze` and
+  `assail::analyze_verbose` at the module boundary are retained for
+  API-contract clarity but are no-ops when an `Analyzer` pass has
+  already run.
+- **Rocq test coverage**: 12 new unit tests across `analyzer.rs`
+  (Section-scoped Variables / module-level Type carriers / decidable
+  equality / concrete-codomain functions / Prop-valued axioms /
+  missing type annotation / full scaffold shape — 7 tests) and
+  `mod.rs` (missing-registry / single-entry / multiple-entry /
+  comment handling / end-to-end suppression-flip — 5 tests).
+
+### Verified
+- 007 canonical-proof-suite scan: active finding count **8 → 0**
+  (the 6 scaffold ProofDrifts via the detector enhancement, the 2
+  `zig_bridge.rs` UnsafeCode findings via the classification registry
+  pointing at `audits/audit-ffi-unsafe.md §1`). No in-source
+  suppression markers added to either repo.
+
 ## [2.5.0] - 2026-04-12
 
 ### Added
