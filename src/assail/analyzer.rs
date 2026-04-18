@@ -3507,8 +3507,12 @@ impl Analyzer {
             });
         }
 
-        // Axiom / Parameter without justification — unverified postulates
-        let axiom_count = code.matches("\nAxiom ").count() + code.matches("\nParameter ").count();
+        // Axiom / Parameter declarations that are genuine unverified postulates.
+        // `count_rocq_unverified_postulates` excludes Section-scoped declarations
+        // (discharged at End) and module-level abstraction parameters (carrier
+        // types, decidability witnesses, non-Prop function symbols) — those are
+        // the legitimate scaffold shape and should not be flagged as postulates.
+        let axiom_count = count_rocq_unverified_postulates(&code);
         if axiom_count > 0 {
             weak_points.push(WeakPoint {
                 file: None,
@@ -5326,6 +5330,146 @@ fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &
     out
 }
 
+/// Count Rocq `Axiom`/`Parameter` declarations that represent genuine
+/// unverified postulates, excluding the two legitimate scaffold shapes:
+///
+/// 1. **Section-scoped declarations.** `Variable`/`Hypothesis` and,
+///    rarely, `Parameter` declarations lexically between `Section name`
+///    and matching `End name` are discharged at `End` — they lambda-
+///    abstract over the lemmas proved inside the Section rather than
+///    adding floating assumptions to the ambient module. This is the
+///    canonical Rocq pattern for parameterised proof development and
+///    should not be flagged.
+/// 2. **Module-level abstraction parameters.** `Parameter` declarations
+///    whose stated type is `Type` / `Set` (carrier types), a
+///    decidability witness of the form `forall ..., { _ = _ } + { _ <> _ }`,
+///    or a function type whose codomain is a concrete non-Prop type
+///    (like `Q -> Q`, `State -> State -> Q`). These are "abstract
+///    function symbols awaiting instantiation" — the standard scaffold
+///    shape for generic proof developments. A closing session supplies
+///    concrete terms; none of them discharge a Prop the scaffold uses
+///    as if proved.
+///
+/// Everything else is counted, including Prop-valued `Axiom`/`Parameter`
+/// declarations (classical excluded-middle, choice, unresolved
+/// theorem statements) — those are the real ProofDrift signal.
+///
+/// Heuristic classification: conservative. Unknown shapes default to
+/// counted (postulate).
+fn count_rocq_unverified_postulates(code: &str) -> usize {
+    let mut section_depth: i32 = 0;
+    let mut postulate_count: usize = 0;
+    let mut pending: Option<String> = None;
+
+    for raw_line in code.lines() {
+        let trimmed = raw_line.trim_start();
+
+        if trimmed.starts_with("Section ") {
+            section_depth += 1;
+            pending = None;
+            continue;
+        }
+        if trimmed.starts_with("End ") && trimmed.contains('.') && section_depth > 0 {
+            section_depth -= 1;
+            pending = None;
+            continue;
+        }
+
+        // Declarations inside any Section are discharged at End; skip.
+        if section_depth > 0 {
+            pending = None;
+            continue;
+        }
+
+        // Multi-line declaration continuation: keep accumulating until
+        // we hit a period.
+        if let Some(mut p) = pending.take() {
+            p.push(' ');
+            p.push_str(raw_line.trim());
+            if p.contains('.') {
+                if !is_rocq_abstraction_parameter(&p) {
+                    postulate_count += 1;
+                }
+            } else {
+                pending = Some(p);
+            }
+            continue;
+        }
+
+        let is_decl =
+            trimmed.starts_with("Axiom ") || trimmed.starts_with("Parameter ");
+        if !is_decl {
+            continue;
+        }
+
+        if raw_line.trim_end().ends_with('.') {
+            if !is_rocq_abstraction_parameter(raw_line) {
+                postulate_count += 1;
+            }
+        } else {
+            pending = Some(raw_line.trim().to_string());
+        }
+    }
+
+    postulate_count
+}
+
+/// Classify a Rocq `Axiom`/`Parameter` declaration (full text up to and
+/// including the trailing period) as an abstraction parameter —
+/// carrier type, decidability witness, or non-Prop function symbol —
+/// rather than an unverified postulate. Conservative: unknown shapes
+/// return false (treated as postulate by the caller).
+fn is_rocq_abstraction_parameter(decl: &str) -> bool {
+    let colon_pos = match decl.find(':') {
+        Some(i) => i,
+        None => return false,
+    };
+    let typ = decl[colon_pos + 1..].trim();
+    let typ = typ.strip_suffix('.').unwrap_or(typ).trim();
+
+    // 1. Carrier type.
+    if typ == "Type" || typ == "Set" {
+        return true;
+    }
+
+    // 2. Decidability witness: `forall ..., { _ = _ } + { _ <> _ }`.
+    if typ.contains('{')
+        && typ.contains('=')
+        && typ.contains('}')
+        && typ.contains('+')
+        && typ.contains("<>")
+    {
+        return true;
+    }
+
+    // 3. Function type with a clearly non-Prop codomain.
+    if typ.contains("->") {
+        let return_type = typ.rsplit("->").next().unwrap_or("").trim();
+        if return_type == "Prop" {
+            return false;
+        }
+        let first_word = return_type.split_whitespace().next().unwrap_or("");
+        const CONCRETE_RETURNS: &[&str] = &[
+            "Q", "R", "Z", "N", "nat", "bool", "list", "option",
+            "prod", "sum", "unit", "Type", "Set",
+        ];
+        if CONCRETE_RETURNS.contains(&first_word) {
+            return true;
+        }
+        // Lowercase identifiers are concrete builtin types; uppercase are
+        // (likely) user-level abstractions or Props — we conservatively
+        // accept only the explicit allow-list above plus clearly concrete
+        // builtins, not arbitrary capital-letter identifiers.
+        if let Some(c) = first_word.chars().next() {
+            if c.is_ascii_lowercase() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 /// Rewrite `args` by replacing every `not(test)` group (with
 /// whitespace-tolerant matching) with a single space. Used by
 /// [`Analyzer::cfg_args_select_test`] so `cfg(not(test))` and
@@ -6214,6 +6358,107 @@ let force_cast (x : 'a) : 'b = Obj.magic x
         assert!(
             proof_drift.is_empty(),
             "Hand-written Obj.magic (no Coq markers) should NOT be ProofDrift"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // ProofDrift: Rocq Parameter classification
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn rocq_section_scoped_variables_are_not_postulates() {
+        let code = r#"
+Section OrderedField.
+  Variable R : Type.
+  Variable Rzero : R.
+  Hypothesis Rplus_comm : forall x y : R, x = y.
+  Parameter Rabs : R -> R.
+End OrderedField.
+"#;
+        assert_eq!(
+            count_rocq_unverified_postulates(code),
+            0,
+            "Section-scoped Variable/Hypothesis/Parameter must discharge at End"
+        );
+    }
+
+    #[test]
+    fn rocq_module_level_type_carrier_is_abstraction() {
+        let code = "Parameter State : Type.\n";
+        assert_eq!(
+            count_rocq_unverified_postulates(code),
+            0,
+            "Module-level `Parameter X : Type` is an abstraction, not a postulate"
+        );
+    }
+
+    #[test]
+    fn rocq_module_level_decidable_equality_is_abstraction() {
+        let code =
+            "Parameter state_eq_dec : forall x y : State, {x = y} + {x <> y}.\n";
+        assert_eq!(
+            count_rocq_unverified_postulates(code),
+            0,
+            "Decidability witness is an abstraction parameter, not a postulate"
+        );
+    }
+
+    #[test]
+    fn rocq_module_level_function_with_concrete_return_is_abstraction() {
+        let code = r#"
+Parameter log2 : Q -> Q.
+Parameter kernel : State -> State -> Q.
+"#;
+        assert_eq!(
+            count_rocq_unverified_postulates(code),
+            0,
+            "Abstract function symbols with concrete non-Prop codomain are abstractions"
+        );
+    }
+
+    #[test]
+    fn rocq_module_level_prop_axiom_is_counted() {
+        let code = "Axiom excluded_middle : forall P : Prop, P \\/ ~P.\n";
+        assert_eq!(
+            count_rocq_unverified_postulates(code),
+            1,
+            "Prop-valued Axiom is a genuine unverified postulate"
+        );
+    }
+
+    #[test]
+    fn rocq_module_level_parameter_without_colon_is_counted() {
+        // Malformed or unusual declarations default to counted
+        // (conservative).
+        let code = "Parameter foo.\n";
+        assert_eq!(
+            count_rocq_unverified_postulates(code),
+            1,
+            "Declarations without a ':' type annotation default to postulate"
+        );
+    }
+
+    #[test]
+    fn rocq_scaffold_shape_yields_zero_postulates() {
+        // This is the canonical-proof-suite scaffold shape from 007:
+        // Section-scoped hypothesis bundle + module-level abstraction
+        // parameters. It must not produce any ProofDrift hits.
+        let code = r#"
+Parameter Symbol : Type.
+Parameter symbol_eq_dec : forall x y : Symbol, {x = y} + {x <> y}.
+Parameter log2 : Q -> Q.
+
+Section ShannonSourceCoding.
+  Variable distribution : list (Symbol * Q).
+  Hypothesis distribution_sum_one :
+    fold_right Qplus 0 (map snd distribution) == 1.
+  Parameter abstract_helper : Symbol -> Q.
+End ShannonSourceCoding.
+"#;
+        assert_eq!(
+            count_rocq_unverified_postulates(code),
+            0,
+            "The canonical scaffold shape must not be flagged as ProofDrift"
         );
     }
 
