@@ -200,6 +200,7 @@ fn check_panicbot_readiness() -> Diagnostic {
 
     // Verify JSON output contract by serialising a minimal AssailReport
     let test_report = crate::types::AssailReport {
+        schema_version: "2.5".to_string(),
         program_path: std::path::PathBuf::from("/test"),
         language: crate::types::Language::Rust,
         frameworks: vec![],

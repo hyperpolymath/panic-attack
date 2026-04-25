@@ -441,7 +441,14 @@ pub struct FileStatistics {
     pub lines: usize,
     pub unsafe_blocks: usize,
     pub panic_sites: usize,
+    /// `.unwrap()` and `.expect(` calls only — these can panic.
+    /// Excluded from this count: `.unwrap_or()`, `.unwrap_or_default()`,
+    /// `.unwrap_or_else()` — those are safe fallbacks (see `safe_unwrap_calls`).
     pub unwrap_calls: usize,
+    /// Non-panicking unwrap variants: `.unwrap_or(`, `.unwrap_or_default()`,
+    /// `.unwrap_or_else(`. Not counted toward PA006 (PanicPath).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub safe_unwrap_calls: usize,
     pub allocation_sites: usize,
     pub io_operations: usize,
     pub threading_constructs: usize,
@@ -462,6 +469,10 @@ pub struct FileStatistics {
 /// Assail analysis results
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssailReport {
+    /// Semantic version of the report schema. Consumers must check this
+    /// before parsing to detect incompatible drift. Current: "2.5".
+    #[serde(default = "assail_schema_version")]
+    pub schema_version: String,
     pub program_path: PathBuf,
     pub language: Language,
     pub frameworks: Vec<Framework>,
@@ -486,12 +497,25 @@ fn is_zero(n: &usize) -> bool {
     *n == 0
 }
 
+fn assail_schema_version() -> String {
+    "2.5".to_string()
+}
+
+fn assault_schema_version() -> String {
+    "2.5".to_string()
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProgramStatistics {
     pub total_lines: usize,
     pub unsafe_blocks: usize,
     pub panic_sites: usize,
+    /// `.unwrap()` and `.expect(` calls only — these can panic.
     pub unwrap_calls: usize,
+    /// Non-panicking unwrap variants: `.unwrap_or(`, `.unwrap_or_default()`,
+    /// `.unwrap_or_else(`. Not counted toward PA006 (PanicPath).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub safe_unwrap_calls: usize,
     pub allocation_sites: usize,
     pub io_operations: usize,
     pub threading_constructs: usize,
@@ -573,6 +597,8 @@ pub struct CrashReport {
 /// Complete assault report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssaultReport {
+    #[serde(default = "assault_schema_version")]
+    pub schema_version: String,
     pub assail_report: AssailReport,
     pub attack_results: Vec<AttackResult>,
     pub total_crashes: usize,

@@ -332,6 +332,7 @@ impl Analyzer {
             unsafe_blocks: 0,
             panic_sites: 0,
             unwrap_calls: 0,
+            safe_unwrap_calls: 0,
             allocation_sites: 0,
             io_operations: 0,
             threading_constructs: 0,
@@ -402,6 +403,7 @@ impl Analyzer {
                 unsafe_blocks: 0,
                 panic_sites: 0,
                 unwrap_calls: 0,
+                safe_unwrap_calls: 0,
                 allocation_sites: 0,
                 io_operations: 0,
                 threading_constructs: 0,
@@ -672,6 +674,7 @@ impl Analyzer {
                     unsafe_blocks: file_stats.unsafe_blocks,
                     panic_sites: file_stats.panic_sites,
                     unwrap_calls: file_stats.unwrap_calls,
+                    safe_unwrap_calls: file_stats.safe_unwrap_calls,
                     allocation_sites: file_stats.allocation_sites,
                     io_operations: file_stats.io_operations,
                     threading_constructs: file_stats.threading_constructs,
@@ -708,6 +711,7 @@ impl Analyzer {
             .collect();
 
         let mut report = AssailReport {
+            schema_version: "2.5".to_string(),
             program_path: self.target.clone(),
             language: self.language,
             frameworks,
@@ -935,7 +939,16 @@ impl Analyzer {
         
         // Count panic sites, but suppress them in test files
         let panic_sites = code_only.matches("panic!(").count() + code_only.matches("unreachable!(").count();
-        let unwrap_calls = code_only.matches(".unwrap()").count() + code_only.matches(".expect(").count();
+        // Unsafe unwrap: .unwrap() and .expect( — both can panic. Counted toward PA006.
+        // Safe unwrap: .unwrap_or(, .unwrap_or_default(), .unwrap_or_else( — fallback, never panic.
+        // Subtract safe variants from the raw .unwrap() count so ".unwrap_or(" isn't
+        // double-counted (it contains ".unwrap(").
+        let raw_unwrap = code_only.matches(".unwrap()").count();
+        let safe_unwrap = code_only.matches(".unwrap_or(").count()
+            + code_only.matches(".unwrap_or_default()").count()
+            + code_only.matches(".unwrap_or_else(").count();
+        let unwrap_calls = raw_unwrap + code_only.matches(".expect(").count();
+        let safe_unwrap_calls = safe_unwrap;
         
         // Apply test file suppression. In test files, normal
         // assert-macro use pushes panic/unwrap counts high with no
@@ -961,7 +974,8 @@ impl Analyzer {
         
         stats.panic_sites += effective_panic_sites;
         stats.unwrap_calls += effective_unwrap_calls;
-        
+        stats.safe_unwrap_calls += safe_unwrap_calls;
+
         // Enhanced allocation analysis - detect unbounded allocation patterns
         let vec_new_count = content.matches("Vec::new()").count();
         let box_new_count = content.matches("Box::new(").count();

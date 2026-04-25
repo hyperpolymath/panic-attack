@@ -201,6 +201,7 @@ fn weak_point_category_serializes() {
 #[test]
 fn assail_report_serializes_to_json() {
     let report = AssailReport {
+        schema_version: "2.5".to_string(),
         program_path: std::path::PathBuf::from("test/target"),
         language: Language::Rust,
         frameworks: vec![],

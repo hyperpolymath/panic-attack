@@ -23,8 +23,14 @@ pub struct AdjudicateConfig {
     pub reports: Vec<PathBuf>,
 }
 
+fn adjudicate_schema_version() -> String {
+    "2.5".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdjudicateReport {
+    #[serde(default = "adjudicate_schema_version")]
+    pub schema_version: String,
     pub created_at: String,
     pub reports: Vec<PathBuf>,
     pub processed_reports: usize,
@@ -202,6 +208,7 @@ pub fn run(config: AdjudicateConfig) -> Result<AdjudicateReport> {
     let priorities = build_priorities(&totals, verdict);
 
     Ok(AdjudicateReport {
+        schema_version: adjudicate_schema_version(),
         created_at: chrono::Utc::now().to_rfc3339(),
         reports: config.reports,
         processed_reports: processed,

@@ -61,6 +61,8 @@ pub struct RepoResult {
 /// Complete assemblyline report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssemblylineReport {
+    #[serde(default = "assemblyline_schema_version")]
+    pub schema_version: String,
     pub created_at: String,
     pub directory: PathBuf,
     pub repos_scanned: usize,
@@ -69,6 +71,10 @@ pub struct AssemblylineReport {
     pub total_weak_points: usize,
     pub total_critical: usize,
     pub results: Vec<RepoResult>,
+}
+
+fn assemblyline_schema_version() -> String {
+    "2.5".to_string()
 }
 
 /// Fingerprint cache: maps repo paths to their BLAKE3 hashes from a previous run.
@@ -441,6 +447,7 @@ pub fn run_with_cache(
     let total_critical: usize = results.iter().map(|r| r.critical_count).sum();
 
     Ok(AssemblylineReport {
+        schema_version: assemblyline_schema_version(),
         created_at: chrono::Utc::now().to_rfc3339(),
         directory: config.directory.clone(),
         repos_scanned: total_repos,

@@ -28,6 +28,7 @@ impl ReportGenerator {
         let overall_assessment = self.assess_results(&assail_report, &attack_results);
 
         Ok(AssaultReport {
+            schema_version: "2.5".to_string(),
             assail_report,
             attack_results,
             total_crashes,
