@@ -56,7 +56,7 @@ fn e2e_self_scan_panic_attack_source() {
             wp.category
         );
         assert!(
-            !wp.location.as_ref().unwrap().is_empty(),
+            !wp.location.as_deref().unwrap_or("").is_empty(),
             "Location must not be empty string"
         );
     }
@@ -123,7 +123,7 @@ fn e2e_scan_python_file() {
     // Create temp Python file if it doesn't exist
     if !py_file.exists() {
         use std::fs;
-        let _ = fs::create_dir_all(py_file.parent().unwrap());
+        let _ = fs::create_dir_all(py_file.parent().unwrap_or(std::path::Path::new(".")));
         let _ = fs::write(
             &py_file,
             r#"

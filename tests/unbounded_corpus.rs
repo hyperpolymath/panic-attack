@@ -26,29 +26,28 @@ use std::io::Write;
 
 /// Helper: write `src` to a tempdir as `case.rs`, analyse the dir,
 /// return the count of UnboundedAllocation findings.
-fn unbounded_count_for(src: &str) -> usize {
+fn unbounded_count_for(src: &str) -> Result<usize, Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir().expect("tempdir");
     let file = dir.path().join("case.rs");
-    std::fs::File::create(&file)
-        .unwrap()
-        .write_all(src.as_bytes())
-        .unwrap();
+    std::fs::File::create(&file)?.write_all(src.as_bytes())?;
     let report = assail::analyze(dir.path()).expect("analyze");
-    report
+    Ok(report
         .weak_points
         .iter()
         .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
-        .count()
+        .count())
 }
 
-fn assert_fires(src: &str, msg: &str) {
-    let n = unbounded_count_for(src);
+fn assert_fires(src: &str, msg: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let n = unbounded_count_for(src)?;
     assert!(n >= 1, "TP case must fire {}: got {} findings", msg, n);
+    Ok(())
 }
 
-fn assert_does_not_fire(src: &str, msg: &str) {
-    let n = unbounded_count_for(src);
+fn assert_does_not_fire(src: &str, msg: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let n = unbounded_count_for(src)?;
     assert_eq!(n, 0, "TN case must NOT fire {}: got {} findings", msg, n);
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -56,7 +55,7 @@ fn assert_does_not_fire(src: &str, msg: &str) {
 // ─────────────────────────────────────────────────────────────────────
 
 #[test]
-fn tp_unbounded_read_to_string() {
+fn tp_unbounded_read_to_string() -> Result<(), Box<dyn std::error::Error>> {
     assert_fires(
         r#"
 pub fn slurp(p: &str) -> std::io::Result<String> {
@@ -64,11 +63,11 @@ pub fn slurp(p: &str) -> std::io::Result<String> {
 }
 "#,
         "unbounded fs::read_to_string",
-    );
+    )
 }
 
 #[test]
-fn tp_unbounded_read_to_end() {
+fn tp_unbounded_read_to_end() -> Result<(), Box<dyn std::error::Error>> {
     assert_fires(
         r#"
 use std::io::Read;
@@ -79,21 +78,21 @@ pub fn slurp(p: &str) -> std::io::Result<Vec<u8>> {
 }
 "#,
         "unbounded File::read_to_end",
-    );
+    )
 }
 
 #[test]
-fn tp_bare_unbounded_identifier() {
+fn tp_bare_unbounded_identifier() -> Result<(), Box<dyn std::error::Error>> {
     assert_fires(
         r#"
 pub fn unbounded() -> Vec<u8> { Vec::new() }
 "#,
         "bare fn unbounded()",
-    );
+    )
 }
 
 #[test]
-fn tp_with_capacity_tiny() {
+fn tp_with_capacity_tiny() -> Result<(), Box<dyn std::error::Error>> {
     assert_fires(
         r#"
 pub fn make() -> Vec<u8> {
@@ -103,11 +102,11 @@ pub fn make() -> Vec<u8> {
 }
 "#,
         "Vec::with_capacity(0) followed by push loop",
-    );
+    )
 }
 
 #[test]
-fn tp_infinite_bare_keyword() {
+fn tp_infinite_bare_keyword() -> Result<(), Box<dyn std::error::Error>> {
     assert_fires(
         r#"
 pub fn run(n: u64) -> u64 {
@@ -116,7 +115,7 @@ pub fn run(n: u64) -> u64 {
 }
 "#,
         "bare `infinite` keyword (no is_infinite negation)",
-    );
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -124,7 +123,7 @@ pub fn run(n: u64) -> u64 {
 // ─────────────────────────────────────────────────────────────────────
 
 #[test]
-fn tn_bounded_take_before_read_to_string() {
+fn tn_bounded_take_before_read_to_string() -> Result<(), Box<dyn std::error::Error>> {
     assert_does_not_fire(
         r#"
 use std::io::Read;
@@ -136,11 +135,11 @@ pub fn slurp(p: &str) -> std::io::Result<String> {
 }
 "#,
         ".take(LIMIT) bound + LIMIT const both disarm",
-    );
+    )
 }
 
 #[test]
-fn tn_tokio_unbounded_channel_substring() {
+fn tn_tokio_unbounded_channel_substring() -> Result<(), Box<dyn std::error::Error>> {
     assert_does_not_fire(
         r#"
 pub fn pipe() {
@@ -148,11 +147,11 @@ pub fn pipe() {
 }
 "#,
         "tokio::mpsc::unbounded_channel (unbounded in identifier)",
-    );
+    )
 }
 
 #[test]
-fn tn_has_unbounded_allocations_variable_substring() {
+fn tn_has_unbounded_allocations_variable_substring() -> Result<(), Box<dyn std::error::Error>> {
     assert_does_not_fire(
         r#"
 pub fn analyze(body: &str) -> bool {
@@ -162,11 +161,11 @@ pub fn analyze(body: &str) -> bool {
 }
 "#,
         "detector self-reference (identifier with `unbounded_` prefix)",
-    );
+    )
 }
 
 #[test]
-fn tn_f64_is_infinite_negation() {
+fn tn_f64_is_infinite_negation() -> Result<(), Box<dyn std::error::Error>> {
     assert_does_not_fire(
         r#"
 pub fn check(x: f64) -> bool {
@@ -174,11 +173,11 @@ pub fn check(x: f64) -> bool {
 }
 "#,
         "f64::is_infinite is benign — negation disarms `infinite` keyword",
-    );
+    )
 }
 
 #[test]
-fn tn_delimiter_does_not_disarm_unbounded() {
+fn tn_delimiter_does_not_disarm_unbounded() -> Result<(), Box<dyn std::error::Error>> {
     // `value_delimiter` CONTAINS the substring "limit" but is NOT a
     // bounded-read marker. The word-boundary regex must not disarm
     // the read_to_string check here — genuine unbounded allocation.
@@ -194,11 +193,11 @@ pub fn slurp(p: &str) -> std::io::Result<String> {
         "`delimiter` contains 'limit' substring but does NOT disarm — \
          old substring contains(\"limit\") was the FN source; \
          new \\blimit regex correctly still fires",
-    );
+    )
 }
 
 #[test]
-fn tn_case_insensitive_uppercase_limit_const_disarms() {
+fn tn_case_insensitive_uppercase_limit_const_disarms() -> Result<(), Box<dyn std::error::Error>> {
     assert_does_not_fire(
         r#"
 use std::io::Read;
@@ -210,11 +209,11 @@ pub fn slurp(p: &str) -> std::io::Result<String> {
 }
 "#,
         "uppercase const LIMIT disarms via (?i) flag",
-    );
+    )
 }
 
 #[test]
-fn tn_test_module_strip() {
+fn tn_test_module_strip() -> Result<(), Box<dyn std::error::Error>> {
     assert_does_not_fire(
         r#"
 pub fn prod() -> i64 { 42 }
@@ -229,5 +228,5 @@ mod tests {
 "#,
         "#[cfg(test)] mod tests body is stripped; unbounded keyword \
          inside test identifier must not fire",
-    );
+    )
 }

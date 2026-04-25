@@ -6,17 +6,22 @@ use panic_attack::assemblyline::{self, AssemblylineConfig};
 use std::fs;
 use tempfile::TempDir;
 
-fn make_git_repo(parent: &std::path::Path, name: &str, content: Option<(&str, &str)>) {
+fn make_git_repo(
+    parent: &std::path::Path,
+    name: &str,
+    content: Option<(&str, &str)>,
+) -> std::io::Result<()> {
     let repo = parent.join(name);
-    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::create_dir_all(repo.join(".git"))?;
     if let Some((filename, body)) = content {
-        fs::write(repo.join(filename), body).unwrap();
+        fs::write(repo.join(filename), body)?;
     }
+    Ok(())
 }
 
 #[test]
-fn test_assemblyline_empty_directory() {
-    let dir = TempDir::new().unwrap();
+fn test_assemblyline_empty_directory() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
     let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
         output: None,
@@ -30,21 +35,22 @@ fn test_assemblyline_empty_directory() {
     assert_eq!(report.repos_scanned, 0);
     assert_eq!(report.total_weak_points, 0);
     assert!(report.results.is_empty());
+    Ok(())
 }
 
 #[test]
-fn test_assemblyline_discovers_git_repos_only() {
-    let dir = TempDir::new().unwrap();
+fn test_assemblyline_discovers_git_repos_only() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
 
     // Create a git repo
-    make_git_repo(dir.path(), "repo-a", None);
+    make_git_repo(dir.path(), "repo-a", None)?;
 
     // Create a non-git directory
-    fs::create_dir_all(dir.path().join("not-a-repo")).unwrap();
-    fs::write(dir.path().join("not-a-repo/README.md"), "hello").unwrap();
+    fs::create_dir_all(dir.path().join("not-a-repo"))?;
+    fs::write(dir.path().join("not-a-repo/README.md"), "hello")?;
 
     // Create a plain file (should be ignored)
-    fs::write(dir.path().join("stray-file.txt"), "hello").unwrap();
+    fs::write(dir.path().join("stray-file.txt"), "hello")?;
 
     let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
@@ -60,14 +66,15 @@ fn test_assemblyline_discovers_git_repos_only() {
         report.repos_scanned, 1,
         "should only discover the git repo, not the plain directory"
     );
+    Ok(())
 }
 
 #[test]
-fn test_assemblyline_multiple_repos() {
-    let dir = TempDir::new().unwrap();
+fn test_assemblyline_multiple_repos() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
 
     // Create two git repos with Rust source
-    make_git_repo(dir.path(), "repo-safe", Some(("main.rs", "fn main() {}")));
+    make_git_repo(dir.path(), "repo-safe", Some(("main.rs", "fn main() {}")))?;
     make_git_repo(
         dir.path(),
         "repo-risky",
@@ -81,7 +88,7 @@ fn main() {
 }
 "#,
         )),
-    );
+    )?;
 
     let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
@@ -102,14 +109,15 @@ fn main() {
             "results should be sorted by weak point count descending"
         );
     }
+    Ok(())
 }
 
 #[test]
-fn test_assemblyline_findings_only_filter() {
-    let dir = TempDir::new().unwrap();
+fn test_assemblyline_findings_only_filter() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
 
     // A clean repo (no source files = no findings)
-    make_git_repo(dir.path(), "clean-repo", None);
+    make_git_repo(dir.path(), "clean-repo", None)?;
 
     // A repo with findings
     make_git_repo(
@@ -123,7 +131,7 @@ fn main() {
 }
 "#,
         )),
-    );
+    )?;
 
     let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
@@ -142,12 +150,13 @@ fn main() {
             "findings_only should filter out repos with 0 findings"
         );
     }
+    Ok(())
 }
 
 #[test]
-fn test_assemblyline_write_report() {
-    let dir = TempDir::new().unwrap();
-    make_git_repo(dir.path(), "test-repo", Some(("main.rs", "fn main() {}")));
+fn test_assemblyline_write_report() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    make_git_repo(dir.path(), "test-repo", Some(("main.rs", "fn main() {}")))?;
 
     let config = AssemblylineConfig {
         directory: dir.path().to_path_buf(),
@@ -169,13 +178,14 @@ fn test_assemblyline_write_report() {
 
     assert!(parsed["repos_scanned"].is_number());
     assert!(parsed["results"].is_array());
+    Ok(())
 }
 
 #[test]
-fn test_assemblyline_not_a_directory() {
-    let dir = TempDir::new().unwrap();
+fn test_assemblyline_not_a_directory() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
     let file_path = dir.path().join("not-a-dir.txt");
-    fs::write(&file_path, "hello").unwrap();
+    fs::write(&file_path, "hello")?;
 
     let config = AssemblylineConfig {
         directory: file_path,
@@ -191,4 +201,5 @@ fn test_assemblyline_not_a_directory() {
         result.is_err(),
         "assemblyline should error when given a file instead of directory"
     );
+    Ok(())
 }
