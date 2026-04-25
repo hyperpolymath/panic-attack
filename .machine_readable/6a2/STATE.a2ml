@@ -56,6 +56,15 @@ action = "Verified shell completions + delta reporting both shipped; advanced ST
 commit = "4624e53"
 blocker = "none"
 
+[session-2026-04-25]
+description = "Full test suite converted to panic-free Clade A; production .unwrap() reduced to ≤50"
+test-files-converted = "11 of 11 test files now return Result and use ? throughout (zero .unwrap() in harness code)"
+files = "assemblyline_tests, analyzer_tests, pattern_tests, panll_tests, report_tests, sarif_tests, types_tests, property_tests, readiness, e2e_tests, unbounded_corpus"
+production-unwrap-fixes = "Static-regex OnceLock closures → .expect(); fixed_versions.first() panic risk in bridge/classify.rs"
+clade-registry = "3 canonical pattern files contributed to panic-free-tests-and-benches v1.2.0 (25 total patterns)"
+commits = "39b4353 (3 remaining test files); 9fe8507, 2053fd9 (prior test files); 5ea9b74 (production fixes)"
+tests-passing = "200 pass / 0 fail / 3 ignored across all test binaries"
+
 [next-priorities]
 verisimdb-http = "Push hexads via REST (awaiting API stabilization)"
 interactive-tui = "Review findings in terminal (v2.3.0)"
