@@ -18,6 +18,29 @@ use std::time::Duration;
 pub struct ReportTui;
 
 impl ReportTui {
+    /// Run without a TTY: build all sections and print them as plain text.
+    ///
+    /// Safe to call in CI, scripts, or any context without a real terminal.
+    /// Promotes the tui subcommand from Grade E to Grade D.
+    pub fn run_headless(report: &AssaultReport) -> Result<()> {
+        let formatter = ReportFormatter::new();
+        let sections = Self::build_sections(report, &formatter, true);
+
+        println!("PANIC-ATTACK REPORT REVIEW (headless)");
+        println!();
+
+        for section in &sections {
+            println!("=== {} ===", section.title);
+            println!("{}", section.summary);
+            for detail in &section.details {
+                println!("  {}", detail);
+            }
+            println!();
+        }
+
+        Ok(())
+    }
+
     pub fn run(report: &AssaultReport) -> Result<()> {
         terminal::enable_raw_mode()?;
         let result = Self::run_inner(report);

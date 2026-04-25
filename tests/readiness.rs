@@ -52,6 +52,43 @@ fn run(args: &[&str]) -> (bool, String, String) {
     )
 }
 
+/// Minimal `AssaultReport` JSON for headless subcommand tests.
+///
+/// Matches the full serde schema (all required fields present) so
+/// `serde_json::from_str::<AssaultReport>` succeeds without panic.
+fn minimal_assault_report_json() -> String {
+    serde_json::json!({
+        "schema_version": "2.5",
+        "assail_report": {
+            "schema_version": "2.5",
+            "program_path": "/tmp/headless-test",
+            "language": "rust",
+            "frameworks": [],
+            "weak_points": [],
+            "statistics": {
+                "total_lines": 10,
+                "unsafe_blocks": 0,
+                "panic_sites": 0,
+                "unwrap_calls": 0,
+                "allocation_sites": 0,
+                "io_operations": 0,
+                "threading_constructs": 0
+            },
+            "file_statistics": [],
+            "recommended_attacks": []
+        },
+        "attack_results": [],
+        "total_crashes": 0,
+        "total_signatures": 0,
+        "overall_assessment": {
+            "robustness_score": 100.0,
+            "critical_issues": [],
+            "recommendations": []
+        }
+    })
+    .to_string()
+}
+
 // ============================================================
 // Grade D (Alpha): each component runs without crashing
 // ============================================================
@@ -80,6 +117,52 @@ fn readiness_d_manifest_runs() {
 fn readiness_d_help_runs() {
     let (ok, _stdout, stderr) = run(&["help"]);
     assert!(ok, "help should succeed: {}", stderr);
+}
+
+#[test]
+fn readiness_d_tui_headless_runs() {
+    let dir = TempDir::new().unwrap();
+    let report_path = dir.path().join("assault.json");
+    fs::write(&report_path, minimal_assault_report_json()).unwrap();
+
+    let (ok, stdout, stderr) = run(&["tui", "--headless", report_path.to_str().unwrap()]);
+    assert!(ok, "tui --headless should succeed without a TTY: {}", stderr);
+    assert!(
+        stdout.contains("PANIC-ATTACK REPORT REVIEW"),
+        "tui --headless should print report header, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Assail Summary"),
+        "tui --headless should include Assail Summary section"
+    );
+}
+
+#[test]
+fn readiness_d_gui_headless_runs() {
+    let dir = TempDir::new().unwrap();
+    let report_path = dir.path().join("assault.json");
+    fs::write(&report_path, minimal_assault_report_json()).unwrap();
+
+    let (ok, stdout, stderr) = run(&["gui", "--headless", report_path.to_str().unwrap()]);
+    assert!(
+        ok,
+        "gui --headless should succeed without a display server: {}",
+        stderr
+    );
+    assert!(
+        stdout.contains("PANIC-ATTACK GUI REPORT"),
+        "gui --headless should print GUI report header, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Summary"),
+        "gui --headless should include Summary panel"
+    );
+    assert!(
+        stdout.contains("Assessment"),
+        "gui --headless should include Assessment panel"
+    );
 }
 
 // ============================================================

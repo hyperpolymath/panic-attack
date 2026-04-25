@@ -458,6 +458,10 @@ enum Commands {
         /// Assault report JSON file
         #[arg(value_name = "REPORT")]
         report: PathBuf,
+
+        /// Headless mode: print sections as plain text without requiring a TTY (CI-safe)
+        #[arg(long, default_value_t = false)]
+        headless: bool,
     },
 
     /// GUI review of a saved report
@@ -465,6 +469,10 @@ enum Commands {
         /// Assault report JSON file
         #[arg(value_name = "REPORT")]
         report: PathBuf,
+
+        /// Headless mode: print panel summaries without requiring a display server (CI-safe)
+        #[arg(long, default_value_t = false)]
+        headless: bool,
     },
 
     /// Compare two assault reports (defaults to latest VerisimDB runs)
@@ -1662,16 +1670,24 @@ fn run_main() -> Result<()> {
             }
         }
 
-        Commands::Tui { report } => {
+        Commands::Tui { report, headless } => {
             let content = read_report_bounded(&report)?;
             let assault_report: AssaultReport = serde_json::from_str(&content)?;
-            ReportTui::run(&assault_report)?;
+            if headless {
+                ReportTui::run_headless(&assault_report)?;
+            } else {
+                ReportTui::run(&assault_report)?;
+            }
         }
 
-        Commands::Gui { report } => {
+        Commands::Gui { report, headless } => {
             let content = read_report_bounded(&report)?;
             let assault_report: AssaultReport = serde_json::from_str(&content)?;
-            report::ReportGui::run(assault_report)?;
+            if headless {
+                report::ReportGui::run_headless(assault_report)?;
+            } else {
+                report::ReportGui::run(assault_report)?;
+            }
         }
 
         Commands::Diff {
