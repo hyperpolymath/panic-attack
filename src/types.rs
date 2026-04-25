@@ -73,6 +73,7 @@ pub enum Language {
     Shell,
     Julia,
     Lua,
+    Chapel,
 
     // === Nextgen custom DSLs ===
     WokeLang,
@@ -159,6 +160,7 @@ impl Language {
             "sh" | "bash" | "zsh" | "fish" => Language::Shell,
             "jl" => Language::Julia,
             "lua" | "luau" => Language::Lua,
+            "chpl" => Language::Chapel,
 
             // Nextgen custom DSLs
             "woke" => Language::WokeLang,
@@ -201,6 +203,7 @@ impl Language {
             Language::Shell => "shell",
             Language::Julia => "julia",
             Language::Lua => "lua",
+            Language::Chapel => "chapel",
             Language::Rust => "rust",
             Language::C | Language::Cpp => "c-family",
             Language::Go => "go",

@@ -3280,6 +3280,15 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
+        // Idris package manifest files (`.ipkg`) share the `idr`/`ipkg`
+        // extension family but are TOML-like build configs, not Idris
+        // source. They legitimately contain string-literal mentions of
+        // banned-pattern names (e.g. `brief = "...zero believe_me..."`)
+        // that would false-fire the substring-based ProofDrift detector
+        // below. Skip them entirely.
+        if file_path.ends_with(".ipkg") {
+            return Ok(());
+        }
         // Strip line ('--') and block ('{- -}') comments so that doc lines like
         // `||| no believe_me required` (which start with `--` after the bar
         // notation is normalised by lines()) and summary blocks do not produce
