@@ -1,72 +1,79 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
 
-//! Unit tests for language-specific analyzers
+//! Unit tests for language-specific analyzers.
+//!
+//! All tests are panic-free: helpers return `Result`, test functions use
+//! `-> Result<(), Box<dyn std::error::Error>>` and propagate errors with `?`.
 
 use panic_attack::assail;
 use panic_attack::types::*;
 use std::fs;
 use tempfile::TempDir;
 
-fn create_test_file(dir: &TempDir, name: &str, content: &str) -> std::path::PathBuf {
+/// Write `content` to `dir/name` and return the full path.
+///
+/// Returns an error rather than panicking so test failures report the
+/// actual I/O reason instead of a bare panic.
+fn write_test_file(dir: &TempDir, name: &str, content: &str) -> std::io::Result<std::path::PathBuf> {
     let path = dir.path().join(name);
-    fs::write(&path, content).unwrap();
-    path
+    fs::write(&path, content)?;
+    Ok(path)
 }
 
 #[test]
-fn test_rust_analyzer_detects_unsafe() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_rust_analyzer_detects_unsafe() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.rs", r#"
 fn main() {
     unsafe {
         let x = std::ptr::null::<i32>();
     }
     unsafe fn dangerous() {}
 }
-"#;
-    let file = create_test_file(&dir, "test.rs", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     assert_eq!(report.language, Language::Rust);
     assert!(report.statistics.unsafe_blocks >= 2);
     assert!(!report.weak_points.is_empty());
+    Ok(())
 }
 
 #[test]
-fn test_rust_analyzer_detects_unwraps() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_rust_analyzer_detects_unwraps() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.rs", r#"
 fn main() {
     let x = Some(5).unwrap();
     let y = Ok::<i32, ()>(10).expect("should work");
     let z = vec![1,2,3].get(0).unwrap();
 }
-"#;
-    let file = create_test_file(&dir, "test.rs", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     assert!(report.statistics.unwrap_calls >= 3);
+    Ok(())
 }
 
 #[test]
-fn test_rust_analyzer_detects_panics() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_rust_analyzer_detects_panics() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.rs", r#"
 fn main() {
     panic!("oh no");
     unreachable!("never happens");
 }
-"#;
-    let file = create_test_file(&dir, "test.rs", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     assert!(report.statistics.panic_sites >= 2);
+    Ok(())
 }
 
 #[test]
-fn test_c_analyzer_detects_malloc() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_c_analyzer_detects_malloc() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.c", r#"
 #include <stdlib.h>
 
 int main() {
@@ -74,39 +81,39 @@ int main() {
     int* ptr2 = calloc(50, sizeof(int));
     return 0;
 }
-"#;
-    let file = create_test_file(&dir, "test.c", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     assert_eq!(report.language, Language::C);
     assert!(report.statistics.allocation_sites >= 2);
+    Ok(())
 }
 
 #[test]
-fn test_c_analyzer_detects_unchecked_malloc() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_c_analyzer_detects_unchecked_malloc() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.c", r#"
 #include <stdlib.h>
 
 int main() {
     int* ptr = malloc(100);
     *ptr = 42;  // Unchecked!
 }
-"#;
-    let file = create_test_file(&dir, "test.c", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     let unchecked = report
         .weak_points
         .iter()
         .any(|wp| matches!(wp.category, WeakPointCategory::UncheckedAllocation));
     assert!(unchecked, "Should detect unchecked malloc");
+    Ok(())
 }
 
 #[test]
-fn test_go_analyzer_detects_goroutines() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_go_analyzer_detects_goroutines() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.go", r#"
 package main
 
 func main() {
@@ -114,24 +121,23 @@ func main() {
     go processData()
     go handleRequest()
 }
-"#;
-    let file = create_test_file(&dir, "test.go", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     assert_eq!(report.language, Language::Go);
     assert!(report.statistics.threading_constructs >= 3);
+    Ok(())
 }
 
 #[test]
-fn test_python_analyzer_detects_unbounded_loop() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_python_analyzer_detects_unbounded_loop() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.py", r#"
 def main():
     while True:
         process()
-"#;
-    let file = create_test_file(&dir, "test.py", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     assert_eq!(report.language, Language::Python);
     let unbounded = report
@@ -139,85 +145,81 @@ def main():
         .iter()
         .any(|wp| matches!(wp.category, WeakPointCategory::UnboundedLoop));
     assert!(unbounded, "Should detect unbounded loop");
+    Ok(())
 }
 
 #[test]
-fn test_generic_analyzer_basic_patterns() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_generic_analyzer_basic_patterns() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.unknown", r#"
 // Unknown language
 function main() {
     let x = alloc(100);
     open("file.txt");
     thread.start();
 }
-"#;
-    let file = create_test_file(&dir, "test.unknown", content);
-
-    // Generic analyzer should still work, but language will be Unknown
-    // and we just check it doesn't crash
+"#)?;
+    // Generic analyzer should still work; we only check it doesn't crash
     let _ = assail::analyze(&file);
+    Ok(())
 }
 
 #[test]
-fn test_framework_detection_webserver() {
-    // Framework detection for Rust relies on Cargo.toml, so we create a directory
+fn test_framework_detection_webserver() -> Result<(), Box<dyn std::error::Error>> {
+    // Framework detection for Rust uses Cargo.toml, so we need a directory
     // with both a source file and a manifest declaring the dependency.
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new()?;
     let src_dir = dir.path().join("src");
-    fs::create_dir_all(&src_dir).unwrap();
+    fs::create_dir_all(&src_dir)?;
     fs::write(
         src_dir.join("main.rs"),
         "use actix_web::{web, App, HttpServer};\nfn main() {}\n",
-    )
-    .unwrap();
+    )?;
     fs::write(
         dir.path().join("Cargo.toml"),
         "[package]\nname = \"test\"\n[dependencies]\nactix-web = \"4\"\n",
-    )
-    .unwrap();
-    let report = assail::analyze(dir.path()).expect("analysis should succeed");
+    )?;
+    let report = assail::analyze(dir.path())?;
 
     assert!(
         report.frameworks.contains(&Framework::WebServer),
         "expected WebServer from Cargo.toml actix-web dep, got {:?}",
         report.frameworks
     );
+    Ok(())
 }
 
 #[test]
-fn test_framework_detection_database() {
-    let dir = TempDir::new().unwrap();
+fn test_framework_detection_database() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
     let src_dir = dir.path().join("src");
-    fs::create_dir_all(&src_dir).unwrap();
+    fs::create_dir_all(&src_dir)?;
     fs::write(
         src_dir.join("main.rs"),
         "use diesel::prelude::*;\nfn main() {}\n",
-    )
-    .unwrap();
+    )?;
     fs::write(
         dir.path().join("Cargo.toml"),
         "[package]\nname = \"test\"\n[dependencies]\ndiesel = \"2\"\n",
-    )
-    .unwrap();
-    let report = assail::analyze(dir.path()).expect("analysis should succeed");
+    )?;
+    let report = assail::analyze(dir.path())?;
 
     assert!(
         report.frameworks.contains(&Framework::Database),
         "expected Database from Cargo.toml diesel dep, got {:?}",
         report.frameworks
     );
+    Ok(())
 }
 
 #[test]
-fn test_todo_in_string_literal_does_not_trigger_unchecked_error() {
-    // Regression test for 007-lang false positive: parser.rs contained
-    // 155 `.expect("TODO: handle error")` calls. The old detector did
-    // `content.matches("TODO").count()` on raw content, so each string
-    // literal incremented the TODO count. This pattern is common in
-    // stub code and shouldn't be classified as UncheckedError.
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_todo_in_string_literal_does_not_trigger_unchecked_error() -> Result<(), Box<dyn std::error::Error>> {
+    // Regression: parser.rs had 155 `.expect("TODO: handle error")` calls.
+    // The old detector counted `content.matches("TODO")` on raw bytes, so each
+    // string literal incremented the TODO counter. Stub code with `.expect("TODO: …")`
+    // must not fire UncheckedError.
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "stubby.rs", r#"
 pub fn parse_stubbed(input: &str) -> String {
     let first = input.split(',').next().expect("TODO: handle error");
     let second = input.split('.').next().expect("TODO: handle error");
@@ -234,9 +236,8 @@ pub fn parse_stubbed(input: &str) -> String {
         first, second, third, fourth, fifth, sixth,
         seventh, eighth, ninth, tenth, eleventh)
 }
-"#;
-    let file = create_test_file(&dir, "stubby.rs", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     let unchecked: Vec<_> = report
         .weak_points
@@ -250,13 +251,14 @@ pub fn parse_stubbed(input: &str) -> String {
          UncheckedError markers: got {:?}",
         unchecked
     );
+    Ok(())
 }
 
 #[test]
-fn test_real_todo_comments_still_detected() {
-    // Sanity: actual `// TODO` comments in the 11+ threshold still fire.
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_real_todo_comments_still_detected() -> Result<(), Box<dyn std::error::Error>> {
+    // Sanity: actual `// TODO` comments above the 11-item threshold must still fire.
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "debt.rs", r#"
 // TODO: implement proper error handling
 // TODO: add tests for edge cases
 // TODO: optimise hot path
@@ -270,9 +272,8 @@ fn test_real_todo_comments_still_detected() {
 // XXX: this block needs review
 // XXX: performance critical but correctness unclear
 pub fn stub() -> i32 { 42 }
-"#;
-    let file = create_test_file(&dir, "debt.rs", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     let unchecked: Vec<_> = report
         .weak_points
@@ -285,19 +286,19 @@ pub fn stub() -> i32 { 42 }
         "real // TODO / // FIXME / // HACK / // XXX comments above \
          the threshold should still fire the detector"
     );
+    Ok(())
 }
 
 #[test]
-fn test_per_file_stats_populated() {
-    let dir = TempDir::new().unwrap();
-    let content = r#"
+fn test_per_file_stats_populated() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(&dir, "test.rs", r#"
 fn main() {
     let x = Some(5).unwrap();
     unsafe { std::ptr::null::<i32>() };
 }
-"#;
-    let file = create_test_file(&dir, "test.rs", content);
-    let report = assail::analyze(&file).expect("analysis should succeed");
+"#)?;
+    let report = assail::analyze(&file)?;
 
     assert!(
         !report.file_statistics.is_empty(),
@@ -306,4 +307,5 @@ fn main() {
     let stats = &report.file_statistics[0];
     assert!(stats.file_path.contains("test.rs"));
     assert!(stats.lines > 0);
+    Ok(())
 }

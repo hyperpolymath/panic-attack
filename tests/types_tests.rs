@@ -3,6 +3,10 @@
 
 //! Unit tests for core types — Language detection, family classification,
 //! WeakPointCategory coverage, and serialization contracts.
+//!
+//! All tests are panic-free: they return `Result` and propagate errors with
+//! `?` rather than calling `.unwrap()`. This makes failures report the actual
+//! error instead of a location-less panic.
 
 use panic_attack::types::*;
 
@@ -142,31 +146,36 @@ fn language_family_config() {
 }
 
 // ─── Serialization Contracts ──────────────────────────────────────────────
+//
+// Pattern: serde tests return Result so failures report the actual error
+// rather than a location-less panic.
 
 #[test]
-fn language_serializes_lowercase() {
-    let json = serde_json::to_string(&Language::Rust).unwrap();
+fn language_serializes_lowercase() -> Result<(), serde_json::Error> {
+    let json = serde_json::to_string(&Language::Rust)?;
     assert_eq!(json, "\"rust\"");
 
-    let json = serde_json::to_string(&Language::Elixir).unwrap();
+    let json = serde_json::to_string(&Language::Elixir)?;
     assert_eq!(json, "\"elixir\"");
 
-    let json = serde_json::to_string(&Language::ReScript).unwrap();
+    let json = serde_json::to_string(&Language::ReScript)?;
     assert_eq!(json, "\"rescript\"");
+    Ok(())
 }
 
 #[test]
-fn language_deserializes_from_lowercase() {
-    let lang: Language = serde_json::from_str("\"rust\"").unwrap();
+fn language_deserializes_from_lowercase() -> Result<(), serde_json::Error> {
+    let lang: Language = serde_json::from_str("\"rust\"")?;
     assert_eq!(lang, Language::Rust);
 
-    let lang: Language = serde_json::from_str("\"idris\"").unwrap();
+    let lang: Language = serde_json::from_str("\"idris\"")?;
     assert_eq!(lang, Language::Idris);
+    Ok(())
 }
 
 #[test]
-fn language_roundtrip_serde() {
-    let languages = vec![
+fn language_roundtrip_serde() -> Result<(), serde_json::Error> {
+    let languages = [
         Language::Rust,
         Language::Elixir,
         Language::Gleam,
@@ -179,27 +188,29 @@ fn language_roundtrip_serde() {
     ];
 
     for lang in languages {
-        let json = serde_json::to_string(&lang).unwrap();
-        let deserialized: Language = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&lang)?;
+        let deserialized: Language = serde_json::from_str(&json)?;
         assert_eq!(lang, deserialized, "Roundtrip failed for {:?}", lang);
     }
+    Ok(())
 }
 
 // ─── WeakPointCategory Coverage ───────────────────────────────────────────
 
 #[test]
-fn weak_point_category_serializes() {
-    let json = serde_json::to_string(&WeakPointCategory::UnsafeCode).unwrap();
+fn weak_point_category_serializes() -> Result<(), serde_json::Error> {
+    let json = serde_json::to_string(&WeakPointCategory::UnsafeCode)?;
     assert!(!json.is_empty());
 
-    let json = serde_json::to_string(&WeakPointCategory::PanicPath).unwrap();
+    let json = serde_json::to_string(&WeakPointCategory::PanicPath)?;
     assert!(!json.is_empty());
+    Ok(())
 }
 
 // ─── AssailReport Structure ───────────────────────────────────────────────
 
 #[test]
-fn assail_report_serializes_to_json() {
+fn assail_report_serializes_to_json() -> Result<(), serde_json::Error> {
     let report = AssailReport {
         schema_version: "2.5".to_string(),
         program_path: std::path::PathBuf::from("test/target"),
@@ -215,9 +226,10 @@ fn assail_report_serializes_to_json() {
         suppressed_count: 0,
     };
 
-    let json = serde_json::to_string(&report).unwrap();
+    let json = serde_json::to_string(&report)?;
     assert!(json.contains("\"language\":\"rust\""));
 
     // Verify it can be deserialized back
-    let _: AssailReport = serde_json::from_str(&json).unwrap();
+    let _: AssailReport = serde_json::from_str(&json)?;
+    Ok(())
 }
