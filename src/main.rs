@@ -729,6 +729,22 @@ enum Commands {
         #[arg(value_name = "DIR")]
         dir: PathBuf,
     },
+
+    /// Attestation utilities (verify chain integrity, check signatures)
+    Attest {
+        #[command(subcommand)]
+        action: AttestAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum AttestAction {
+    /// Verify an attestation sidecar file (.attestation.json)
+    Verify {
+        /// Path to the .attestation.json file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+    },
 }
 
 /// Patch Bridge subcommands for CVE lifecycle management.
@@ -2288,6 +2304,39 @@ fn run_main() -> Result<()> {
             let fp = assemblyline::fingerprint_repo(&dir)?;
             println!("{fp}");
             return Ok(());
+        }
+
+        Commands::Attest { action } => {
+            match action {
+                AttestAction::Verify { file } => {
+                    match attestation::verify_attestation_file(&file)? {
+                        attestation::VerifyResult::Ok {
+                            issuer,
+                            issued_at,
+                            chain_hash,
+                            signature_verified,
+                        } => {
+                            println!("  [OK] Attestation verified");
+                            println!("       Issuer:    {}", issuer);
+                            println!("       Issued at: {}", issued_at);
+                            println!("       Chain:     {}", chain_hash);
+                            if signature_verified {
+                                println!("       Signature: verified (Ed25519)");
+                            } else {
+                                println!("       Signature: not present");
+                            }
+                        }
+                        attestation::VerifyResult::Failed(reasons) => {
+                            eprintln!("  [FAIL] Attestation verification failed:");
+                            for reason in &reasons {
+                                eprintln!("         - {}", reason);
+                            }
+                            return Err(anyhow::anyhow!("attestation verification failed"));
+                        }
+                    }
+                    return Ok(());
+                }
+            }
         }
 
         Commands::Temporal { action } => {

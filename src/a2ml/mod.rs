@@ -829,6 +829,7 @@ mod tests {
 
     fn sample_assail_report() -> AssailReport {
         AssailReport {
+            schema_version: "2.5".to_string(),
             program_path: PathBuf::from("src/main.rs"),
             language: Language::Rust,
             frameworks: vec![Framework::Unknown],
@@ -850,6 +851,7 @@ mod tests {
                 allocation_sites: 0,
                 io_operations: 0,
                 threading_constructs: 0,
+                safe_unwrap_calls: 0,
             },
             file_statistics: vec![FileStatistics {
                 file_path: "src/main.rs".to_string(),
@@ -861,6 +863,7 @@ mod tests {
                 io_operations: 0,
                 threading_constructs: 0,
                 ffi_safe_wrapper: false,
+                safe_unwrap_calls: 0,
             }],
             recommended_attacks: vec![AttackAxis::Concurrency],
             dependency_graph: DependencyGraph::default(),
@@ -898,6 +901,7 @@ mod tests {
 
     fn sample_ambush_report() -> AssaultReport {
         AssaultReport {
+            schema_version: "2.5".to_string(),
             assail_report: sample_assail_report(),
             attack_results: sample_attack_results(),
             total_crashes: 1,
@@ -994,6 +998,7 @@ mod tests {
 
     fn sample_adjudicate_report() -> adjudicate::AdjudicateReport {
         adjudicate::AdjudicateReport {
+            schema_version: "2.5".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             reports: vec![
                 PathBuf::from("reports/a.json"),

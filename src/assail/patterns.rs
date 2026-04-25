@@ -43,14 +43,21 @@ impl PatternDetector {
             _ => {}
         }
 
-        // Framework-specific patterns
+        // Framework-specific patterns, with language-lock guards.
+        // Phoenix / OTP / Ecto are BEAM-ecosystem frameworks — they must not
+        // fire on non-BEAM languages even if the framework was detected from
+        // a top-level mix.exs that sits alongside a polyglot source tree.
+        let is_beam = matches!(
+            language,
+            Language::Elixir | Language::Erlang | Language::Gleam
+        );
         for framework in frameworks {
             match framework {
                 Framework::WebServer => patterns.extend(Self::webserver_patterns()),
                 Framework::Database => patterns.extend(Self::database_patterns()),
                 Framework::Concurrent => patterns.extend(Self::concurrency_patterns()),
-                Framework::Phoenix => patterns.extend(Self::phoenix_patterns()),
-                Framework::OTP => patterns.extend(Self::otp_patterns()),
+                Framework::Phoenix if is_beam => patterns.extend(Self::phoenix_patterns()),
+                Framework::OTP if is_beam => patterns.extend(Self::otp_patterns()),
                 _ => {}
             }
         }

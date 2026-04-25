@@ -572,6 +572,7 @@ mod classifications_tests {
         );
 
         let mut report = AssailReport {
+            schema_version: "2.5".to_string(),
             program_path: tmp.path().to_path_buf(),
             language: Language::Rust,
             frameworks: vec![],
@@ -605,6 +606,7 @@ mod classifications_tests {
                 allocation_sites: 0,
                 io_operations: 0,
                 threading_constructs: 0,
+                safe_unwrap_calls: 0,
             },
             file_statistics: vec![],
             recommended_attacks: vec![],

@@ -42,14 +42,27 @@ fn manifest(port: u16) -> String {
     format!(
         r#"{{
   "groove_version": "1",
-  "service_id": "panic-attacker",
+  "service_id": "panic-attack",
   "service_version": "{}",
   "capabilities": {{
     "static_analysis": {{
       "type": "static-analysis",
-      "description": "Universal static analysis and logic-based bug signature detection for 49 languages",
+      "capability_version": "2.5.0",
+      "description": "Universal static analysis and logic-based bug signature detection for 49 languages and 25 weak-point categories (PA001–PA025)",
       "protocol": "http",
       "endpoint": "/api/v1/scan",
+      "requires_auth": false,
+      "panel_compatible": true,
+      "languages": 49,
+      "weak_point_categories": 25,
+      "logic_engine": "miniKanren/2.0.0"
+    }},
+    "batch_scan": {{
+      "type": "assemblyline",
+      "capability_version": "1.0.0",
+      "description": "Batch scan of repo directories with BLAKE3 fingerprinting and incremental mode",
+      "protocol": "http",
+      "endpoint": "/api/v1/assemblyline",
       "requires_auth": false,
       "panel_compatible": true
     }}
@@ -60,7 +73,7 @@ fn manifest(port: u16) -> String {
     "health": "http://localhost:{}/health"
   }},
   "health": "/health",
-  "applicability": ["individual", "team"]
+  "applicability": ["individual", "team", "fleet"]
 }}"#,
         env!("CARGO_PKG_VERSION"),
         port,

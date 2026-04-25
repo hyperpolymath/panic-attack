@@ -136,33 +136,7 @@ pub fn query_osv_batch(deps: &[LockedDependency]) -> Result<Vec<Vulnerability>> 
 
         let body_bytes = serde_json::to_vec(&request)?;
 
-        let mut resp = ureq::post("https://api.osv.dev/v1/querybatch")
-            .header("Content-Type", "application/json")
-            .send(&body_bytes[..])
-            .map_err(|e| anyhow::anyhow!("OSV API request failed: {}", e))?;
-
-        let status = resp.status().as_u16();
-        if !(200..300).contains(&status) {
-            // Cap error-body reads at 64 KiB — for error paths we only
-            // need enough context to report, not the full OSV error blob.
-            let buf = resp
-                .body_mut()
-                .with_config()
-                .limit(64 * 1024)
-                .read_to_string()
-                .unwrap_or_default();
-            anyhow::bail!("OSV API returned HTTP {}: {}", status, buf);
-        }
-
-        // Cap success-body reads at 256 MiB. OSV batch responses for
-        // ~1000-dep projects run a few MiB at most; 256 MiB is an order
-        // of magnitude beyond any realistic response and prevents a
-        // misbehaving or hostile OSV endpoint from exhausting memory.
-        let response_text = resp
-            .body_mut()
-            .with_config()
-            .limit(256 * 1024 * 1024)
-            .read_to_string()?;
+        let response_text = osv_post_with_retry(&body_bytes)?;
         let response: OsvBatchResponse = serde_json::from_str(&response_text)?;
 
         // Map OSV results back to dependencies
@@ -175,6 +149,80 @@ pub fn query_osv_batch(deps: &[LockedDependency]) -> Result<Vec<Vulnerability>> 
     }
 
     Ok(all_vulns)
+}
+
+// ============================================================================
+// Networking helpers
+// ============================================================================
+
+const OSV_ENDPOINT: &str = "https://api.osv.dev/v1/querybatch";
+/// Maximum number of retry attempts for transient OSV API failures.
+const OSV_MAX_RETRIES: u32 = 3;
+
+/// POST body bytes to the OSV batch endpoint with exponential-backoff retry.
+///
+/// Retries on connection errors and 5xx responses. 4xx errors are permanent
+/// failures (bad request / auth) and are returned immediately without retry.
+/// Delays: 1 s, 2 s, 4 s (capped at 3 attempts total).
+fn osv_post_with_retry(body_bytes: &[u8]) -> Result<String> {
+    let mut last_err = anyhow::anyhow!("no attempts made");
+
+    for attempt in 0..OSV_MAX_RETRIES {
+        if attempt > 0 {
+            let delay = std::time::Duration::from_secs(1u64 << (attempt - 1));
+            std::thread::sleep(delay);
+        }
+
+        let send_result = ureq::post(OSV_ENDPOINT)
+            .header("Content-Type", "application/json")
+            .send(body_bytes);
+
+        match send_result {
+            Err(e) => {
+                // Connection-level error — always retry
+                last_err = anyhow::anyhow!("OSV API request failed (attempt {}): {}", attempt + 1, e);
+                log::warn!("[bridge] OSV attempt {}/{}: {}", attempt + 1, OSV_MAX_RETRIES, last_err);
+                continue;
+            }
+            Ok(mut resp) => {
+                let status = resp.status().as_u16();
+
+                if status >= 500 {
+                    // Server error — retry
+                    let buf = resp
+                        .body_mut()
+                        .with_config()
+                        .limit(64 * 1024)
+                        .read_to_string()
+                        .unwrap_or_default();
+                    last_err = anyhow::anyhow!("OSV API returned HTTP {} (attempt {}): {}", status, attempt + 1, buf);
+                    log::warn!("[bridge] OSV attempt {}/{}: HTTP {}", attempt + 1, OSV_MAX_RETRIES, status);
+                    continue;
+                }
+
+                if !(200..300).contains(&status) {
+                    // 4xx — permanent failure, do not retry
+                    let buf = resp
+                        .body_mut()
+                        .with_config()
+                        .limit(64 * 1024)
+                        .read_to_string()
+                        .unwrap_or_default();
+                    anyhow::bail!("OSV API returned HTTP {}: {}", status, buf);
+                }
+
+                // 2xx — success. Cap body at 256 MiB.
+                let text = resp
+                    .body_mut()
+                    .with_config()
+                    .limit(256 * 1024 * 1024)
+                    .read_to_string()?;
+                return Ok(text);
+            }
+        }
+    }
+
+    Err(last_err)
 }
 
 // ============================================================================

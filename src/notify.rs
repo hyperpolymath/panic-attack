@@ -262,6 +262,7 @@ mod tests {
         let total_weak_points: usize = results.iter().map(|r| r.weak_point_count).sum();
         let total_critical: usize = results.iter().map(|r| r.critical_count).sum();
         AssemblylineReport {
+            schema_version: "2.5".to_string(),
             created_at: "2026-03-01T00:00:00Z".to_string(),
             directory: PathBuf::from("/tmp/repos"),
             repos_scanned: results.len(),

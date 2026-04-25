@@ -881,6 +881,48 @@ impl LogicEngine {
                 ..Default::default()
             },
         ));
+
+        // Rule 14: suppress_scanner_source_literals(File) :-
+        //   weak_point(PanicPath, File, _),
+        //   context(File, "scanner_source").
+        //
+        // Rationale: when panic-attack scans its own source code, the
+        // pattern-detection files (patterns.rs, analyzer.rs) contain
+        // string literals like `".unwrap()"`, `"unsafe {"`, etc., that
+        // the analyzer's `matches()` counts hit against. These are not
+        // production `.unwrap()` calls — they are the detector strings.
+        // A file tagged `scanner_source` is a code-analysis engine that
+        // deliberately references the patterns it detects; PanicPath
+        // findings there are structural false positives.
+        //
+        // Context fact `scanner_source` is asserted by
+        // `extract_context_facts` for files matching `*patterns*` or
+        // `*analyzer*` with an anomalously high unwrap/line ratio.
+        //
+        // Confidence 0.85: lower than the FFI wrapper rule (0.92) because
+        // path heuristics can misclassify external analyzers in the same
+        // source tree. PanicPath is the only category suppressed here;
+        // UnsafeCode or other categories in scanner files remain visible.
+        let v28 = Term::Var(228);
+        let v29 = Term::Var(229);
+        self.db.add_rule(LogicRule::with_metadata(
+            "suppress_scanner_source_literals".into(),
+            LogicFact::new("suppressed", vec![Term::atom("PanicPath"), v28.clone()]),
+            vec![
+                LogicFact::new(
+                    "weak_point",
+                    vec![Term::atom("PanicPath"), v28.clone(), v29],
+                ),
+                LogicFact::new(
+                    "context",
+                    vec![v28.clone(), Term::atom("scanner_source")],
+                ),
+            ],
+            RuleMetadata {
+                confidence: 0.85,
+                ..Default::default()
+            },
+        ));
     }
 
     /// Extract context facts from source code for FP suppression.
@@ -1001,6 +1043,26 @@ impl LogicEngine {
                 self.db.assert_fact(LogicFact::new(
                     "context",
                     vec![Term::atom(path), Term::atom("ffi_safe_wrapper")],
+                ));
+            }
+
+            // Scanner-source context: files named *patterns* or *analyzer*
+            // whose PanicPath hits are structurally caused by detector string
+            // literals (e.g. `.unwrap()`, `unsafe {`) appearing in the source
+            // of a code-analysis tool. Detected by an anomalously high
+            // unwrap_calls / total_lines ratio (>= 0.10) AND a path that
+            // suggests scanner infrastructure. Rule 14 suppresses PanicPath
+            // only; UnsafeCode and other categories remain visible.
+            let is_scanner_path = path.contains("patterns")
+                || path.contains("analyzer")
+                || path.contains("scanner")
+                || path.contains("detector");
+            let high_literal_ratio = fs.lines > 0
+                && (fs.unwrap_calls as f64 / fs.lines as f64) >= 0.10;
+            if is_scanner_path && high_literal_ratio {
+                self.db.assert_fact(LogicFact::new(
+                    "context",
+                    vec![Term::atom(path), Term::atom("scanner_source")],
                 ));
             }
         }
@@ -1283,6 +1345,7 @@ mod tests {
         weak_points: Vec<WeakPoint>,
     ) -> AssailReport {
         AssailReport {
+            schema_version: "2.5".to_string(),
             program_path: PathBuf::from("/tmp/test"),
             language: Language::Rust,
             frameworks: vec![],
@@ -1355,6 +1418,7 @@ mod tests {
                 io_operations: 0,
                 threading_constructs: 0,
                 ffi_safe_wrapper: false,
+                safe_unwrap_calls: 0,
             }],
             vec![make_weak_point(
                 WeakPointCategory::PanicPath,
@@ -1524,6 +1588,7 @@ mod tests {
                 io_operations: 1,
                 threading_constructs: 2,
                 ffi_safe_wrapper: false,
+                safe_unwrap_calls: 0,
             }],
             vec![make_weak_point(
                 WeakPointCategory::DeadlockPotential,
@@ -1579,6 +1644,7 @@ mod tests {
                 io_operations: 0,
                 threading_constructs: 0,
                 ffi_safe_wrapper: true,
+                safe_unwrap_calls: 0,
             }],
             vec![],
         );
@@ -1609,6 +1675,7 @@ mod tests {
                 io_operations: 0,
                 threading_constructs: 0,
                 ffi_safe_wrapper: false,
+                safe_unwrap_calls: 0,
             }],
             vec![],
         );
@@ -1642,6 +1709,7 @@ mod tests {
                 io_operations: 0,
                 threading_constructs: 0,
                 ffi_safe_wrapper: true,
+                safe_unwrap_calls: 0,
             }],
             vec![
                 make_weak_point(
@@ -1685,6 +1753,7 @@ mod tests {
                 io_operations: 0,
                 threading_constructs: 0,
                 ffi_safe_wrapper: true,
+                safe_unwrap_calls: 0,
             }],
             vec![
                 make_weak_point(

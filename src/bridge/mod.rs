@@ -236,15 +236,17 @@ impl BridgeReport {
 /// 4. Classify: mitigable / unmitigable / informational
 /// 5. Return structured report
 pub fn triage(project_dir: &Path, offline: bool) -> anyhow::Result<BridgeReport> {
-    // Step 1: Parse lockfile
-    let lockfile_path = project_dir.join("Cargo.lock");
-    if !lockfile_path.exists() {
+    // Step 1: Discover and parse all lockfiles (Cargo.lock, mix.lock,
+    // package-lock.json, requirements.txt). At least one must exist.
+    let deps = lockfile::discover_and_parse(project_dir);
+    if deps.is_empty() {
         anyhow::bail!(
-            "No Cargo.lock found in {}. Patch Bridge MVP supports Rust projects only.",
+            "No supported lockfile found in {}. \
+             Supported: Cargo.lock (Rust), mix.lock (Elixir), \
+             package-lock.json (npm), requirements.txt (Python).",
             project_dir.display()
         );
     }
-    let deps = lockfile::parse_cargo_lock(&lockfile_path)?;
     let total_deps = deps.len();
 
     if deps.is_empty() {

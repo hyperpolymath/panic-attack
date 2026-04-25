@@ -403,6 +403,7 @@ mod tests {
     #[test]
     fn empty_report_gives_healthy_image() {
         let report = crate::assemblyline::AssemblylineReport {
+            schema_version: "2.5".to_string(),
             created_at: "2026-03-07T00:00:00Z".to_string(),
             directory: std::path::PathBuf::from("/tmp"),
             repos_scanned: 0,
@@ -421,6 +422,7 @@ mod tests {
     #[test]
     fn image_nodes_match_report_results() {
         let report = crate::assemblyline::AssemblylineReport {
+            schema_version: "2.5".to_string(),
             created_at: "2026-03-07T00:00:00Z".to_string(),
             directory: std::path::PathBuf::from("/tmp"),
             repos_scanned: 2,

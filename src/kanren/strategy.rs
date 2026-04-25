@@ -259,6 +259,7 @@ mod tests {
             io_operations: 0,
             threading_constructs: 0,
             ffi_safe_wrapper: false,
+            safe_unwrap_calls: 0,
         }
     }
 
@@ -282,6 +283,7 @@ mod tests {
             io_operations: 0,
             threading_constructs: 0,
             ffi_safe_wrapper: false,
+            safe_unwrap_calls: 0,
         };
         let risk = score_file(&fs);
         assert!((risk.risk_score - 0.0).abs() < 0.01);
@@ -290,6 +292,7 @@ mod tests {
     #[test]
     fn test_strategy_auto_select() {
         let report = AssailReport {
+            schema_version: "2.5".to_string(),
             program_path: ".".into(),
             language: Language::Rust,
             frameworks: vec![],
@@ -302,6 +305,7 @@ mod tests {
                 allocation_sites: 0,
                 io_operations: 0,
                 threading_constructs: 0,
+                safe_unwrap_calls: 0,
             },
             file_statistics: vec![make_file_stats("src/main.rs", 0, 0)],
             recommended_attacks: vec![],
@@ -321,6 +325,7 @@ mod tests {
     #[test]
     fn test_risk_weighted_ordering() {
         let report = AssailReport {
+            schema_version: "2.5".to_string(),
             program_path: ".".into(),
             language: Language::Rust,
             frameworks: vec![],
@@ -333,6 +338,7 @@ mod tests {
                 allocation_sites: 0,
                 io_operations: 0,
                 threading_constructs: 0,
+                safe_unwrap_calls: 0,
             },
             file_statistics: vec![
                 make_file_stats("src/safe.rs", 0, 0),

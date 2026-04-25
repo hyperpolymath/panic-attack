@@ -599,7 +599,9 @@ mod tests {
         critical_issues: Vec<String>,
     ) -> AssaultReport {
         AssaultReport {
+            schema_version: "2.5".to_string(),
             assail_report: AssailReport {
+                schema_version: "2.5".to_string(),
                 program_path: PathBuf::from("/tmp/test-target"),
                 language: Language::Rust,
                 frameworks: vec![],

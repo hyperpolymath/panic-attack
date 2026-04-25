@@ -6107,6 +6107,7 @@ pub fn call(compiled: &CompiledFunction, args: &[i64]) -> Option<i64> {
             allocation_sites: 0,
             io_operations: 0,
             threading_constructs: 0,
+            safe_unwrap_calls: 0,
         };
         let mut weak_points = Vec::new();
         analyzer
@@ -6161,6 +6162,7 @@ fn pun_u64_to_two_u32s(x: u64) -> (u32, u32) {
             allocation_sites: 0,
             io_operations: 0,
             threading_constructs: 0,
+            safe_unwrap_calls: 0,
         };
         let mut weak_points = Vec::new();
         analyzer
@@ -6212,6 +6214,7 @@ fn pun_in_jit_file(x: u64) -> [u8; 8] {
             allocation_sites: 0,
             io_operations: 0,
             threading_constructs: 0,
+            safe_unwrap_calls: 0,
         };
         let mut weak_points = Vec::new();
         analyzer
@@ -6260,6 +6263,7 @@ fn inspect_token(token: &str) -> TokenData<Claims> {
             allocation_sites: 0,
             io_operations: 0,
             threading_constructs: 0,
+            safe_unwrap_calls: 0,
         };
         let mut weak_points = Vec::new();
         analyzer
