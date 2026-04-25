@@ -247,6 +247,7 @@ fn prop_report_statistics_consistency() {
         threading_constructs: 0,
         allocation_sites: 3,
         io_operations: 2,
+        safe_unwrap_calls: 0,
     };
 
     // Unwrap + panic sites should not exceed total lines

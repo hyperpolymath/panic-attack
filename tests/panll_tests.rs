@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: PMPL-1.0-or-later
 
-//! Tests for the PanLL event-chain export module
+//! Tests for the PanLL event-chain export module.
+//!
+//! All tests are panic-free: they return `Result` and propagate errors with
+//! `?`. JSON value access uses `.ok_or(...)` rather than `.as_array().unwrap()`.
 
 use panic_attack::panll;
 use panic_attack::types::*;
@@ -12,17 +15,15 @@ fn make_assault_report(
     weak_points: Vec<WeakPoint>,
     attack_results: Vec<AttackResult>,
 ) -> AssaultReport {
-    let _critical_count = weak_points
-        .iter()
-        .filter(|wp| wp.severity == Severity::Critical)
-        .count();
     let unsafe_count = weak_points
         .iter()
         .filter(|wp| wp.category == WeakPointCategory::UnsafeCode)
         .count();
 
     AssaultReport {
+        schema_version: "2.5".to_string(),
         assail_report: AssailReport {
+            schema_version: "2.5".to_string(),
             program_path: PathBuf::from("/tmp/test-target"),
             language: Language::Rust,
             frameworks: vec![],
@@ -32,6 +33,7 @@ fn make_assault_report(
                 unsafe_blocks: unsafe_count,
                 panic_sites: 0,
                 unwrap_calls: 3,
+                safe_unwrap_calls: 0,
                 allocation_sites: 5,
                 io_operations: 1,
                 threading_constructs: 0,
@@ -56,21 +58,22 @@ fn make_assault_report(
 }
 
 #[test]
-fn test_panll_export_writes_valid_json() {
+fn test_panll_export_writes_valid_json() -> Result<(), Box<dyn std::error::Error>> {
     let report = make_assault_report(vec![], vec![]);
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new()?;
     let output = dir.path().join("panll-out.json");
 
-    panll::write_export(&report, None, &output).unwrap();
+    panll::write_export(&report, None, &output)?;
 
-    let content = std::fs::read_to_string(&output).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let content = std::fs::read_to_string(&output)?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)?;
     assert_eq!(parsed["format"], "panll.event-chain.v0");
     assert_eq!(parsed["source"]["tool"], "panic-attack");
+    Ok(())
 }
 
 #[test]
-fn test_panll_export_summary_reflects_report() {
+fn test_panll_export_summary_reflects_report() -> Result<(), Box<dyn std::error::Error>> {
     let report = make_assault_report(
         vec![WeakPoint {
             category: WeakPointCategory::UnsafeCode,
@@ -84,20 +87,21 @@ fn test_panll_export_summary_reflects_report() {
         }],
         vec![],
     );
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new()?;
     let output = dir.path().join("panll-out.json");
 
-    panll::write_export(&report, None, &output).unwrap();
+    panll::write_export(&report, None, &output)?;
 
-    let content = std::fs::read_to_string(&output).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let content = std::fs::read_to_string(&output)?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)?;
     assert_eq!(parsed["summary"]["weak_points"], 1);
     assert_eq!(parsed["summary"]["critical_weak_points"], 1);
     assert_eq!(parsed["summary"]["robustness_score"], 75.0);
+    Ok(())
 }
 
 #[test]
-fn test_panll_export_constraints_from_critical_wp() {
+fn test_panll_export_constraints_from_critical_wp() -> Result<(), Box<dyn std::error::Error>> {
     let report = make_assault_report(
         vec![
             WeakPoint {
@@ -123,29 +127,37 @@ fn test_panll_export_constraints_from_critical_wp() {
         ],
         vec![],
     );
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new()?;
     let output = dir.path().join("panll-out.json");
 
-    panll::write_export(&report, None, &output).unwrap();
+    panll::write_export(&report, None, &output)?;
 
-    let content = std::fs::read_to_string(&output).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    let constraints = parsed["constraints"].as_array().unwrap();
+    let content = std::fs::read_to_string(&output)?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)?;
+    let constraints = parsed["constraints"]
+        .as_array()
+        .ok_or("constraints must be an array")?;
 
-    // Only the critical WP should generate a constraint, not the medium one
     assert_eq!(constraints.len(), 1, "only critical WPs become constraints");
-    assert!(constraints[0]["id"]
-        .as_str()
-        .unwrap()
-        .starts_with("wp-crit-"));
-    assert!(constraints[0]["description"]
-        .as_str()
-        .unwrap()
-        .contains("transmute"));
+    assert!(
+        constraints[0]["id"]
+            .as_str()
+            .ok_or("constraint id must be a string")?
+            .starts_with("wp-crit-"),
+        "constraint id should start with wp-crit-"
+    );
+    assert!(
+        constraints[0]["description"]
+            .as_str()
+            .ok_or("constraint description must be a string")?
+            .contains("transmute"),
+        "constraint should mention the detected issue"
+    );
+    Ok(())
 }
 
 #[test]
-fn test_panll_export_event_chain_from_attacks() {
+fn test_panll_export_event_chain_from_attacks() -> Result<(), Box<dyn std::error::Error>> {
     let report = make_assault_report(
         vec![],
         vec![
@@ -175,24 +187,27 @@ fn test_panll_export_event_chain_from_attacks() {
             },
         ],
     );
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new()?;
     let output = dir.path().join("panll-out.json");
 
-    panll::write_export(&report, None, &output).unwrap();
+    panll::write_export(&report, None, &output)?;
 
-    let content = std::fs::read_to_string(&output).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    let events = parsed["event_chain"].as_array().unwrap();
+    let content = std::fs::read_to_string(&output)?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)?;
+    let events = parsed["event_chain"]
+        .as_array()
+        .ok_or("event_chain must be an array")?;
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[0]["axis"], "cpu");
     assert_eq!(events[0]["status"], "passed");
     assert_eq!(events[1]["axis"], "memory");
     assert_eq!(events[1]["status"], "failed");
+    Ok(())
 }
 
 #[test]
-fn test_panll_export_constraints_from_failed_attacks() {
+fn test_panll_export_constraints_from_failed_attacks() -> Result<(), Box<dyn std::error::Error>> {
     let mut report = make_assault_report(
         vec![],
         vec![AttackResult {
@@ -216,25 +231,28 @@ fn test_panll_export_constraints_from_failed_attacks() {
     );
     report.total_crashes = 1;
 
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new()?;
     let output = dir.path().join("panll-out.json");
 
-    panll::write_export(&report, None, &output).unwrap();
+    panll::write_export(&report, None, &output)?;
 
-    let content = std::fs::read_to_string(&output).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    let constraints = parsed["constraints"].as_array().unwrap();
+    let content = std::fs::read_to_string(&output)?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)?;
+    let constraints = parsed["constraints"]
+        .as_array()
+        .ok_or("constraints must be an array")?;
 
     assert!(
         constraints
             .iter()
-            .any(|c| c["id"].as_str().unwrap().starts_with("attack-fail-")),
+            .any(|c| c["id"].as_str().map_or(false, |id| id.starts_with("attack-fail-"))),
         "failed attack should generate a constraint"
     );
+    Ok(())
 }
 
 #[test]
-fn test_panll_export_skipped_attacks_not_in_constraints() {
+fn test_panll_export_skipped_attacks_not_in_constraints() -> Result<(), Box<dyn std::error::Error>> {
     let report = make_assault_report(
         vec![],
         vec![AttackResult {
@@ -251,34 +269,40 @@ fn test_panll_export_skipped_attacks_not_in_constraints() {
         }],
     );
 
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new()?;
     let output = dir.path().join("panll-out.json");
 
-    panll::write_export(&report, None, &output).unwrap();
+    panll::write_export(&report, None, &output)?;
 
-    let content = std::fs::read_to_string(&output).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
-    let constraints = parsed["constraints"].as_array().unwrap();
+    let content = std::fs::read_to_string(&output)?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)?;
+    let constraints = parsed["constraints"]
+        .as_array()
+        .ok_or("constraints must be an array")?;
 
     assert!(
         constraints.is_empty(),
         "skipped attacks should not generate constraints"
     );
 
-    let events = parsed["event_chain"].as_array().unwrap();
+    let events = parsed["event_chain"]
+        .as_array()
+        .ok_or("event_chain must be an array")?;
     assert_eq!(events[0]["status"], "skipped");
+    Ok(())
 }
 
 #[test]
-fn test_panll_export_report_path_recorded() {
+fn test_panll_export_report_path_recorded() -> Result<(), Box<dyn std::error::Error>> {
     let report = make_assault_report(vec![], vec![]);
-    let dir = TempDir::new().unwrap();
+    let dir = TempDir::new()?;
     let output = dir.path().join("panll-out.json");
     let source_path = std::path::Path::new("/tmp/my-report.json");
 
-    panll::write_export(&report, Some(source_path), &output).unwrap();
+    panll::write_export(&report, Some(source_path), &output)?;
 
-    let content = std::fs::read_to_string(&output).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+    let content = std::fs::read_to_string(&output)?;
+    let parsed: serde_json::Value = serde_json::from_str(&content)?;
     assert_eq!(parsed["source"]["report_path"], "/tmp/my-report.json");
+    Ok(())
 }
