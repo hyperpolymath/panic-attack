@@ -1638,7 +1638,7 @@ impl Analyzer {
         stats.threading_constructs += content.matches("std::thread").count();
 
         let unchecked_malloc =
-            RE_UNCHECKED_MALLOC.get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").unwrap());
+            RE_UNCHECKED_MALLOC.get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").expect("static regex is valid"));
         if unchecked_malloc.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -2494,7 +2494,7 @@ impl Analyzer {
 
         // Unsafe apply
         let apply_re =
-            RE_ELIXIR_APPLY.get_or_init(|| Regex::new(r"apply\([^,]+,\s*[^,]+,").unwrap());
+            RE_ELIXIR_APPLY.get_or_init(|| Regex::new(r"apply\([^,]+,\s*[^,]+,").expect("static regex is valid"));
         if apply_re.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -4156,7 +4156,7 @@ impl Analyzer {
         file_path: &str,
     ) -> Result<()> {
         // FFI calls (@ prefix)
-        let ffi_re = RE_PONY_FFI.get_or_init(|| Regex::new(r"@[a-zA-Z_]\w*\[").unwrap());
+        let ffi_re = RE_PONY_FFI.get_or_init(|| Regex::new(r"@[a-zA-Z_]\w*\[").expect("static regex is valid"));
         let ffi_count = ffi_re.find_iter(content).count();
         stats.unsafe_blocks += ffi_count;
 
@@ -4361,7 +4361,7 @@ impl Analyzer {
             .collect::<Vec<_>>()
             .join("\n");
         let unquoted_var =
-            RE_SHELL_UNQUOTED_VAR.get_or_init(|| Regex::new(r#"\$[A-Za-z_]\w*"#).unwrap());
+            RE_SHELL_UNQUOTED_VAR.get_or_init(|| Regex::new(r#"\$[A-Za-z_]\w*"#).expect("static regex is valid"));
         let dollar_vars = unquoted_var.find_iter(&stripped_content).count();
         // Only flag if high number of unquoted vars
         if dollar_vars > 20 {
@@ -4710,9 +4710,9 @@ impl Analyzer {
     ) -> Result<()> {
         // HTTP (insecure) URLs - should be HTTPS
         // Count http:// URLs that are NOT localhost/127.0.0.1 (those are fine)
-        let http_re = RE_HTTP_URL.get_or_init(|| Regex::new(r#"http://[a-zA-Z0-9]"#).unwrap());
+        let http_re = RE_HTTP_URL.get_or_init(|| Regex::new(r#"http://[a-zA-Z0-9]"#).expect("static regex is valid"));
         let http_localhost_re = RE_HTTP_LOCALHOST.get_or_init(|| {
-            Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#).unwrap()
+            Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#).expect("static regex is valid")
         });
         let http_total = http_re.find_iter(content).count();
         let http_local = http_localhost_re.find_iter(content).count();
@@ -4733,7 +4733,7 @@ impl Analyzer {
         // Hardcoded secrets patterns
         let secret_re = RE_HARDCODED_SECRET.get_or_init(|| Regex::new(
             r#"(?i)(api[_-]?key|api[_-]?secret|password|passwd|secret[_-]?key|access[_-]?token|private[_-]?key)\s*[=:]\s*["'][^"']{8,}"#
-        ).unwrap());
+        ).expect("static regex is valid"));
         if secret_re.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
