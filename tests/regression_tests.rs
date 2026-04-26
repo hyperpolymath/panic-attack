@@ -3,19 +3,25 @@
 //! Regression tests against known codebases
 
 use panic_attack::assail;
-use std::path::Path;
+use std::path::PathBuf;
+
+fn repos_dir() -> PathBuf {
+    std::env::var("REPOS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/var/mnt/eclipse/repos"))
+}
 
 #[test]
 #[ignore] // Run with --ignored flag, requires repos
 fn test_echidna_baseline() {
-    let echidna_path = Path::new("/var$REPOS_DIR/echidna");
+    let echidna_path = repos_dir().join("echidna");
 
     if !echidna_path.exists() {
-        eprintln!("⚠️  Skipping: echidna repo not found");
+        eprintln!("⚠️  Skipping: echidna repo not found at {:?}", echidna_path);
         return;
     }
 
-    let report = assail::analyze(echidna_path).expect("echidna analysis should succeed");
+    let report = assail::analyze(&echidna_path).expect("echidna analysis should succeed");
 
     // v0.2 baseline: 15 weak points (down from 271 in v0.1)
     assert_eq!(report.language, panic_attack::types::Language::Rust);
@@ -53,14 +59,14 @@ fn test_echidna_baseline() {
 #[test]
 #[ignore] // Run with --ignored flag, requires repos
 fn test_eclexia_baseline() {
-    let eclexia_path = Path::new("/var$REPOS_DIR/eclexia");
+    let eclexia_path = repos_dir().join("eclexia");
 
     if !eclexia_path.exists() {
-        eprintln!("⚠️  Skipping: eclexia repo not found");
+        eprintln!("⚠️  Skipping: eclexia repo not found at {:?}", eclexia_path);
         return;
     }
 
-    let report = assail::analyze(eclexia_path).expect("eclexia analysis should succeed");
+    let report = assail::analyze(&eclexia_path).expect("eclexia analysis should succeed");
 
     // v0.2 baseline: 7 weak points
     assert_eq!(report.language, panic_attack::types::Language::Rust);
