@@ -642,6 +642,7 @@ mod tests {
 
     fn make_crash(stderr: &str, signal: Option<&str>) -> CrashReport {
         CrashReport {
+            schema_version: "2.5".to_string(),
             timestamp: "2026-02-28T00:00:00Z".to_string(),
             signal: signal.map(|s| s.to_string()),
             backtrace: None,

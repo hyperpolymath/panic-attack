@@ -290,6 +290,7 @@ impl AttackExecutor {
 
     fn crash_from_output(output: &Output) -> CrashReport {
         CrashReport {
+            schema_version: "2.5".to_string(),
             timestamp: chrono::Utc::now().to_rfc3339(),
             signal: Self::extract_signal(&output.stderr),
             backtrace: Self::extract_backtrace(&output.stderr),

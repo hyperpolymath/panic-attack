@@ -68,8 +68,14 @@ pub struct MutationSpecFile {
     pub combos: Vec<MutationComboSpec>,
 }
 
+fn amuck_schema_version() -> String {
+    "2.5".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AmuckReport {
+    #[serde(default = "amuck_schema_version")]
+    pub schema_version: String,
     pub created_at: String,
     pub target: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -219,6 +225,7 @@ pub fn run(config: AmuckConfig) -> Result<AmuckReport> {
 
     let combinations_run = outcomes.iter().filter(|o| o.mutated_file.is_some()).count();
     let report = AmuckReport {
+        schema_version: "2.5".to_string(),
         created_at: chrono::Utc::now().to_rfc3339(),
         target: config.target,
         source_spec: config.spec_path,

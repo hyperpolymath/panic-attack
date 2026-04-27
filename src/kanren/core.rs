@@ -528,7 +528,7 @@ impl LogicEngine {
     /// a weak point a false positive. When a suppression fact is derived,
     /// the corresponding weak point should be downgraded or removed.
     ///
-    /// 13 rules targeting ~6-8% FP reduction (from 8% to 2%):
+    /// 17 rules targeting ~6-8% FP reduction (from 8% to 2%):
     ///
     /// 1. Null-check guarding (malloc → if-null)
     /// 2. Error propagation boundary (unwrap in Result-returning fn)
@@ -924,7 +924,7 @@ impl LogicEngine {
     /// Scans file statistics and weak point descriptions for defensive patterns
     /// (null checks, mutex guards, schema validation, path canonicalization,
     /// timeout protection, enum/constant args, etc.) and asserts context facts
-    /// into the FactDB. The 13 suppression rules loaded by `load_suppression_rules()`
+    /// into the FactDB. The 17 suppression rules loaded by `load_suppression_rules()`
     /// depend on these context facts to fire.
     ///
     /// **Phase 1 — file_statistics-based detection:**

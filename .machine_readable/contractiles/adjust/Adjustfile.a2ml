@@ -27,7 +27,7 @@ test-panic-threshold = 20
 # Target false-positive rate: ≤2-3% (from ~8% without suppression)
 # Add new rules to src/kanren/core.rs load_suppression_rules() when a
 # class of persistent false positives is confirmed across ≥3 distinct repos.
-active-rules = 13
+active-rules = 17
 target-fp-rate = 0.03
 
 [framework-detection]

@@ -586,11 +586,17 @@ pub struct AttackResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrashReport {
+    #[serde(default = "crash_schema_version")]
+    pub schema_version: String,
     pub timestamp: String,
     pub signal: Option<String>,
     pub backtrace: Option<String>,
     pub stderr: String,
     pub stdout: String,
+}
+
+fn crash_schema_version() -> String {
+    "2.5".to_string()
 }
 
 /// Complete assault report

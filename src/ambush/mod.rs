@@ -443,6 +443,7 @@ fn run_program_with_deadline(
 
 fn crash_from_output(output: &Output) -> CrashReport {
     CrashReport {
+        schema_version: "2.5".to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
         signal: extract_signal(&output.stderr),
         backtrace: extract_backtrace(&output.stderr),

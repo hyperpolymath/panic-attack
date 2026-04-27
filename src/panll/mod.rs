@@ -741,6 +741,7 @@ mod tests {
                 duration: Duration::from_millis(100),
                 peak_memory: 8192,
                 crashes: vec![CrashReport {
+                    schema_version: "2.5".to_string(),
                     timestamp: "2026-01-01T00:00:00Z".to_string(),
                     signal: Some("SIGSEGV".to_string()),
                     backtrace: None,

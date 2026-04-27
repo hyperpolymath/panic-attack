@@ -48,8 +48,14 @@ pub struct AbductConfig {
     pub exec_timeout_secs: u64,
 }
 
+fn abduct_schema_version() -> String {
+    "2.5".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AbductReport {
+    #[serde(default = "abduct_schema_version")]
+    pub schema_version: String,
     pub created_at: String,
     pub target: PathBuf,
     pub source_root: PathBuf,
@@ -221,6 +227,7 @@ pub fn run(config: AbductConfig) -> Result<AbductReport> {
     }
 
     Ok(AbductReport {
+        schema_version: "2.5".to_string(),
         created_at: chrono::Utc::now().to_rfc3339(),
         target,
         source_root,

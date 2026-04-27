@@ -356,6 +356,7 @@ mod tests {
         let dir = TempDir::new().expect("tempdir should create");
         let report_path = dir.path().join("amuck.json");
         let amuck = AmuckReport {
+            schema_version: "2.5".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             target: PathBuf::from("src/main.rs"),
             source_spec: None,

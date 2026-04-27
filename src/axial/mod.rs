@@ -52,8 +52,14 @@ struct RunOnceConfig<'a> {
     aspell_lang: &'a str,
 }
 
+fn axial_schema_version() -> String {
+    "2.5".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AxialReport {
+    #[serde(default = "axial_schema_version")]
+    pub schema_version: String,
     pub created_at: String,
     pub target: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -250,6 +256,7 @@ pub fn run(config: AxialConfig) -> Result<AxialReport> {
     };
 
     Ok(AxialReport {
+        schema_version: "2.5".to_string(),
         created_at: chrono::Utc::now().to_rfc3339(),
         target: config.target,
         executed_program: config.execute.as_ref().map(|e| e.program.clone()),
@@ -943,6 +950,7 @@ mod tests {
     fn markdown_writer_outputs_report() {
         let dir = TempDir::new().expect("tempdir should create");
         let report = AxialReport {
+            schema_version: "2.5".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             target: PathBuf::from("src/main.rs"),
             executed_program: None,

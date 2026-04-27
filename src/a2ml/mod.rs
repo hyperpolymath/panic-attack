@@ -884,6 +884,7 @@ mod tests {
             duration: Duration::from_secs(1),
             peak_memory: 1024,
             crashes: vec![CrashReport {
+                schema_version: "2.5".to_string(),
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
                 signal: Some("SIGABRT".to_string()),
                 backtrace: None,
@@ -935,6 +936,7 @@ mod tests {
 
     fn sample_amuck_report() -> amuck::AmuckReport {
         amuck::AmuckReport {
+            schema_version: "2.5".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             target: PathBuf::from("src/main.rs"),
             source_spec: None,
@@ -964,6 +966,7 @@ mod tests {
 
     fn sample_abduct_report() -> abduct::AbductReport {
         abduct::AbductReport {
+            schema_version: "2.5".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             target: PathBuf::from("src/main.rs"),
             source_root: PathBuf::from("src"),
@@ -1038,6 +1041,7 @@ mod tests {
         let mut signal_counts = BTreeMap::new();
         signal_counts.insert("panic_signal".to_string(), 1);
         axial::AxialReport {
+            schema_version: "2.5".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             target: PathBuf::from("src/main.rs"),
             executed_program: Some("panic-attack".to_string()),

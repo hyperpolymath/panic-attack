@@ -73,3 +73,60 @@ trust-container-images-pinned:
     test ! -f Containerfile || grep -q '@sha256:' Containerfile
 
 
+# === ADJUST (Calibration & Threshold Drift Detection) ===
+# Source: .machine_readable/contractiles/adjust/Adjustfile.a2ml
+
+# Verify detector calibration thresholds declared in Adjustfile match source
+adjust-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    af=.machine_readable/contractiles/adjust/Adjustfile.a2ml
+    if [ ! -f "$af" ]; then echo "! Adjustfile missing — skipping"; exit 0; fi
+    echo "→ adjust-check — verifying calibration thresholds match Adjustfile"
+    drift=0
+    declared_prod=$(grep 'production-unwrap-threshold' "$af" | grep -oE '[0-9]+$' || true)
+    if [ -n "$declared_prod" ]; then
+        code_val=$(grep -oE 'if stats\.unwrap_calls > [0-9]+' src/assail/analyzer.rs | head -1 | grep -oE '[0-9]+$' || true)
+        if [ "$code_val" = "$declared_prod" ]; then
+            echo "  ✓ production-unwrap-threshold = $declared_prod"
+        else
+            echo "  ⚠ ADJUST drift: production-unwrap-threshold Adjustfile=$declared_prod code=$code_val"
+            drift=$((drift+1))
+        fi
+    fi
+    declared_test=$(grep 'test-unwrap-threshold' "$af" | grep -oE '[0-9]+$' || true)
+    if [ -n "$declared_test" ]; then
+        code_val=$(grep -oE 'unwrap_threshold = [0-9]+' src/assail/analyzer.rs | head -1 | grep -oE '[0-9]+$' || true)
+        if [ "$code_val" = "$declared_test" ]; then
+            echo "  ✓ test-unwrap-threshold = $declared_test"
+        else
+            echo "  ⚠ ADJUST drift: test-unwrap-threshold Adjustfile=$declared_test code=$code_val"
+            drift=$((drift+1))
+        fi
+    fi
+    declared_panic=$(grep 'test-panic-threshold' "$af" | grep -oE '[0-9]+$' || true)
+    if [ -n "$declared_panic" ]; then
+        code_val=$(grep -oE 'panic_threshold = [0-9]+' src/assail/analyzer.rs | head -1 | grep -oE '[0-9]+$' || true)
+        if [ "$code_val" = "$declared_panic" ]; then
+            echo "  ✓ test-panic-threshold = $declared_panic"
+        else
+            echo "  ⚠ ADJUST drift: test-panic-threshold Adjustfile=$declared_panic code=$code_val"
+            drift=$((drift+1))
+        fi
+    fi
+    declared_rules=$(grep 'active-rules' "$af" | grep -oE '[0-9]+$' || true)
+    if [ -n "$declared_rules" ]; then
+        code_count=$(grep -c '// Rule [0-9]' src/kanren/core.rs || echo "0")
+        if [ "$code_count" = "$declared_rules" ]; then
+            echo "  ✓ active suppression rules = $declared_rules"
+        else
+            echo "  ⚠ ADJUST drift: active-rules Adjustfile=$declared_rules code=$code_count (advisory — update Adjustfile when rules change)"
+            drift=$((drift+1))
+        fi
+    fi
+    if [ $drift -gt 0 ]; then
+        echo "  → $drift threshold(s) drifted (advisory — reconcile Adjustfile.a2ml with source)"
+    else
+        echo "  → all calibration thresholds match"
+    fi
+
