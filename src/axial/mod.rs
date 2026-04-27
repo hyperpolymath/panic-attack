@@ -58,6 +58,7 @@ fn axial_schema_version() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AxialReport {
+    /// Schema version for forward compatibility. Consumers check this before parsing.
     #[serde(default = "axial_schema_version")]
     pub schema_version: String,
     pub created_at: String,
@@ -256,7 +257,7 @@ pub fn run(config: AxialConfig) -> Result<AxialReport> {
     };
 
     Ok(AxialReport {
-        schema_version: "2.5".to_string(),
+        schema_version: axial_schema_version(),
         created_at: chrono::Utc::now().to_rfc3339(),
         target: config.target,
         executed_program: config.execute.as_ref().map(|e| e.program.clone()),
@@ -897,6 +898,7 @@ mod tests {
 
         let path = dir.path().join("amuck.json");
         let report = AmuckReport {
+            schema_version: "2.5".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             target: target.clone(),
             source_spec: None,

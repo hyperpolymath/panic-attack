@@ -22,9 +22,9 @@
 //! - **Schema version sentinel** (all consumers):
 //!   reads `schema_version` to detect incompatible changes
 
-use panic_attack::abduct;
-use panic_attack::amuck;
-use panic_attack::axial;
+use panic_attack::abduct::{self, AbductReport};
+use panic_attack::amuck::{self, AmuckReport};
+use panic_attack::axial::{self, AxialReport};
 use panic_attack::types::*;
 use serde_json::Value;
 
@@ -291,6 +291,7 @@ fn old_report_without_schema_version_deserializes_with_default() {
     );
 }
 
+<<<<<<< HEAD
 // ─── schema_version on subsidiary report types ───────────────────────────
 
 #[test]
@@ -366,10 +367,23 @@ fn abduct_report_has_schema_version() {
         source_root: std::path::PathBuf::from("."),
         workspace_dir: std::path::PathBuf::from("runtime/abduct"),
         dependency_scope: "direct".to_string(),
+=======
+// ─── AbductReport schema pin ─────────────────────────────────────────────
+
+fn minimal_abduct_report() -> AbductReport {
+    AbductReport {
+        schema_version: "2.5".to_string(),
+        created_at: "2026-01-01T00:00:00Z".to_string(),
+        target: std::path::PathBuf::from("src/main.rs"),
+        source_root: std::path::PathBuf::from("src"),
+        workspace_dir: std::path::PathBuf::from("runtime/abduct/test"),
+        dependency_scope: "none".to_string(),
+>>>>>>> 87578d9 (feat(pa15): complete P2-A15 must-items — schema_version, headless, adjust.ncl, seam tests)
         selected_files: 0,
         locked_files: 0,
         mtime_shifted_files: 0,
         mtime_offset_days: 0,
+<<<<<<< HEAD
         time_mode: "real".to_string(),
         time_scale: None,
         virtual_now: None,
@@ -380,4 +394,165 @@ fn abduct_report_has_schema_version() {
     let json: Value = serde_json::to_value(&r).expect("serialize");
     assert_eq!(json["schema_version"].as_str(), Some("2.5"),
         "AbductReport must carry schema_version");
+=======
+        time_mode: "normal".to_string(),
+        time_scale: None,
+        virtual_now: None,
+        notes: vec![],
+        files: vec![],
+        execution: None,
+    }
+}
+
+#[test]
+fn abduct_report_has_schema_version() {
+    let report = minimal_abduct_report();
+    let json: Value = serde_json::to_value(&report).expect("serialize");
+    assert_eq!(
+        json["schema_version"].as_str(),
+        Some("2.5"),
+        "AbductReport schema_version must be '2.5'"
+    );
+}
+
+#[test]
+fn abduct_report_schema_version_round_trip() {
+    let report = minimal_abduct_report();
+    let json_str = serde_json::to_string(&report).expect("serialize");
+    let back: AbductReport = serde_json::from_str(&json_str).expect("deserialize");
+    assert_eq!(back.schema_version, "2.5");
+}
+
+#[test]
+fn old_abduct_report_without_schema_version_deserializes_with_default() {
+    let json_str = r#"{
+        "created_at": "2026-01-01T00:00:00Z",
+        "target": "src/main.rs",
+        "source_root": "src",
+        "workspace_dir": "runtime/abduct/test",
+        "dependency_scope": "none",
+        "selected_files": 0,
+        "locked_files": 0,
+        "mtime_shifted_files": 0,
+        "mtime_offset_days": 0,
+        "time_mode": "normal"
+    }"#;
+    let report: AbductReport =
+        serde_json::from_str(json_str).expect("deserialize old abduct report");
+    assert_eq!(
+        report.schema_version, "2.5",
+        "old AbductReport missing schema_version must default to '2.5'"
+    );
+}
+
+// ─── AmuckReport schema pin ──────────────────────────────────────────────
+
+fn minimal_amuck_report() -> AmuckReport {
+    AmuckReport {
+        schema_version: "2.5".to_string(),
+        created_at: "2026-01-01T00:00:00Z".to_string(),
+        target: std::path::PathBuf::from("src/main.rs"),
+        source_spec: None,
+        preset: "light".to_string(),
+        max_combinations: 0,
+        output_dir: std::path::PathBuf::from("runtime/amuck"),
+        combinations_planned: 0,
+        combinations_run: 0,
+        outcomes: vec![],
+    }
+}
+
+#[test]
+fn amuck_report_has_schema_version() {
+    let report = minimal_amuck_report();
+    let json: Value = serde_json::to_value(&report).expect("serialize");
+    assert_eq!(
+        json["schema_version"].as_str(),
+        Some("2.5"),
+        "AmuckReport schema_version must be '2.5'"
+    );
+}
+
+#[test]
+fn amuck_report_schema_version_round_trip() {
+    let report = minimal_amuck_report();
+    let json_str = serde_json::to_string(&report).expect("serialize");
+    let back: AmuckReport = serde_json::from_str(&json_str).expect("deserialize");
+    assert_eq!(back.schema_version, "2.5");
+}
+
+#[test]
+fn old_amuck_report_without_schema_version_deserializes_with_default() {
+    let json_str = r#"{
+        "created_at": "2026-01-01T00:00:00Z",
+        "target": "src/main.rs",
+        "preset": "light",
+        "max_combinations": 0,
+        "output_dir": "runtime/amuck",
+        "combinations_planned": 0,
+        "combinations_run": 0,
+        "outcomes": []
+    }"#;
+    let report: AmuckReport = serde_json::from_str(json_str).expect("deserialize old amuck report");
+    assert_eq!(
+        report.schema_version, "2.5",
+        "old AmuckReport missing schema_version must default to '2.5'"
+    );
+}
+
+// ─── AxialReport schema pin ──────────────────────────────────────────────
+
+fn minimal_axial_report() -> AxialReport {
+    AxialReport {
+        schema_version: "2.5".to_string(),
+        created_at: "2026-01-01T00:00:00Z".to_string(),
+        target: std::path::PathBuf::from("src/main.rs"),
+        executed_program: None,
+        repeat: 0,
+        observed_runs: 0,
+        observed_reports: 0,
+        language: "en".to_string(),
+        run_observations: vec![],
+        report_observations: vec![],
+        signal_counts: std::collections::BTreeMap::new(),
+        recommendations: vec![],
+        aspell: None,
+    }
+}
+
+#[test]
+fn axial_report_has_schema_version() {
+    let report = minimal_axial_report();
+    let json: Value = serde_json::to_value(&report).expect("serialize");
+    assert_eq!(
+        json["schema_version"].as_str(),
+        Some("2.5"),
+        "AxialReport schema_version must be '2.5'"
+    );
+}
+
+#[test]
+fn axial_report_schema_version_round_trip() {
+    let report = minimal_axial_report();
+    let json_str = serde_json::to_string(&report).expect("serialize");
+    let back: AxialReport = serde_json::from_str(&json_str).expect("deserialize");
+    assert_eq!(back.schema_version, "2.5");
+}
+
+#[test]
+fn old_axial_report_without_schema_version_deserializes_with_default() {
+    let json_str = r#"{
+        "created_at": "2026-01-01T00:00:00Z",
+        "target": "src/main.rs",
+        "repeat": 0,
+        "observed_runs": 0,
+        "observed_reports": 0,
+        "language": "en"
+    }"#;
+    let report: AxialReport = serde_json::from_str(json_str).expect("deserialize old axial report");
+    assert_eq!(
+        report.schema_version, "2.5",
+        "old AxialReport missing schema_version must default to '2.5'"
+    );
+>>>>>>> 87578d9 (feat(pa15): complete P2-A15 must-items — schema_version, headless, adjust.ncl, seam tests)
 }

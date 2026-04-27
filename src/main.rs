@@ -140,6 +140,10 @@ enum Commands {
         /// Browser extension mode: ignore DevTools API eval() usage
         #[arg(long, default_value_t = false)]
         browser_extension: bool,
+
+        /// Headless mode: emit JSON to stdout, suppress interactive prompts (CI-safe)
+        #[arg(long, default_value_t = false)]
+        headless: bool,
     },
 
     /// Execute a single attack on a target program
@@ -1113,7 +1117,7 @@ fn run_main() -> Result<()> {
             attest,
             signing_key,
             browser_extension,
-            ..
+            headless,
         } => {
             qprintln!(
                 cli.quiet,
@@ -1169,9 +1173,9 @@ fn run_main() -> Result<()> {
             if let Some(output_path) = &output {
                 fs::write(output_path, &report_json)?;
                 qprintln!(cli.quiet, "Report saved to: {}", output_path.display());
-            } else if cli.quiet {
-                // Machine-readable mode: print JSON to stdout for pipeline consumers
-                // (e.g. the Chapel mass-panic orchestrator reads this via subprocess pipe)
+            } else if cli.quiet || headless {
+                // Machine-readable mode: emit JSON to stdout for pipeline consumers.
+                // `--headless` makes this explicit for CI callers that cannot pass --quiet.
                 println!("{report_json}");
             } else {
                 println!("\nAssail Summary:");

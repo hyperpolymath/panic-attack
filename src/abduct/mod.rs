@@ -54,6 +54,7 @@ fn abduct_schema_version() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AbductReport {
+    /// Schema version for forward compatibility. Consumers check this before parsing.
     #[serde(default = "abduct_schema_version")]
     pub schema_version: String,
     pub created_at: String,
@@ -227,7 +228,7 @@ pub fn run(config: AbductConfig) -> Result<AbductReport> {
     }
 
     Ok(AbductReport {
-        schema_version: "2.5".to_string(),
+        schema_version: abduct_schema_version(),
         created_at: chrono::Utc::now().to_rfc3339(),
         target,
         source_root,

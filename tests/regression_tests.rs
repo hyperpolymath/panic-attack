@@ -3,7 +3,7 @@
 //! Regression tests against known codebases
 
 use panic_attack::assail;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn repos_dir() -> PathBuf {
     std::env::var("REPOS_DIR")
