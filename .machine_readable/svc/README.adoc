@@ -1,4 +1,4 @@
-= `.machine_readable/svc/` — Service components for panic-attacker
+= `.machine_readable/svc/` — Service components for panic-attack
 :toc:
 
 Service-layer components that sit alongside the contractile trident
