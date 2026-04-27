@@ -83,11 +83,26 @@ fn assail_report_panicbot_fields_present() {
     // panicbot reads these fields from every AssailReport
     assert!(json["weak_points"].is_array(), "weak_points must be array");
     let wp = &json["weak_points"][0];
-    assert!(wp["category"].is_string(), "weak_points[].category must be string");
-    assert!(wp["severity"].is_string(), "weak_points[].severity must be string");
-    assert!(wp["location"].is_string(), "weak_points[].location must be string (or null)");
-    assert!(json["statistics"]["unwrap_calls"].is_number(), "statistics.unwrap_calls must be number");
-    assert!(json["statistics"]["unsafe_blocks"].is_number(), "statistics.unsafe_blocks must be number");
+    assert!(
+        wp["category"].is_string(),
+        "weak_points[].category must be string"
+    );
+    assert!(
+        wp["severity"].is_string(),
+        "weak_points[].severity must be string"
+    );
+    assert!(
+        wp["location"].is_string(),
+        "weak_points[].location must be string (or null)"
+    );
+    assert!(
+        json["statistics"]["unwrap_calls"].is_number(),
+        "statistics.unwrap_calls must be number"
+    );
+    assert!(
+        json["statistics"]["unsafe_blocks"].is_number(),
+        "statistics.unsafe_blocks must be number"
+    );
 }
 
 #[test]
@@ -164,7 +179,10 @@ fn assault_report_has_schema_version() {
     };
     let json: Value = serde_json::to_value(&assault).expect("serialize");
     assert_eq!(json["schema_version"].as_str(), Some("2.5"));
-    assert!(json["assail_report"].is_object(), "assail_report must be object");
+    assert!(
+        json["assail_report"].is_object(),
+        "assail_report must be object"
+    );
     assert!(
         json["overall_assessment"]["robustness_score"].is_number(),
         "robustness_score must be number"
@@ -180,7 +198,10 @@ fn weak_point_category_serialization_stable() {
         (WeakPointCategory::PanicPath, "PanicPath"),
         (WeakPointCategory::CommandInjection, "CommandInjection"),
         (WeakPointCategory::HardcodedSecret, "HardcodedSecret"),
-        (WeakPointCategory::UnsafeDeserialization, "UnsafeDeserialization"),
+        (
+            WeakPointCategory::UnsafeDeserialization,
+            "UnsafeDeserialization",
+        ),
         (WeakPointCategory::UncheckedError, "UncheckedError"),
         (WeakPointCategory::UnsafeFFI, "UnsafeFFI"),
         (WeakPointCategory::RaceCondition, "RaceCondition"),

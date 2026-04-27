@@ -112,7 +112,9 @@ fn test_generate_assault_report_with_crashes() -> Result<(), Box<dyn std::error:
 fn test_robustness_score_perfect() -> Result<(), Box<dyn std::error::Error>> {
     let mut assail = make_assail_report();
     assail.statistics.unsafe_blocks = 0;
-    assail.weak_points.retain(|w| w.severity != Severity::Critical);
+    assail
+        .weak_points
+        .retain(|w| w.severity != Severity::Critical);
     let results = vec![make_attack_result(AttackAxis::Cpu, true, 0)];
 
     let report = report::generate_assault_report(assail, results)?;
@@ -213,7 +215,10 @@ fn test_yaml_serialization() -> Result<(), Box<dyn std::error::Error>> {
     let report = report::generate_assault_report(assail, results)?;
 
     let yaml = ReportOutputFormat::Yaml.serialize(&report)?;
-    assert!(yaml.contains("robustness_score"), "YAML should contain score field");
+    assert!(
+        yaml.contains("robustness_score"),
+        "YAML should contain score field"
+    );
     assert!(yaml.contains("rust"), "YAML should contain language");
     Ok(())
 }

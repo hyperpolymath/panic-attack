@@ -31,10 +31,7 @@ pub fn analyze<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     let root = if target_ref.is_dir() {
         target_ref.to_path_buf()
     } else {
-        target_ref
-            .parent()
-            .unwrap_or(Path::new("."))
-            .to_path_buf()
+        target_ref.parent().unwrap_or(Path::new(".")).to_path_buf()
     };
     apply_user_classifications(&mut report, &root);
     Ok(report)
@@ -51,14 +48,15 @@ pub fn analyze_verbose<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     let root = if target_ref.is_dir() {
         target_ref.to_path_buf()
     } else {
-        target_ref
-            .parent()
-            .unwrap_or(Path::new("."))
-            .to_path_buf()
+        target_ref.parent().unwrap_or(Path::new(".")).to_path_buf()
     };
     apply_user_classifications(&mut report, &root);
 
-    let active_count = report.weak_points.iter().filter(|wp| !wp.suppressed).count();
+    let active_count = report
+        .weak_points
+        .iter()
+        .filter(|wp| !wp.suppressed)
+        .count();
     let suppressed_count = report.suppressed_count;
 
     println!("Assail Analysis Complete");
@@ -130,7 +128,11 @@ pub fn analyze_verbose_browser_extension<P: AsRef<Path>>(target: P) -> Result<As
     let mut report = analyzer.analyze()?;
     apply_suppression(&mut report);
 
-    let active_count = report.weak_points.iter().filter(|wp| !wp.suppressed).count();
+    let active_count = report
+        .weak_points
+        .iter()
+        .filter(|wp| !wp.suppressed)
+        .count();
     let suppressed_count = report.suppressed_count;
 
     println!("Assail Analysis Complete (Browser Extension Mode)");
@@ -559,7 +561,10 @@ mod classifications_tests {
 
     #[test]
     fn apply_flips_matching_finding_to_suppressed() {
-        use crate::types::{AssailReport, AttackAxis, Language, ProgramStatistics, Severity, WeakPoint, WeakPointCategory};
+        use crate::types::{
+            AssailReport, AttackAxis, Language, ProgramStatistics, Severity, WeakPoint,
+            WeakPointCategory,
+        };
         let tmp = TempDir::new().unwrap();
         write_registry(
             tmp.path(),

@@ -243,16 +243,17 @@ fn test_panll_export_constraints_from_failed_attacks() -> Result<(), Box<dyn std
         .ok_or("constraints must be an array")?;
 
     assert!(
-        constraints
-            .iter()
-            .any(|c| c["id"].as_str().map_or(false, |id| id.starts_with("attack-fail-"))),
+        constraints.iter().any(|c| c["id"]
+            .as_str()
+            .map_or(false, |id| id.starts_with("attack-fail-"))),
         "failed attack should generate a constraint"
     );
     Ok(())
 }
 
 #[test]
-fn test_panll_export_skipped_attacks_not_in_constraints() -> Result<(), Box<dyn std::error::Error>> {
+fn test_panll_export_skipped_attacks_not_in_constraints() -> Result<(), Box<dyn std::error::Error>>
+{
     let report = make_assault_report(
         vec![],
         vec![AttackResult {

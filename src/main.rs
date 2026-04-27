@@ -2306,38 +2306,36 @@ fn run_main() -> Result<()> {
             return Ok(());
         }
 
-        Commands::Attest { action } => {
-            match action {
-                AttestAction::Verify { file } => {
-                    match attestation::verify_attestation_file(&file)? {
-                        attestation::VerifyResult::Ok {
-                            issuer,
-                            issued_at,
-                            chain_hash,
-                            signature_verified,
-                        } => {
-                            println!("  [OK] Attestation verified");
-                            println!("       Issuer:    {}", issuer);
-                            println!("       Issued at: {}", issued_at);
-                            println!("       Chain:     {}", chain_hash);
-                            if signature_verified {
-                                println!("       Signature: verified (Ed25519)");
-                            } else {
-                                println!("       Signature: not present");
-                            }
-                        }
-                        attestation::VerifyResult::Failed(reasons) => {
-                            eprintln!("  [FAIL] Attestation verification failed:");
-                            for reason in &reasons {
-                                eprintln!("         - {}", reason);
-                            }
-                            return Err(anyhow::anyhow!("attestation verification failed"));
+        Commands::Attest { action } => match action {
+            AttestAction::Verify { file } => {
+                match attestation::verify_attestation_file(&file)? {
+                    attestation::VerifyResult::Ok {
+                        issuer,
+                        issued_at,
+                        chain_hash,
+                        signature_verified,
+                    } => {
+                        println!("  [OK] Attestation verified");
+                        println!("       Issuer:    {}", issuer);
+                        println!("       Issued at: {}", issued_at);
+                        println!("       Chain:     {}", chain_hash);
+                        if signature_verified {
+                            println!("       Signature: verified (Ed25519)");
+                        } else {
+                            println!("       Signature: not present");
                         }
                     }
-                    return Ok(());
+                    attestation::VerifyResult::Failed(reasons) => {
+                        eprintln!("  [FAIL] Attestation verification failed:");
+                        for reason in &reasons {
+                            eprintln!("         - {}", reason);
+                        }
+                        return Err(anyhow::anyhow!("attestation verification failed"));
+                    }
                 }
+                return Ok(());
             }
-        }
+        },
 
         Commands::Temporal { action } => {
             match action {

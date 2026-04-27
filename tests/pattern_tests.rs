@@ -11,7 +11,11 @@ use std::fs;
 use tempfile::TempDir;
 
 /// Write `content` to `dir/name` and return the full path.
-fn write_test_file(dir: &TempDir, name: &str, content: &str) -> std::io::Result<std::path::PathBuf> {
+fn write_test_file(
+    dir: &TempDir,
+    name: &str,
+    content: &str,
+) -> std::io::Result<std::path::PathBuf> {
     let path = dir.path().join(name);
     fs::write(&path, content)?;
     Ok(path)
@@ -26,14 +30,18 @@ fn has_category(report: &AssailReport, cat: WeakPointCategory) -> bool {
 #[test]
 fn test_rust_transmute_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
 use std::mem;
 
 fn main() {
     let x: u32 = unsafe { mem::transmute(1.0_f32) };
     println!("{}", x);
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -46,14 +54,18 @@ fn main() {
 #[test]
 fn test_rust_mem_forget_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
 use std::mem;
 
 fn main() {
     let v = vec![1, 2, 3];
     mem::forget(v);
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -66,14 +78,18 @@ fn main() {
 #[test]
 fn test_rust_raw_pointer_cast_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
 fn main() {
     let x = 42;
     let ptr = &x as *const i32;
     let mptr = &x as *mut i32;
     println!("{:?}", ptr);
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -88,7 +104,10 @@ fn main() {
 #[test]
 fn test_c_gets_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.c", r#"
+    let file = write_test_file(
+        &dir,
+        "test.c",
+        r#"
 #include <stdio.h>
 
 int main() {
@@ -97,7 +116,8 @@ int main() {
     printf("%s\n", buffer);
     return 0;
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -110,14 +130,18 @@ int main() {
 #[test]
 fn test_c_system_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.c", r#"
+    let file = write_test_file(
+        &dir,
+        "test.c",
+        r#"
 #include <stdlib.h>
 
 int main() {
     system("ls -la");
     return 0;
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -130,7 +154,10 @@ int main() {
 #[test]
 fn test_c_sprintf_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.c", r#"
+    let file = write_test_file(
+        &dir,
+        "test.c",
+        r#"
 #include <stdio.h>
 
 int main() {
@@ -138,7 +165,8 @@ int main() {
     sprintf(buf, "hello %s", "world");
     return 0;
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -153,7 +181,10 @@ int main() {
 #[test]
 fn test_go_unsafe_pointer_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.go", r#"
+    let file = write_test_file(
+        &dir,
+        "test.go",
+        r#"
 package main
 
 import "unsafe"
@@ -163,7 +194,8 @@ func main() {
     ptr := unsafe.Pointer(&x)
     _ = ptr
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -176,7 +208,10 @@ func main() {
 #[test]
 fn test_go_exec_command_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.go", r#"
+    let file = write_test_file(
+        &dir,
+        "test.go",
+        r#"
 package main
 
 import "os/exec"
@@ -185,7 +220,8 @@ func main() {
     cmd := exec.Command("ls", "-la")
     cmd.Run()
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -200,13 +236,17 @@ func main() {
 #[test]
 fn test_python_pickle_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.py", r#"
+    let file = write_test_file(
+        &dir,
+        "test.py",
+        r#"
 import pickle
 
 with open("data.pkl", "rb") as f:
     data = pickle.load(f)
     items = pickle.loads(raw_bytes)
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -219,12 +259,16 @@ with open("data.pkl", "rb") as f:
 #[test]
 fn test_python_os_system_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.py", r#"
+    let file = write_test_file(
+        &dir,
+        "test.py",
+        r#"
 import os
 
 os.system("rm -rf /tmp/test")
 os.popen("ls")
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -239,11 +283,15 @@ os.popen("ls")
 #[test]
 fn test_js_innerhtml_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.js", r#"
+    let file = write_test_file(
+        &dir,
+        "test.js",
+        r#"
 const el = document.getElementById("app");
 el.innerHTML = "<div>" + userInput + "</div>";
 document.write("<p>test</p>");
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(
@@ -256,11 +304,15 @@ document.write("<p>test</p>");
 #[test]
 fn test_js_dangerously_set_innerhtml_detection() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.js", r#"
+    let file = write_test_file(
+        &dir,
+        "test.js",
+        r#"
 function App() {
     return <div dangerouslySetInnerHTML={{ __html: userContent }} />;
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(

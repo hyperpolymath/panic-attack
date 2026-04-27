@@ -30,8 +30,7 @@ use serde::{Deserialize, Serialize};
 /// Each variant maps to an ISO 639-1 two-letter code. The enum is used by
 /// the CLI `--lang` flag and by report generators that emit human-readable
 /// text (axial markdown, assault recommendations, adjudicate verdicts).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum Lang {
     #[default]
     En,
@@ -120,7 +119,6 @@ impl Lang {
         }
     }
 }
-
 
 impl std::fmt::Display for Lang {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

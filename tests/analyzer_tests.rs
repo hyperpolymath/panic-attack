@@ -14,7 +14,11 @@ use tempfile::TempDir;
 ///
 /// Returns an error rather than panicking so test failures report the
 /// actual I/O reason instead of a bare panic.
-fn write_test_file(dir: &TempDir, name: &str, content: &str) -> std::io::Result<std::path::PathBuf> {
+fn write_test_file(
+    dir: &TempDir,
+    name: &str,
+    content: &str,
+) -> std::io::Result<std::path::PathBuf> {
     let path = dir.path().join(name);
     fs::write(&path, content)?;
     Ok(path)
@@ -23,14 +27,18 @@ fn write_test_file(dir: &TempDir, name: &str, content: &str) -> std::io::Result<
 #[test]
 fn test_rust_analyzer_detects_unsafe() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
 fn main() {
     unsafe {
         let x = std::ptr::null::<i32>();
     }
     unsafe fn dangerous() {}
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert_eq!(report.language, Language::Rust);
@@ -42,13 +50,17 @@ fn main() {
 #[test]
 fn test_rust_analyzer_detects_unwraps() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
 fn main() {
     let x = Some(5).unwrap();
     let y = Ok::<i32, ()>(10).expect("should work");
     let z = vec![1,2,3].get(0).unwrap();
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(report.statistics.unwrap_calls >= 3);
@@ -58,12 +70,16 @@ fn main() {
 #[test]
 fn test_rust_analyzer_detects_panics() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
 fn main() {
     panic!("oh no");
     unreachable!("never happens");
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(report.statistics.panic_sites >= 2);
@@ -73,7 +89,10 @@ fn main() {
 #[test]
 fn test_c_analyzer_detects_malloc() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.c", r#"
+    let file = write_test_file(
+        &dir,
+        "test.c",
+        r#"
 #include <stdlib.h>
 
 int main() {
@@ -81,7 +100,8 @@ int main() {
     int* ptr2 = calloc(50, sizeof(int));
     return 0;
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert_eq!(report.language, Language::C);
@@ -92,14 +112,18 @@ int main() {
 #[test]
 fn test_c_analyzer_detects_unchecked_malloc() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.c", r#"
+    let file = write_test_file(
+        &dir,
+        "test.c",
+        r#"
 #include <stdlib.h>
 
 int main() {
     int* ptr = malloc(100);
     *ptr = 42;  // Unchecked!
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     let unchecked = report
@@ -113,7 +137,10 @@ int main() {
 #[test]
 fn test_go_analyzer_detects_goroutines() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.go", r#"
+    let file = write_test_file(
+        &dir,
+        "test.go",
+        r#"
 package main
 
 func main() {
@@ -121,7 +148,8 @@ func main() {
     go processData()
     go handleRequest()
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert_eq!(report.language, Language::Go);
@@ -132,11 +160,15 @@ func main() {
 #[test]
 fn test_python_analyzer_detects_unbounded_loop() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.py", r#"
+    let file = write_test_file(
+        &dir,
+        "test.py",
+        r#"
 def main():
     while True:
         process()
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert_eq!(report.language, Language::Python);
@@ -151,14 +183,18 @@ def main():
 #[test]
 fn test_generic_analyzer_basic_patterns() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.unknown", r#"
+    let file = write_test_file(
+        &dir,
+        "test.unknown",
+        r#"
 // Unknown language
 function main() {
     let x = alloc(100);
     open("file.txt");
     thread.start();
 }
-"#)?;
+"#,
+    )?;
     // Generic analyzer should still work; we only check it doesn't crash
     let _ = assail::analyze(&file);
     Ok(())
@@ -213,13 +249,17 @@ fn test_framework_detection_database() -> Result<(), Box<dyn std::error::Error>>
 }
 
 #[test]
-fn test_todo_in_string_literal_does_not_trigger_unchecked_error() -> Result<(), Box<dyn std::error::Error>> {
+fn test_todo_in_string_literal_does_not_trigger_unchecked_error(
+) -> Result<(), Box<dyn std::error::Error>> {
     // Regression: parser.rs had 155 `.expect("TODO: handle error")` calls.
     // The old detector counted `content.matches("TODO")` on raw bytes, so each
     // string literal incremented the TODO counter. Stub code with `.expect("TODO: …")`
     // must not fire UncheckedError.
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "stubby.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "stubby.rs",
+        r#"
 pub fn parse_stubbed(input: &str) -> String {
     let first = input.split(',').next().expect("TODO: handle error");
     let second = input.split('.').next().expect("TODO: handle error");
@@ -236,7 +276,8 @@ pub fn parse_stubbed(input: &str) -> String {
         first, second, third, fourth, fifth, sixth,
         seventh, eighth, ninth, tenth, eleventh)
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     let unchecked: Vec<_> = report
@@ -258,7 +299,10 @@ pub fn parse_stubbed(input: &str) -> String {
 fn test_real_todo_comments_still_detected() -> Result<(), Box<dyn std::error::Error>> {
     // Sanity: actual `// TODO` comments above the 11-item threshold must still fire.
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "debt.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "debt.rs",
+        r#"
 // TODO: implement proper error handling
 // TODO: add tests for edge cases
 // TODO: optimise hot path
@@ -272,7 +316,8 @@ fn test_real_todo_comments_still_detected() -> Result<(), Box<dyn std::error::Er
 // XXX: this block needs review
 // XXX: performance critical but correctness unclear
 pub fn stub() -> i32 { 42 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     let unchecked: Vec<_> = report
@@ -292,12 +337,16 @@ pub fn stub() -> i32 { 42 }
 #[test]
 fn test_per_file_stats_populated() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
-    let file = write_test_file(&dir, "test.rs", r#"
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
 fn main() {
     let x = Some(5).unwrap();
     unsafe { std::ptr::null::<i32>() };
 }
-"#)?;
+"#,
+    )?;
     let report = assail::analyze(&file)?;
 
     assert!(

@@ -664,8 +664,8 @@ impl Analyzer {
             // here because the per-language analyzers don't have the
             // FileStatistics container in scope. See
             // `is_rust_ffi_safe_wrapper` for the four detection criteria.
-            let ffi_safe_wrapper = matches!(file_lang, Language::Rust)
-                && Self::is_rust_ffi_safe_wrapper(&content);
+            let ffi_safe_wrapper =
+                matches!(file_lang, Language::Rust) && Self::is_rust_ffi_safe_wrapper(&content);
 
             if has_findings {
                 file_statistics.push(FileStatistics {
@@ -904,7 +904,7 @@ impl Analyzer {
             || file_path.contains("/samples/") // Sample code
             || file_path.contains("_mock.") // Mock files
             || file_path.contains("_stub."); // Stub files
-        
+
         // Strip string literal contents AND comments before counting so that
         // detection-tool source files (which embed patterns as string literals)
         // do not trigger their own rules, and so that rule names quoted in
@@ -919,8 +919,7 @@ impl Analyzer {
         // (allocation sites, I/O, threading) still use the raw content
         // because those patterns are safe to count in any context.
         let without_strings = Self::strip_string_literals_rs(content);
-        let without_comments =
-            strip_proof_comments(&without_strings, "//", Some(("/*", "*/")));
+        let without_comments = strip_proof_comments(&without_strings, "//", Some(("/*", "*/")));
         // Apply inline-test-mod stripping globally so `#[cfg(test)] mod
         // tests { … }` is treated as test context by every substring-based
         // dangerous-pattern check below — the Rust analogue of Zig's
@@ -936,9 +935,10 @@ impl Analyzer {
 
         stats.unsafe_blocks += code_only.matches("unsafe {").count();
         stats.unsafe_blocks += code_only.matches("unsafe fn").count();
-        
+
         // Count panic sites, but suppress them in test files
-        let panic_sites = code_only.matches("panic!(").count() + code_only.matches("unreachable!(").count();
+        let panic_sites =
+            code_only.matches("panic!(").count() + code_only.matches("unreachable!(").count();
         // Unsafe unwrap: .unwrap() and .expect( — both can panic. Counted toward PA006.
         // Safe unwrap: .unwrap_or(, .unwrap_or_default(), .unwrap_or_else( — fallback, never panic.
         // Subtract safe variants from the raw .unwrap() count so ".unwrap_or(" isn't
@@ -949,7 +949,7 @@ impl Analyzer {
             + code_only.matches(".unwrap_or_else(").count();
         let unwrap_calls = raw_unwrap + code_only.matches(".expect(").count();
         let safe_unwrap_calls = safe_unwrap;
-        
+
         // Apply test file suppression. In test files, normal
         // assert-macro use pushes panic/unwrap counts high with no
         // production-code signal, so we suppress the counts unless they
@@ -971,7 +971,7 @@ impl Analyzer {
         } else {
             (panic_sites, unwrap_calls) // Production code: count all
         };
-        
+
         stats.panic_sites += effective_panic_sites;
         stats.unwrap_calls += effective_unwrap_calls;
         stats.safe_unwrap_calls += safe_unwrap_calls;
@@ -988,7 +988,7 @@ impl Analyzer {
         // the count without feeding into any finding and have been
         // removed to clear dead-code warnings.
         stats.allocation_sites += vec_new_count + box_new_count + string_new_count;
-        
+
         // Flag unbounded allocation patterns as high-risk. `code_only`
         // already has string literals, comments, and `#[cfg(test)] mod
         // tests` bodies stripped, so keyword substring checks below do
@@ -1027,7 +1027,7 @@ impl Analyzer {
             // Network / I/O primitives that slurp without a cap.
             || (code_only.contains("read_to_end") && !read_is_bounded)
             || (code_only.contains("read_to_string") && !read_is_bounded);
-        
+
         if has_unbounded_allocations && !is_test_file {
             weak_points.push(WeakPoint {
                 file: None,
@@ -1035,7 +1035,10 @@ impl Analyzer {
                 category: WeakPointCategory::UnboundedAllocation,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
-                description: format!("Potential unbounded allocation pattern detected in {}", file_path),
+                description: format!(
+                    "Potential unbounded allocation pattern detected in {}",
+                    file_path
+                ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                 suppressed: false,
             });
@@ -1275,8 +1278,8 @@ impl Analyzer {
         // stripped form `extern "" {` accepts any real extern-ABI
         // declaration (`"C"`, `"system"`, `"stdcall"`, etc.) and
         // correctly rejects the string-literal-only case.
-        let declares_extern_c = code_only.contains("extern \"\" {")
-            || code_only.contains("extern \"\" fn");
+        let declares_extern_c =
+            code_only.contains("extern \"\" {") || code_only.contains("extern \"\" fn");
         if !declares_extern_c {
             return false;
         }
@@ -1607,8 +1610,8 @@ impl Analyzer {
         let mut idx = 0;
         while idx + 4 <= len {
             if &b[idx..idx + 4] == b"test" {
-                let before_ok = idx == 0
-                    || (!b[idx - 1].is_ascii_alphanumeric() && b[idx - 1] != b'_');
+                let before_ok =
+                    idx == 0 || (!b[idx - 1].is_ascii_alphanumeric() && b[idx - 1] != b'_');
                 let after_idx = idx + 4;
                 let after_ok = after_idx >= len
                     || (!b[after_idx].is_ascii_alphanumeric() && b[after_idx] != b'_');
@@ -1637,8 +1640,8 @@ impl Analyzer {
         stats.threading_constructs += content.matches("pthread_").count();
         stats.threading_constructs += content.matches("std::thread").count();
 
-        let unchecked_malloc =
-            RE_UNCHECKED_MALLOC.get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").expect("static regex is valid"));
+        let unchecked_malloc = RE_UNCHECKED_MALLOC
+            .get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").expect("static regex is valid"));
         if unchecked_malloc.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -2044,18 +2047,19 @@ impl Analyzer {
         if (content.contains("subprocess.call")
             || content.contains("subprocess.Popen")
             || content.contains("subprocess.run"))
-            && (content.contains("shell=True") || content.contains("shell = True")) {
-                weak_points.push(WeakPoint {
-                    file: None,
-                    line: None,
-                    category: WeakPointCategory::CommandInjection,
-                    location: Some(file_path.to_string()),
-                    severity: Severity::High,
-                    description: format!("subprocess with shell=True in {}", file_path),
-                    recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
-                    suppressed: false,
-                });
-            }
+            && (content.contains("shell=True") || content.contains("shell = True"))
+        {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::CommandInjection,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("subprocess with shell=True in {}", file_path),
+                recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
+                suppressed: false,
+            });
+        }
 
         // hashlib.md5 / hashlib.sha1 in security context
         for pattern in &["hashlib.md5(", "hashlib.new('md5'", "hashlib.new(\"md5\""] {
@@ -2493,8 +2497,8 @@ impl Analyzer {
         }
 
         // Unsafe apply
-        let apply_re =
-            RE_ELIXIR_APPLY.get_or_init(|| Regex::new(r"apply\([^,]+,\s*[^,]+,").expect("static regex is valid"));
+        let apply_re = RE_ELIXIR_APPLY
+            .get_or_init(|| Regex::new(r"apply\([^,]+,\s*[^,]+,").expect("static regex is valid"));
         if apply_re.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -3805,15 +3809,15 @@ impl Analyzer {
     ) -> Result<()> {
         // Count unsafe operations in test blocks separately
         let (test_ptr_ops, test_c_imports) = self.count_unsafe_in_test_blocks(content);
-        
+
         // Detect test-only helper functions
         let test_only_functions = self.detect_test_only_helper_functions(content);
-        
+
         // Count unsafe operations in test-only helper functions
         let mut helper_ptr_ops = 0;
         let mut helper_c_imports = 0;
         let mut in_test_only_function = false;
-        
+
         for line in content.lines() {
             // Check if we're entering a test-only function
             for func_name in &test_only_functions {
@@ -3821,23 +3825,26 @@ impl Analyzer {
                     in_test_only_function = true;
                 }
             }
-            
+
             // Count unsafe operations in test-only functions
             if in_test_only_function {
-                if line.contains("@ptrCast") || line.contains("@intToPtr") || line.contains("@ptrToInt") {
+                if line.contains("@ptrCast")
+                    || line.contains("@intToPtr")
+                    || line.contains("@ptrToInt")
+                {
                     helper_ptr_ops += 1;
                 }
                 if line.contains("@cImport") {
                     helper_c_imports += 1;
                 }
             }
-            
+
             // Check if we're exiting a function
             if in_test_only_function && line.trim() == "}" {
                 in_test_only_function = false;
             }
         }
-        
+
         // Strip string literals and // line comments before counting built-in
         // unsafe-ops, so that mentions of `@cImport`, `@ptrCast`, `@intToPtr`,
         // `@ptrToInt` in doc comments or prose (file headers, architectural
@@ -3874,7 +3881,8 @@ impl Analyzer {
         }
 
         // C interop (excluding those in test blocks and test-only helpers)
-        let c_import = code_only_zig.matches("@cImport").count() - test_c_imports - helper_c_imports;
+        let c_import =
+            code_only_zig.matches("@cImport").count() - test_c_imports - helper_c_imports;
         stats.unsafe_blocks += c_import;
 
         if c_import > 0 {
@@ -3910,10 +3918,10 @@ impl Analyzer {
     fn count_unsafe_in_test_blocks(&self, content: &str) -> (usize, usize) {
         let mut test_ptr_ops = 0;
         let mut test_c_imports = 0;
-        
+
         // Simple state machine to detect test blocks
         let mut in_test_block = false;
-        
+
         for line in content.lines() {
             if line.trim().starts_with("test \"") {
                 // Start of a test block
@@ -3923,7 +3931,10 @@ impl Analyzer {
                 in_test_block = false;
             } else if in_test_block {
                 // Count unsafe operations within the test block
-                if line.contains("@ptrCast") || line.contains("@intToPtr") || line.contains("@ptrToInt") {
+                if line.contains("@ptrCast")
+                    || line.contains("@intToPtr")
+                    || line.contains("@ptrToInt")
+                {
                     test_ptr_ops += 1;
                 }
                 if line.contains("@cImport") {
@@ -3931,19 +3942,19 @@ impl Analyzer {
                 }
             }
         }
-        
+
         (test_ptr_ops, test_c_imports)
     }
 
     /// Detect functions that are only called from test blocks (test-only helper functions)
     fn detect_test_only_helper_functions(&self, content: &str) -> Vec<String> {
         use std::collections::HashSet;
-        
+
         let mut test_only_functions = Vec::new();
         let mut function_calls = std::collections::HashMap::new();
         let mut in_test_block = false;
         let mut current_function = String::new();
-        
+
         // First pass: identify all function definitions and track which ones are called from test blocks
         for line in content.lines() {
             // Track test blocks
@@ -3952,17 +3963,18 @@ impl Analyzer {
             } else if in_test_block && line.trim() == "}" {
                 in_test_block = false;
             }
-            
+
             // Detect function definitions
             if line.trim().starts_with("fn ") && !line.trim().starts_with("fn test") {
                 if let Some(func_name) = line.trim().split_whitespace().nth(1) {
                     let func_name = func_name.split('(').next().unwrap_or(func_name);
                     current_function = func_name.to_string();
-                    function_calls.entry(func_name.to_string())
+                    function_calls
+                        .entry(func_name.to_string())
                         .or_insert_with(|| (false, HashSet::new()));
                 }
             }
-            
+
             // Detect function calls
             if line.contains('(') && !line.trim().starts_with("fn ") {
                 // Simple heuristic: look for patterns like "function_name("
@@ -3972,10 +3984,12 @@ impl Analyzer {
                         let func_name = word.trim_end_matches('(');
                         if !func_name.is_empty() {
                             let is_test_call = in_test_block;
-                            function_calls.entry(func_name.to_string())
+                            function_calls
+                                .entry(func_name.to_string())
                                 .or_insert_with(|| (false, HashSet::new()))
-                                .1.insert(current_function.clone());
-                            
+                                .1
+                                .insert(current_function.clone());
+
                             if is_test_call {
                                 if let Some(entry) = function_calls.get_mut(func_name) {
                                     entry.0 = true; // Mark as called from test
@@ -3986,7 +4000,7 @@ impl Analyzer {
                 }
             }
         }
-        
+
         // Second pass: identify functions that are ONLY called from test blocks
         for (func_name, (_called_from_test, _callers)) in &function_calls {
             // For now, we'll use a simpler heuristic: check if the function name contains "scan"
@@ -3995,7 +4009,7 @@ impl Analyzer {
                 test_only_functions.push(func_name.clone());
             }
         }
-        
+
         test_only_functions
     }
 
@@ -4156,7 +4170,8 @@ impl Analyzer {
         file_path: &str,
     ) -> Result<()> {
         // FFI calls (@ prefix)
-        let ffi_re = RE_PONY_FFI.get_or_init(|| Regex::new(r"@[a-zA-Z_]\w*\[").expect("static regex is valid"));
+        let ffi_re = RE_PONY_FFI
+            .get_or_init(|| Regex::new(r"@[a-zA-Z_]\w*\[").expect("static regex is valid"));
         let ffi_count = ffi_re.find_iter(content).count();
         stats.unsafe_blocks += ffi_count;
 
@@ -4360,8 +4375,8 @@ impl Analyzer {
             .map(strip_shell_quoted_strings)
             .collect::<Vec<_>>()
             .join("\n");
-        let unquoted_var =
-            RE_SHELL_UNQUOTED_VAR.get_or_init(|| Regex::new(r#"\$[A-Za-z_]\w*"#).expect("static regex is valid"));
+        let unquoted_var = RE_SHELL_UNQUOTED_VAR
+            .get_or_init(|| Regex::new(r#"\$[A-Za-z_]\w*"#).expect("static regex is valid"));
         let dollar_vars = unquoted_var.find_iter(&stripped_content).count();
         // Only flag if high number of unquoted vars
         if dollar_vars > 20 {
@@ -4710,9 +4725,11 @@ impl Analyzer {
     ) -> Result<()> {
         // HTTP (insecure) URLs - should be HTTPS
         // Count http:// URLs that are NOT localhost/127.0.0.1 (those are fine)
-        let http_re = RE_HTTP_URL.get_or_init(|| Regex::new(r#"http://[a-zA-Z0-9]"#).expect("static regex is valid"));
+        let http_re = RE_HTTP_URL
+            .get_or_init(|| Regex::new(r#"http://[a-zA-Z0-9]"#).expect("static regex is valid"));
         let http_localhost_re = RE_HTTP_LOCALHOST.get_or_init(|| {
-            Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#).expect("static regex is valid")
+            Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#)
+                .expect("static regex is valid")
         });
         let http_total = http_re.find_iter(content).count();
         let http_local = http_localhost_re.find_iter(content).count();
@@ -5576,8 +5593,7 @@ fn count_rocq_unverified_postulates(code: &str) -> usize {
             continue;
         }
 
-        let is_decl =
-            trimmed.starts_with("Axiom ") || trimmed.starts_with("Parameter ");
+        let is_decl = trimmed.starts_with("Axiom ") || trimmed.starts_with("Parameter ");
         if !is_decl {
             continue;
         }
@@ -5630,8 +5646,8 @@ fn is_rocq_abstraction_parameter(decl: &str) -> bool {
         }
         let first_word = return_type.split_whitespace().next().unwrap_or("");
         const CONCRETE_RETURNS: &[&str] = &[
-            "Q", "R", "Z", "N", "nat", "bool", "list", "option",
-            "prod", "sum", "unit", "Type", "Set",
+            "Q", "R", "Z", "N", "nat", "bool", "list", "option", "prod", "sum", "unit", "Type",
+            "Set",
         ];
         if CONCRETE_RETURNS.contains(&first_word) {
             return true;
@@ -5663,8 +5679,8 @@ fn strip_not_test_groups(args: &str) -> String {
     while i < n {
         if i + 3 <= n && &bytes[i..i + 3] == b"not" {
             let after_kw = i + 3;
-            let before_ok = i == 0
-                || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_');
+            let before_ok =
+                i == 0 || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_');
             let mut k = after_kw;
             while k < n && (bytes[k] as char).is_whitespace() {
                 k += 1;
@@ -6181,9 +6197,7 @@ fn pun_u64_to_two_u32s(x: u64) -> (u32, u32) {
             "Non-JIT transmute must stay Critical — JIT-aware downgrade must not over-suppress"
         );
         assert!(
-            !transmute_findings[0]
-                .description
-                .contains("Cranelift JIT"),
+            !transmute_findings[0].description.contains("Cranelift JIT"),
             "Non-JIT finding must not carry the JIT classification suffix"
         );
     }
@@ -6578,8 +6592,7 @@ End OrderedField.
 
     #[test]
     fn rocq_module_level_decidable_equality_is_abstraction() {
-        let code =
-            "Parameter state_eq_dec : forall x y : State, {x = y} + {x <> y}.\n";
+        let code = "Parameter state_eq_dec : forall x y : State, {x = y} + {x <> y}.\n";
         assert_eq!(
             count_rocq_unverified_postulates(code),
             0,
@@ -6657,8 +6670,12 @@ End ShannonSourceCoding.
 
     #[test]
     fn cfg_any_including_test_is_test() {
-        assert!(Analyzer::cfg_args_select_test(b"any(test, feature = \"x\")"));
-        assert!(Analyzer::cfg_args_select_test(b"any(feature = \"x\", test)"));
+        assert!(Analyzer::cfg_args_select_test(
+            b"any(test, feature = \"x\")"
+        ));
+        assert!(Analyzer::cfg_args_select_test(
+            b"any(feature = \"x\", test)"
+        ));
     }
 
     #[test]
@@ -6708,8 +6725,11 @@ mod tests {
         assert!(out.contains("pub fn prod_fn"), "production code preserved");
         assert!(!out.contains("unbounded"), "test-fn identifier stripped");
         assert!(!out.contains("#[test]"), "test attribute stripped");
-        assert_eq!(out.lines().count(), src.lines().count(),
-            "line count preserved so downstream line numbers stay stable");
+        assert_eq!(
+            out.lines().count(),
+            src.lines().count(),
+            "line count preserved so downstream line numbers stay stable"
+        );
     }
 
     #[test]

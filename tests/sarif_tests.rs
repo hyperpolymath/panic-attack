@@ -81,9 +81,7 @@ fn test_sarif_has_runs() -> Result<(), Box<dyn std::error::Error>> {
     let json = sarif::to_sarif_json(&report)?;
     let parsed: serde_json::Value = serde_json::from_str(&json)?;
 
-    let runs = parsed["runs"]
-        .as_array()
-        .ok_or("runs must be an array")?;
+    let runs = parsed["runs"].as_array().ok_or("runs must be an array")?;
     assert_eq!(runs.len(), 1, "should have exactly one run");
     Ok(())
 }
@@ -133,7 +131,11 @@ fn test_sarif_rules_deduplicated() -> Result<(), Box<dyn std::error::Error>> {
     let log = sarif::to_sarif(&report)?;
 
     let rules = &log.runs[0].tool.driver.rules;
-    assert_eq!(rules.len(), 2, "two distinct categories: UnsafeCode and PanicPath");
+    assert_eq!(
+        rules.len(),
+        2,
+        "two distinct categories: UnsafeCode and PanicPath"
+    );
     assert_eq!(rules[0].id, "PA004");
     assert_eq!(rules[1].id, "PA005");
     Ok(())
@@ -177,7 +179,10 @@ fn test_sarif_from_real_analysis() -> Result<(), Box<dyn std::error::Error>> {
     let results = parsed["runs"][0]["results"]
         .as_array()
         .ok_or("results must be an array")?;
-    assert!(!results.is_empty(), "real analysis should produce SARIF results");
+    assert!(
+        !results.is_empty(),
+        "real analysis should produce SARIF results"
+    );
 
     for result in results {
         assert!(result["ruleId"].as_str().is_some(), "result missing ruleId");

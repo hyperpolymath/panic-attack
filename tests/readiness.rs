@@ -137,7 +137,11 @@ fn readiness_d_tui_headless_runs() -> Result<(), Box<dyn std::error::Error>> {
 
     let path_str = report_path.to_str().ok_or("path not valid UTF-8")?;
     let (ok, stdout, stderr) = run(&["tui", "--headless", path_str]);
-    assert!(ok, "tui --headless should succeed without a TTY: {}", stderr);
+    assert!(
+        ok,
+        "tui --headless should succeed without a TTY: {}",
+        stderr
+    );
     assert!(
         stdout.contains("PANIC-ATTACK REPORT REVIEW"),
         "tui --headless should print report header, got: {}",
@@ -168,8 +172,14 @@ fn readiness_d_gui_headless_runs() -> Result<(), Box<dyn std::error::Error>> {
         "gui --headless should print GUI report header, got: {}",
         stdout
     );
-    assert!(stdout.contains("Summary"), "gui --headless should include Summary panel");
-    assert!(stdout.contains("Assessment"), "gui --headless should include Assessment panel");
+    assert!(
+        stdout.contains("Summary"),
+        "gui --headless should include Summary panel"
+    );
+    assert!(
+        stdout.contains("Assessment"),
+        "gui --headless should include Assessment panel"
+    );
     Ok(())
 }
 
@@ -242,8 +252,14 @@ fn readiness_c_assail_json_output() -> Result<(), Box<dyn std::error::Error>> {
 
     let content = fs::read_to_string(&output)?;
     let parsed: serde_json::Value = serde_json::from_str(&content)?;
-    assert!(parsed["language"].is_string(), "JSON should have language field");
-    assert!(parsed["weak_points"].is_array(), "JSON should have weak_points array");
+    assert!(
+        parsed["language"].is_string(),
+        "JSON should have language field"
+    );
+    assert!(
+        parsed["weak_points"].is_array(),
+        "JSON should have weak_points array"
+    );
     Ok(())
 }
 
@@ -306,7 +322,12 @@ fn readiness_c_a2ml_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     assert!(ok, "assail should succeed: {}", stderr);
 
     let (ok, _, stderr) = run(&[
-        "a2ml-export", "--kind", "assail", json_str, "--output", a2ml_str,
+        "a2ml-export",
+        "--kind",
+        "assail",
+        json_str,
+        "--output",
+        a2ml_str,
     ]);
     assert!(ok, "a2ml-export should succeed: {}", stderr);
     assert!(a2ml_path.exists(), "a2ml file should be created");
@@ -368,7 +389,10 @@ fn readiness_c_notify_runs() -> Result<(), Box<dyn std::error::Error>> {
     assert!(output.exists(), "notification should be created");
 
     let content = fs::read_to_string(&output)?;
-    assert!(content.contains("test-repo"), "notification should mention the repo");
+    assert!(
+        content.contains("test-repo"),
+        "notification should mention the repo"
+    );
     Ok(())
 }
 
@@ -381,7 +405,9 @@ fn readiness_c_panll_runs() -> Result<(), Box<dyn std::error::Error>> {
     let panll_path = dir.path().join("panll.json");
 
     let src_str = src.to_str().ok_or("src path not valid UTF-8")?;
-    let assault_str = assault_path.to_str().ok_or("assault path not valid UTF-8")?;
+    let assault_str = assault_path
+        .to_str()
+        .ok_or("assault path not valid UTF-8")?;
     let panll_str = panll_path.to_str().ok_or("panll path not valid UTF-8")?;
 
     let (ok, _, _) = run(&["assault", src_str, "--output", assault_str]);
@@ -423,7 +449,10 @@ fn readiness_b_assail_multilang() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(r2.language, Language::Python);
 
     let c_file = dir.path().join("test.c");
-    fs::write(&c_file, "#include <stdlib.h>\nint main() { system(\"ls\"); }")?;
+    fs::write(
+        &c_file,
+        "#include <stdlib.h>\nint main() { system(\"ls\"); }",
+    )?;
     let r3 = assail::analyze(&c_file)?;
     assert_eq!(r3.language, Language::C);
 
@@ -440,7 +469,10 @@ fn readiness_b_assail_empty_file() -> Result<(), Box<dyn std::error::Error>> {
     let src = dir.path().join("empty.rs");
     fs::write(&src, "")?;
     let report = assail::analyze(&src)?;
-    assert!(report.weak_points.is_empty(), "empty file should have no findings");
+    assert!(
+        report.weak_points.is_empty(),
+        "empty file should have no findings"
+    );
     Ok(())
 }
 
@@ -492,8 +524,14 @@ fn readiness_b_notify_filtering() -> Result<(), Box<dyn std::error::Error>> {
     assert!(ok, "notify --critical-only should succeed: {}", stderr);
 
     let content = fs::read_to_string(&output)?;
-    assert!(content.contains("critical-repo"), "should include critical repo");
-    assert!(!content.contains("medium-repo"), "should exclude non-critical repo");
+    assert!(
+        content.contains("critical-repo"),
+        "should include critical repo"
+    );
+    assert!(
+        !content.contains("medium-repo"),
+        "should exclude non-critical repo"
+    );
     Ok(())
 }
 
@@ -514,15 +552,27 @@ fn readiness_b_panicbot_json_contract() -> Result<(), Box<dyn std::error::Error>
     let report = assail::analyze(&src)?;
     let json = serde_json::to_value(&report)?;
 
-    assert!(json["program_path"].is_string(), "must have program_path string");
-    assert!(json["weak_points"].is_array(), "must have weak_points array");
+    assert!(
+        json["program_path"].is_string(),
+        "must have program_path string"
+    );
+    assert!(
+        json["weak_points"].is_array(),
+        "must have weak_points array"
+    );
     assert!(json["language"].is_string(), "must have language string");
-    assert!(json["statistics"].is_object(), "must have statistics object");
+    assert!(
+        json["statistics"].is_object(),
+        "must have statistics object"
+    );
 
     let wp = &json["weak_points"][0];
     assert!(wp["category"].is_string(), "weak_point must have category");
     assert!(wp["severity"].is_string(), "weak_point must have severity");
-    assert!(wp["description"].is_string(), "weak_point must have description");
+    assert!(
+        wp["description"].is_string(),
+        "weak_point must have description"
+    );
 
     let cat = wp["category"].as_str().ok_or("category must be a string")?;
     let first_char = cat.chars().next().ok_or("category must not be empty")?;
@@ -541,12 +591,31 @@ fn readiness_b_panicbot_json_contract() -> Result<(), Box<dyn std::error::Error>
 
     // All 25 WeakPointCategory variants must round-trip through JSON
     let expected_categories = [
-        "UncheckedAllocation", "UnboundedLoop", "BlockingIO", "UnsafeCode", "PanicPath",
-        "RaceCondition", "DeadlockPotential", "ResourceLeak", "CommandInjection",
-        "UnsafeDeserialization", "DynamicCodeExecution", "UnsafeFFI", "AtomExhaustion",
-        "InsecureProtocol", "ExcessivePermissions", "PathTraversal", "HardcodedSecret",
-        "UncheckedError", "InfiniteRecursion", "UnsafeTypeCoercion", "ProofDrift",
-        "CryptoMisuse", "SupplyChain", "InputBoundary", "MutationGap",
+        "UncheckedAllocation",
+        "UnboundedLoop",
+        "BlockingIO",
+        "UnsafeCode",
+        "PanicPath",
+        "RaceCondition",
+        "DeadlockPotential",
+        "ResourceLeak",
+        "CommandInjection",
+        "UnsafeDeserialization",
+        "DynamicCodeExecution",
+        "UnsafeFFI",
+        "AtomExhaustion",
+        "InsecureProtocol",
+        "ExcessivePermissions",
+        "PathTraversal",
+        "HardcodedSecret",
+        "UncheckedError",
+        "InfiniteRecursion",
+        "UnsafeTypeCoercion",
+        "ProofDrift",
+        "CryptoMisuse",
+        "SupplyChain",
+        "InputBoundary",
+        "MutationGap",
     ];
     for variant_name in &expected_categories {
         let variant_json = format!("\"{}\"", variant_name);

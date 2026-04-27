@@ -442,7 +442,10 @@ sqlalchemy[asyncio]==2.0.0; python_version >= "3.8"
         assert!(names.contains(&"flask"));
         assert!(names.contains(&"sqlalchemy"));
         assert_eq!(
-            deps.iter().find(|d| d.name == "sqlalchemy").unwrap().version,
+            deps.iter()
+                .find(|d| d.name == "sqlalchemy")
+                .unwrap()
+                .version,
             "2.0.0",
             "Env marker should be stripped"
         );

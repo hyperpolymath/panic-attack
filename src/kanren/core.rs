@@ -871,10 +871,7 @@ impl LogicEngine {
                     "weak_point",
                     vec![Term::atom("UnsafeCode"), v26.clone(), v27],
                 ),
-                LogicFact::new(
-                    "context",
-                    vec![v26.clone(), Term::atom("ffi_safe_wrapper")],
-                ),
+                LogicFact::new("context", vec![v26.clone(), Term::atom("ffi_safe_wrapper")]),
             ],
             RuleMetadata {
                 confidence: 0.92,
@@ -913,10 +910,7 @@ impl LogicEngine {
                     "weak_point",
                     vec![Term::atom("PanicPath"), v28.clone(), v29],
                 ),
-                LogicFact::new(
-                    "context",
-                    vec![v28.clone(), Term::atom("scanner_source")],
-                ),
+                LogicFact::new("context", vec![v28.clone(), Term::atom("scanner_source")]),
             ],
             RuleMetadata {
                 confidence: 0.85,
@@ -1057,8 +1051,8 @@ impl LogicEngine {
                 || path.contains("analyzer")
                 || path.contains("scanner")
                 || path.contains("detector");
-            let high_literal_ratio = fs.lines > 0
-                && (fs.unwrap_calls as f64 / fs.lines as f64) >= 0.10;
+            let high_literal_ratio =
+                fs.lines > 0 && (fs.unwrap_calls as f64 / fs.lines as f64) >= 0.10;
             if is_scanner_path && high_literal_ratio {
                 self.db.assert_fact(LogicFact::new(
                     "context",
@@ -1682,11 +1676,7 @@ mod tests {
         let mut engine = LogicEngine::new();
         engine.extract_context_facts(&report);
         assert!(
-            !has_context(
-                &engine,
-                "crates/oo7-core/src/plain.rs",
-                "ffi_safe_wrapper"
-            ),
+            !has_context(&engine, "crates/oo7-core/src/plain.rs", "ffi_safe_wrapper"),
             "ffi_safe_wrapper=false must not leak the context fact"
         );
     }
@@ -1756,16 +1746,8 @@ mod tests {
                 safe_unwrap_calls: 0,
             }],
             vec![
-                make_weak_point(
-                    WeakPointCategory::UnsafeCode,
-                    path,
-                    "8 unsafe blocks",
-                ),
-                make_weak_point(
-                    WeakPointCategory::PanicPath,
-                    path,
-                    "20 unwrap/expect calls",
-                ),
+                make_weak_point(WeakPointCategory::UnsafeCode, path, "8 unsafe blocks"),
+                make_weak_point(WeakPointCategory::PanicPath, path, "20 unwrap/expect calls"),
             ],
         );
         crate::assail::apply_suppression(&mut report);

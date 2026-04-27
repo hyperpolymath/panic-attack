@@ -567,7 +567,6 @@ pub enum ProbeMode {
     Never,
 }
 
-
 /// Attack execution results
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttackResult {
@@ -638,12 +637,10 @@ pub struct TimelineEventReport {
 }
 
 /// Matrix rows representing taint source/sink interactions
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TaintMatrix {
     pub rows: Vec<TaintMatrixRow>,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaintMatrixRow {

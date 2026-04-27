@@ -180,8 +180,14 @@ fn osv_post_with_retry(body_bytes: &[u8]) -> Result<String> {
         match send_result {
             Err(e) => {
                 // Connection-level error — always retry
-                last_err = anyhow::anyhow!("OSV API request failed (attempt {}): {}", attempt + 1, e);
-                log::warn!("[bridge] OSV attempt {}/{}: {}", attempt + 1, OSV_MAX_RETRIES, last_err);
+                last_err =
+                    anyhow::anyhow!("OSV API request failed (attempt {}): {}", attempt + 1, e);
+                log::warn!(
+                    "[bridge] OSV attempt {}/{}: {}",
+                    attempt + 1,
+                    OSV_MAX_RETRIES,
+                    last_err
+                );
                 continue;
             }
             Ok(mut resp) => {
@@ -195,8 +201,18 @@ fn osv_post_with_retry(body_bytes: &[u8]) -> Result<String> {
                         .limit(64 * 1024)
                         .read_to_string()
                         .unwrap_or_default();
-                    last_err = anyhow::anyhow!("OSV API returned HTTP {} (attempt {}): {}", status, attempt + 1, buf);
-                    log::warn!("[bridge] OSV attempt {}/{}: HTTP {}", attempt + 1, OSV_MAX_RETRIES, status);
+                    last_err = anyhow::anyhow!(
+                        "OSV API returned HTTP {} (attempt {}): {}",
+                        status,
+                        attempt + 1,
+                        buf
+                    );
+                    log::warn!(
+                        "[bridge] OSV attempt {}/{}: HTTP {}",
+                        attempt + 1,
+                        OSV_MAX_RETRIES,
+                        status
+                    );
                     continue;
                 }
 

@@ -78,7 +78,10 @@ impl ReportGui {
 
         println!("=== Summary ===");
         println!("Language: {:?}", assail.language);
-        println!("Score: {:.1}/100", report.overall_assessment.robustness_score);
+        println!(
+            "Score: {:.1}/100",
+            report.overall_assessment.robustness_score
+        );
         println!("Crashes: {}", report.total_crashes);
         println!("Signatures: {}", report.total_signatures);
         println!("Weak points: {}", assail.weak_points.len());
