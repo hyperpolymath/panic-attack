@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Template: QUICKSTART-MAINTAINER.adoc — packaging, deploying, and maintaining
 // Replace panic-attacker, panic-attack, rustc, cargo, mold, pkg-config with actuals
 = panic-attack — Quick Start for Platform Maintainers
@@ -106,7 +106,7 @@ Or via OPSM: `opsm update panic-attack`
 
 == Security Notes
 
-* License: PMPL-1.0-or-later (Palimpsest License)
+* License: MPL-2.0 (Palimpsest License)
 * All dependencies SHA-pinned
 * `panic-attack` scan results: link:INSTALL-SECURITY-REPORT.adoc[]
 * OpenSSF Scorecard: see badge in README

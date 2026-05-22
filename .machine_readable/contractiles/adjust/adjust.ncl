@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # adjust.ncl — runner for the ADJUST contractile (calibration and tuning)
 # Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath)
 #

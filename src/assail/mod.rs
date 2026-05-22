@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 
 //! Assail static analysis module
 //!
@@ -504,7 +504,7 @@ mod classifications_tests {
         let tmp = TempDir::new().unwrap();
         write_registry(
             tmp.path(),
-            r#";; SPDX-License-Identifier: PMPL-1.0-or-later
+            r#";; SPDX-License-Identifier: MPL-2.0
 (assail-classifications
   (classification
     (file "crates/oo7-core/src/zig_bridge.rs")

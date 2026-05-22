@@ -197,4 +197,4 @@ Starting with v1.0.0:
 
 ## SPDX License
 
-SPDX-License-Identifier: PMPL-1.0-or-later
+SPDX-License-Identifier: MPL-2.0

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # panic-attack justfile
 
 # Default recipe: build and test
@@ -94,7 +94,7 @@ release version:
     git tag -a "v{{version}}" -m "Release v{{version}}"
     echo "Push with: git push origin v{{version}}"
 
-# E2E integration test against VeriSimDB V-lang REST gateway
+# E2E integration test against VeriSimDB zig REST gateway
 e2e-verisimdb:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -108,7 +108,7 @@ completions: build
     set -euo pipefail
     mkdir -p completions
     SPDX_AUTHOR="# Author: Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
-    SPDX_LIC="# SPDX-License-Identifier: PMPL-1.0-or-later"
+    SPDX_LIC="# SPDX-License-Identifier: MPL-2.0"
     echo "Generating shell completions..."
     for shell in bash zsh fish nushell; do
         case "$shell" in

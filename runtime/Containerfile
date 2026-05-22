@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 
 ARG RUST_BUILDER_IMAGE=cgr.dev/chainguard/rust:latest
 ARG RUST_RUNTIME_IMAGE=cgr.dev/chainguard/distroless-rust:latest

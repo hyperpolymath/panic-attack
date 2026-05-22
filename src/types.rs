@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 
 //! Core type definitions for panic-attack
 //!
@@ -136,7 +136,7 @@ impl Language {
             "lean" => Language::Lean,
             "agda" | "lagda" => Language::Agda,
             "thy" => Language::Isabelle,
-            // .v = Coq/Rocq proof files (V-lang banned estate-wide; .v in estate = Coq)
+            // .v = Coq/Rocq proof files (zig banned estate-wide; .v in estate = Coq)
             "v" => Language::Coq,
 
             // Logic programming

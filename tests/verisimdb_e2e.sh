@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 #
 # End-to-end integration test: panic-attack hexad storage via the VeriSimDB
-# V-lang REST gateway.
+# zig REST gateway.
 #
 # Prerequisites:
 #   - VeriSimDB REST gateway running on localhost:9090

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0-or-later
+# SPDX-License-Identifier: MPL-2.0
 # AI Manifest for panic-attack
 # Version: 1.0
 # Format: A2ML (AI Agent Manifest Language)
@@ -33,10 +33,10 @@
       (always "`.machine_readable/6a2/ECOSYSTEM.a2ml`")
       (always "`.machine_readable/6a2/META.a2ml`"))
 
-    (rule "License MUST be PMPL-1.0-or-later"
+    (rule "License MUST be MPL-2.0"
       (never "AGPL-3.0")
       (never "GPL-*")
-      (always "SPDX-License-Identifier: PMPL-1.0-or-later in all source files"))
+      (always "SPDX-License-Identifier: MPL-2.0 in all source files"))
 
     (rule "Author attribution MUST be correct"
       (always "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>")

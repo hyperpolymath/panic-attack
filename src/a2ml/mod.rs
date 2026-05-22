@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 
 //! Minimal A2ML parser and Nickel exporter
 
@@ -1303,7 +1303,7 @@ mod tests {
         // Scheme booleans inside expressions. The parser must skip ';' line comments
         // anywhere, but only treat '#' as a line comment when it appears at the
         // start of a line — never when it leads a '#t'/'#f' literal.
-        let manifest = r#";; SPDX-License-Identifier: PMPL-1.0-or-later
+        let manifest = r#";; SPDX-License-Identifier: MPL-2.0
 ;; Copyright (c) 2026 Jonathan D.A. Jewell
 
 (ai-manifest
@@ -1324,7 +1324,7 @@ mod tests {
     #[test]
     fn parser_accepts_hash_line_comments_at_line_start() {
         // Backward compatibility: existing manifests use '#' line comments.
-        let manifest = r#"# SPDX-License-Identifier: PMPL-1.0-or-later
+        let manifest = r#"# SPDX-License-Identifier: MPL-2.0
 # AI Manifest
 
 (ai-manifest (project "panic-attack"))

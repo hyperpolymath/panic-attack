@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 
 //! Axial observer: observe target reactions across attack axes from tool
 //! executions and report artifacts.

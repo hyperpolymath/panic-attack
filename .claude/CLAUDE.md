@@ -239,7 +239,7 @@ Run with `just readiness` or `just readiness-summary`.
 
 ## Code Style
 
-- SPDX headers on all files: `PMPL-1.0-or-later`
+- SPDX headers on all files: `MPL-2.0`
 - Author: Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 - Use anyhow::Result for error handling
 - Serde derive on public types for JSON serialization

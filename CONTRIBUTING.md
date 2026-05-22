@@ -197,7 +197,7 @@ This project follows RSR (Reproducible Software Repositories) standards:
 
 1. **SCM files in .machine_readable/ only** - Never put STATE.scm, ECOSYSTEM.scm, or META.scm in the repository root
 2. **AI manifest required** - AI.a2ml must be present and up-to-date
-3. **License consistency** - All files must use PMPL-1.0-or-later (SPDX header)
+3. **License consistency** - All files must use MPL-2.0 (SPDX header)
 4. **Author attribution** - Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 ### Updating Checkpoint Files
@@ -227,7 +227,7 @@ When making significant changes, update:
 
 ## License
 
-By contributing to panic-attack, you agree that your contributions will be licensed under the PMPL-1.0-or-later license. See the LICENSE file for details.
+By contributing to panic-attack, you agree that your contributions will be licensed under the MPL-2.0 license. See the LICENSE file for details.
 
 ## Recognition
 

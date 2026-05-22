@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: PMPL-1.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 
 //! Lockfile parsers — extracts locked dependencies from Cargo.lock, mix.lock,
 //! package-lock.json, and requirements.txt for CVE feed queries.
