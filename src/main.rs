@@ -43,7 +43,7 @@ use crate::attack::AttackProfile;
 use crate::axial::{AxialConfig, ExecutionCommand as AxialExecutionCommand};
 use crate::i18n::Lang;
 use crate::report::{format_diff, load_report, ReportOutputFormat, ReportTui, ReportView};
-use crate::storage::{latest_reports, persist_report};
+use crate::storage::{latest_reports, persist_report, resolve_storage_modes};
 use anyhow::{anyhow, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
@@ -1110,7 +1110,7 @@ fn run_main() -> Result<()> {
             Manifest::default()
         }
     };
-    let storage_modes = manifest.storage_modes();
+    let storage_modes = resolve_storage_modes(manifest.storage_modes());
     let manifest_formats = manifest.report_formats();
 
     match cli.command {

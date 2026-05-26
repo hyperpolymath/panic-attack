@@ -350,16 +350,35 @@ fn build_assemblyline_hexad(
 
 /// Env var that opts a run into per-finding hexad emission (issue #33 S1).
 ///
-/// When set to a non-empty value AND `StorageMode::VerisimDb` is configured,
-/// `persist_assemblyline_report` writes one hexad per `WeakPoint` under
+/// When set to a non-empty truthy value, the run opts into `StorageMode::VerisimDb`
+/// even without an `0-AI-MANIFEST.a2ml` configuring `reports.storage-targets`.
+/// `persist_assemblyline_report` then writes one hexad per `WeakPoint` under
 /// `<dir>/hexads/findings/` in addition to the existing aggregate hexad.
+///
+/// Truthy = any non-empty value other than `0` / `false` (case-insensitive).
 pub const STORE_FINDING_HEXADS_ENV: &str = "PANIC_ATTACK_STORE_FINDING_HEXADS";
 
 /// Return `true` when per-finding hexad emission is requested via env var.
-fn finding_hexads_enabled() -> bool {
+pub fn finding_hexads_enabled() -> bool {
     std::env::var(STORE_FINDING_HEXADS_ENV)
         .map(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
         .unwrap_or(false)
+}
+
+/// Augment a `storage_modes` list with `StorageMode::VerisimDb` when
+/// `PANIC_ATTACK_STORE_FINDING_HEXADS` is truthy.
+///
+/// This is the operational opt-in path for issue #33 S1–S3: the env var alone
+/// is sufficient to reach the hexad-write path, without requiring a manifest's
+/// `reports.storage-targets` to include `verisimdb`.
+pub fn resolve_storage_modes(declared: Vec<StorageMode>) -> Vec<StorageMode> {
+    if finding_hexads_enabled() && !declared.contains(&StorageMode::VerisimDb) {
+        let mut out = declared;
+        out.push(StorageMode::VerisimDb);
+        out
+    } else {
+        declared
+    }
 }
 
 /// Build the stable finding-id for a `WeakPoint`.
@@ -996,6 +1015,12 @@ mod tests {
         AssailReport, Language, ProgramStatistics, Severity, WeakPoint, WeakPointCategory,
     };
     use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    /// Serialize env-var tests so cargo's parallel runner can't race on
+    /// `PANIC_ATTACK_STORE_FINDING_HEXADS`. Each test acquires this lock for
+    /// its full body.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn sample_weak_point(file: &str, line: u32, category: WeakPointCategory) -> WeakPoint {
         WeakPoint {
@@ -1150,10 +1175,49 @@ mod tests {
 
     #[test]
     fn finding_hexads_disabled_by_default() {
-        // Snapshot+restore so we don't trample on parallel-test global state.
+        let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let original = std::env::var(STORE_FINDING_HEXADS_ENV).ok();
         std::env::remove_var(STORE_FINDING_HEXADS_ENV);
         assert!(!finding_hexads_enabled());
+        if let Some(v) = original {
+            std::env::set_var(STORE_FINDING_HEXADS_ENV, v);
+        }
+    }
+
+    #[test]
+    fn resolve_storage_modes_passthrough_when_env_unset() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let original = std::env::var(STORE_FINDING_HEXADS_ENV).ok();
+        std::env::remove_var(STORE_FINDING_HEXADS_ENV);
+        let modes = resolve_storage_modes(vec![StorageMode::Filesystem]);
+        assert_eq!(modes, vec![StorageMode::Filesystem]);
+        if let Some(v) = original {
+            std::env::set_var(STORE_FINDING_HEXADS_ENV, v);
+        }
+    }
+
+    #[test]
+    fn resolve_storage_modes_adds_verisimdb_when_env_set() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let original = std::env::var(STORE_FINDING_HEXADS_ENV).ok();
+        std::env::set_var(STORE_FINDING_HEXADS_ENV, "1");
+        let modes = resolve_storage_modes(vec![StorageMode::Filesystem]);
+        assert!(modes.contains(&StorageMode::Filesystem));
+        assert!(modes.contains(&StorageMode::VerisimDb));
+        std::env::remove_var(STORE_FINDING_HEXADS_ENV);
+        if let Some(v) = original {
+            std::env::set_var(STORE_FINDING_HEXADS_ENV, v);
+        }
+    }
+
+    #[test]
+    fn resolve_storage_modes_idempotent_when_verisimdb_already_present() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let original = std::env::var(STORE_FINDING_HEXADS_ENV).ok();
+        std::env::set_var(STORE_FINDING_HEXADS_ENV, "1");
+        let modes = resolve_storage_modes(vec![StorageMode::VerisimDb]);
+        assert_eq!(modes, vec![StorageMode::VerisimDb]);
+        std::env::remove_var(STORE_FINDING_HEXADS_ENV);
         if let Some(v) = original {
             std::env::set_var(STORE_FINDING_HEXADS_ENV, v);
         }
