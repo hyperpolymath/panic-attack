@@ -3581,8 +3581,13 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
-        // Isabelle uses '(* *)' block comments only — no line comments.
-        let code = strip_proof_comments(content, "", Some(("(*", "*)")));
+        // Isabelle uses '(* *)' block comments AND `text \<open>...\<close>`
+        // prose declarations AND `@{text ...}` antiquotations. All three must
+        // be stripped before tactic-keyword counting: docstrings discussing
+        // "zero `sorry`" or "all `oops` placeholders" are valid prose, not
+        // proof-escape hatches. See #43.
+        let without_blocks = strip_proof_comments(content, "", Some(("(*", "*)")));
+        let code = strip_isabelle_prose(&without_blocks);
         // sorry — Isabelle's admitted-proof escape hatch (banned estate-wide)
         let sorry_count = code.matches("sorry").count();
         if sorry_count > 0 {
@@ -5526,6 +5531,133 @@ fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &
     out
 }
 
+/// Strip Isabelle prose constructs that are documentation, not proof code:
+///
+/// 1. `@{text ...}` antiquotations — used inside prose blocks AND inside
+///    `(* ... *)` comments to refer to proof tactics by name. Brace-balanced.
+/// 2. Prose-block cartouches: `chapter`, `section`, `subsection`,
+///    `subsubsection`, `paragraph`, and `text` followed by a
+///    `\<open>...\<close>` cartouche. Cartouches nest, so depth-count.
+///
+/// `(* ... *)` comments must be stripped separately via `strip_proof_comments`.
+/// The order is significant: strip `(* *)` first, then this function, because
+/// a `\<open>...\<close>` cartouche inside a `(* *)` comment is already gone.
+///
+/// Conservative: only strips cartouches that follow a prose-block keyword.
+/// Cartouches used as string literals inside tactics (rare) are kept.
+fn strip_isabelle_prose(content: &str) -> String {
+    const OPEN: &str = "\\<open>";
+    const CLOSE: &str = "\\<close>";
+    const PROSE_KEYWORDS: [&str; 6] = [
+        "chapter",
+        "subsubsection",
+        "subsection",
+        "section",
+        "paragraph",
+        "text",
+    ];
+
+    let mut out = String::with_capacity(content.len());
+    let mut rest = content;
+
+    loop {
+        let aq_pos = rest.find("@{text");
+        let mut prose_pos: Option<(usize, usize)> = None;
+        for kw in &PROSE_KEYWORDS {
+            if let Some(found) = find_prose_block(rest, kw, OPEN) {
+                prose_pos = match prose_pos {
+                    Some((existing, _)) if existing <= found.0 => prose_pos,
+                    _ => Some(found),
+                };
+            }
+        }
+
+        let next = match (aq_pos, prose_pos) {
+            (None, None) => {
+                out.push_str(rest);
+                return out;
+            }
+            (Some(a), None) => (a, skip_antiquotation_end(rest, a)),
+            (None, Some((p_start, p_after_open))) => {
+                (p_start, skip_cartouche_end(rest, p_after_open, OPEN, CLOSE))
+            }
+            (Some(a), Some((p_start, p_after_open))) => {
+                if a <= p_start {
+                    (a, skip_antiquotation_end(rest, a))
+                } else {
+                    (p_start, skip_cartouche_end(rest, p_after_open, OPEN, CLOSE))
+                }
+            }
+        };
+
+        out.push_str(&rest[..next.0]);
+        out.push(' ');
+        rest = &rest[next.1..];
+    }
+}
+
+/// Find `keyword` (preceded by start-of-string or whitespace) followed by
+/// optional whitespace + `open_marker`. Returns `(keyword_start, after_open)`.
+fn find_prose_block(haystack: &str, keyword: &str, open_marker: &str) -> Option<(usize, usize)> {
+    let mut search_from = 0;
+    while let Some(rel) = haystack[search_from..].find(keyword) {
+        let abs = search_from + rel;
+        let preceded_ok = abs == 0
+            || haystack[..abs]
+                .chars()
+                .last()
+                .is_some_and(|c| c.is_whitespace());
+        let after_kw = abs + keyword.len();
+        let after_ws: usize = haystack[after_kw..]
+            .chars()
+            .take_while(|c| c.is_whitespace())
+            .map(char::len_utf8)
+            .sum();
+        let open_at = after_kw + after_ws;
+        if preceded_ok && haystack[open_at..].starts_with(open_marker) {
+            return Some((abs, open_at + open_marker.len()));
+        }
+        search_from = abs + keyword.len();
+    }
+    None
+}
+
+/// Given an `@{text` start at `start`, find the byte just past the matching `}`.
+fn skip_antiquotation_end(haystack: &str, start: usize) -> usize {
+    let after = start + "@{text".len();
+    let bytes = haystack.as_bytes();
+    let mut depth: i32 = 1;
+    let mut j = after;
+    while j < bytes.len() && depth > 0 {
+        match bytes[j] {
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
+            _ => {}
+        }
+        j += 1;
+    }
+    j
+}
+
+/// Given a position just past the first `\<open>` (depth = 1), scan forward and
+/// return the byte index just past the matching `\<close>`. Nesting-aware.
+fn skip_cartouche_end(haystack: &str, after_open: usize, open: &str, close: &str) -> usize {
+    let mut depth: i32 = 1;
+    let mut j = after_open;
+    while j < haystack.len() && depth > 0 {
+        if haystack[j..].starts_with(open) {
+            depth += 1;
+            j += open.len();
+        } else if haystack[j..].starts_with(close) {
+            depth -= 1;
+            j += close.len();
+        } else {
+            j += 1;
+        }
+    }
+    j
+}
+
 /// Count Rocq `Axiom`/`Parameter` declarations that represent genuine
 /// unverified postulates, excluding the two legitimate scaffold shapes:
 ///
@@ -5736,6 +5868,91 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    // ---------------------------------------------------------------
+    // 0. Isabelle prose-stripping (regression for #43 false positives)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn isabelle_strip_text_antiquotation_inside_block_comment() {
+        // Tropical_Kleene.thy:663 — sorry appears only in `@{text sorry}` antiquotation
+        let stripped = strip_isabelle_prose("(* All proofs are complete — zero @{text sorry}. *)");
+        // Outer (* *) is stripped separately; this helper handles the antiquotation
+        assert!(
+            !stripped.contains("sorry"),
+            "@{{text sorry}} should be elided, got: {stripped:?}"
+        );
+    }
+
+    #[test]
+    fn isabelle_strip_cartouche_after_text_keyword() {
+        // Tropical_CNO.thy:29 — text \<open>All sorry placeholders have been closed.\<close>
+        let src = "text \\<open>All sorry placeholders have been closed.\\<close>\nlemma foo: True by simp";
+        let stripped = strip_isabelle_prose(src);
+        assert!(!stripped.contains("sorry"), "got: {stripped:?}");
+        assert!(stripped.contains("lemma foo"));
+    }
+
+    #[test]
+    fn isabelle_strip_section_cartouche() {
+        let src = "section \\<open>oops as a tactic\\<close>\nlemma bar: True by simp";
+        let stripped = strip_isabelle_prose(src);
+        assert!(!stripped.contains("oops"));
+        assert!(stripped.contains("lemma bar"));
+    }
+
+    #[test]
+    fn isabelle_strip_subsection_subsubsection_paragraph_chapter() {
+        for kw in ["chapter", "subsection", "subsubsection", "paragraph"] {
+            let src = format!("{kw} \\<open>discuss sorry\\<close>\nreal_code");
+            let stripped = strip_isabelle_prose(&src);
+            assert!(
+                !stripped.contains("sorry"),
+                "{kw} cartouche not stripped: {stripped:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn isabelle_preserve_real_sorry_outside_prose() {
+        // A genuine `sorry` proof tactic must still be visible.
+        let src = "lemma broken: False\n  sorry";
+        let stripped = strip_isabelle_prose(src);
+        assert!(
+            stripped.contains("sorry"),
+            "genuine sorry was wrongly stripped: {stripped:?}"
+        );
+    }
+
+    #[test]
+    fn isabelle_nested_cartouches() {
+        // \<open> can nest. A cartouche containing another cartouche
+        // should be fully consumed.
+        let src = "text \\<open>outer \\<open>inner sorry\\<close> tail\\<close>\ncode";
+        let stripped = strip_isabelle_prose(src);
+        assert!(!stripped.contains("sorry"));
+        assert!(stripped.contains("code"));
+    }
+
+    #[test]
+    fn isabelle_antiquotation_with_nested_braces() {
+        let src = "text \\<open>see @{text \"sorry { x = 1 }\"} below\\<close>\ncode";
+        let stripped = strip_isabelle_prose(src);
+        assert!(!stripped.contains("sorry"));
+        assert!(stripped.contains("code"));
+    }
+
+    #[test]
+    fn isabelle_keyword_not_at_word_boundary() {
+        // `subsection` should match, but a function called `mysection`
+        // (no leading whitespace before "section") should NOT.
+        let src = "mysection_lemma: True by sorry  -- real tactic\n";
+        let stripped = strip_isabelle_prose(src);
+        assert!(
+            stripped.contains("sorry"),
+            "false positive on identifier ending in 'section': {stripped:?}"
+        );
+    }
 
     // ---------------------------------------------------------------
     // 1. Language::detect for different file extensions
