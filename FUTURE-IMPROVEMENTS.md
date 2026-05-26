@@ -3,8 +3,28 @@
 # Future Improvements: Insights from Scanning the Eclexia Compiler Toolchain
 
 **Date:** 2026-02-08
+**Audit refreshed:** 2026-05-26 (4 of 10 items shipped; status block at top)
 **Author:** Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
-**Context:** panic-attack v1.0.0, scanning Eclexia (10 crates, ~20,000 lines of Rust)
+**Context:** panic-attack v1.0.0 at time of scan; current v2.5.0
+
+---
+
+## Status at 2026-05-26
+
+| # | Improvement | Status | Evidence |
+|---|-------------|--------|----------|
+| 1 | Test Code Exclusion | **Shipped** | `Analyzer::strip_cfg_test_modules_rs` — `src/assail/analyzer.rs:923-934`. Applied globally before pattern counting; CLAUDE.md confirms cfg(test) skip behaviour. |
+| 2 | Framework Detection Accuracy | **Shipped** | `Analyzer::detect_frameworks` — `src/assail/analyzer.rs:4993`. Dependency-aware classification supersedes the heuristic-only path that misfired on Eclexia. |
+| 3 | Safe Unwrap Variant Distinction | **Shipped** | `safe_unwrap_calls` field on `ProgramStatistics` (`src/types.rs:518`) and `FileStatistics` (`src/types.rs:451`). Counted but excluded from PA006 (PanicPath) per CLAUDE.md. |
+| 4 | Language-Specific Severity Calibration | Outstanding | No "Hardened" or "Clean" severity tier in `src/types.rs`. Still gated on items 1 + 3 being trustworthy, which they now are. |
+| 5 | Workspace-Level Consolidated Reporting | Outstanding | No Cargo workspace mode in `src/main.rs`. `mass-panic` covers cross-repo but not single-workspace aggregation. |
+| 6 | Differential Scanning | **Shipped** | `Commands::Diff` — `src/main.rs:483`; logic in `src/report/diff.rs`. Listed in ROADMAP v2.2.0 as `[x]`. |
+| 7 | Allocation Site Context and Classification | Outstanding | No `AllocationCategory` enum in `src/types.rs`. Site counts still raw. |
+| 8 | Resource Dimension Awareness for DSLs | Outstanding | Long-term; no plugin-extension surface yet. |
+| 9 | Pattern Detection for Safe Error Handling | Outstanding | No "error handling maturity" metric. |
+| 10 | Configurable Severity Thresholds for CI | Outstanding | No `[thresholds]` parser; no `panic-attack.toml` consumer. Now unblocked because 1, 2, 3 are accurate. |
+
+**Net:** 4/10 shipped (1, 2, 3, 6). Items 4 and 10 are now genuinely unblocked because their stated dependencies (1, 2, 3) have landed; the original "depends on" notes are still accurate but no longer blocking. Items 5, 7, 8, 9 remain as written.
 
 ---
 
@@ -70,7 +90,7 @@ The following observations were made during the Eclexia scan session:
 
 ### 1. Test Code Exclusion
 
-**Priority:** HIGH
+**Priority:** HIGH — **Status: SHIPPED** (`Analyzer::strip_cfg_test_modules_rs`, `src/assail/analyzer.rs:923-934`)
 
 **Problem:** panic-attack counts `unwrap()` and `panic!()` calls inside
 `#[cfg(test)]` modules, `#[test]` functions, and files in `tests/`
@@ -95,7 +115,7 @@ well-tested Rust codebases.
 
 ### 2. Framework Detection Accuracy
 
-**Priority:** HIGH
+**Priority:** HIGH — **Status: SHIPPED** (`Analyzer::detect_frameworks`, `src/assail/analyzer.rs:4993`)
 
 **Problem:** panic-attack reports "WebServer" as the detected framework for
 pure compiler crates with zero I/O operations. This is a misdetection that
@@ -123,7 +143,7 @@ the overall report.
 
 ### 3. Safe Unwrap Variant Distinction
 
-**Priority:** HIGH
+**Priority:** HIGH — **Status: SHIPPED** (`safe_unwrap_calls` field on `ProgramStatistics`/`FileStatistics`, `src/types.rs:451,518`)
 
 **Problem:** The Rust analyzer counts `.unwrap_or(value)`,
 `.unwrap_or_default()`, and `.unwrap_or_else(|| ...)` toward the
@@ -205,7 +225,7 @@ represent the majority of non-trivial Rust codebases.
 
 ### 6. Differential Scanning (Before/After Comparison)
 
-**Priority:** MEDIUM
+**Priority:** MEDIUM — **Status: SHIPPED** (`Commands::Diff`, `src/main.rs:483`; logic in `src/report/diff.rs`)
 
 **Problem:** There is no way to compare two scans to show what improved or
 regressed between them. This limits the tool's usefulness in CI pipelines,
