@@ -227,7 +227,7 @@ fn aspect_parallel_analysis_correctness() {
         .collect();
 
     // Using rayon parallel iterator (same as assemblyline)
-    let _results: Vec<_> = files.par_iter().map(|path| assail::analyze(path)).collect();
+    let _results: Vec<_> = files.par_iter().map(assail::analyze).collect();
 
     // Should complete without data races or panics
     // (In practice, rayon + Rust's type system ensure this)

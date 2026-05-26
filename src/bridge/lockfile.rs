@@ -17,10 +17,12 @@ use std::path::Path;
 /// order. All successful parses are merged into a single list. Errors from
 /// individual parsers are logged as warnings and skipped so one malformed
 /// lockfile does not abort triage of the whole project.
+type LockfileParser = fn(&Path) -> Result<Vec<LockedDependency>>;
+
 pub fn discover_and_parse(dir: &Path) -> Vec<LockedDependency> {
     let mut all = Vec::new();
 
-    let candidates: &[(&str, fn(&Path) -> Result<Vec<LockedDependency>>)] = &[
+    let candidates: &[(&str, LockfileParser)] = &[
         ("Cargo.lock", parse_cargo_lock),
         ("mix.lock", parse_mix_lock),
         ("package-lock.json", parse_package_lock_json),
@@ -66,7 +68,7 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
             if let (Some(name), Some(version)) = (current_name.take(), current_version.take()) {
                 if current_source
                     .as_ref()
-                    .map_or(false, |s| s.contains("registry"))
+                    .is_some_and(|s| s.contains("registry"))
                 {
                     deps.push(LockedDependency {
                         name,
@@ -94,7 +96,7 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
     if let (Some(name), Some(version)) = (current_name, current_version) {
         if current_source
             .as_ref()
-            .map_or(false, |s| s.contains("registry"))
+            .is_some_and(|s| s.contains("registry"))
         {
             deps.push(LockedDependency {
                 name,
