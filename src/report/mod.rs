@@ -7,6 +7,7 @@ pub mod formatter;
 pub mod generator;
 #[cfg(feature = "gui")]
 pub mod gui;
+pub mod gui_text;
 pub mod migration;
 pub mod output;
 pub mod sarif;
