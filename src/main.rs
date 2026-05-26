@@ -468,8 +468,11 @@ enum Commands {
         headless: bool,
     },
 
-    /// GUI review of a saved report (requires `--features gui` at build time)
-    #[cfg(feature = "gui")]
+    /// GUI review of a saved report.
+    ///
+    /// `--headless` always works (text panel summaries to stdout). The
+    /// windowed renderer requires `--features gui` at build time because
+    /// eframe/egui raise MSRV above 1.85.0.
     Gui {
         /// Assault report JSON file
         #[arg(value_name = "REPORT")]
@@ -1701,14 +1704,22 @@ fn run_main() -> Result<()> {
             }
         }
 
-        #[cfg(feature = "gui")]
         Commands::Gui { report, headless } => {
             let content = read_report_bounded(&report)?;
             let assault_report: AssaultReport = serde_json::from_str(&content)?;
             if headless {
-                report::ReportGui::run_headless(assault_report)?;
+                report::gui_text::run_headless(assault_report)?;
             } else {
-                report::ReportGui::run(assault_report)?;
+                #[cfg(feature = "gui")]
+                {
+                    report::ReportGui::run(assault_report)?;
+                }
+                #[cfg(not(feature = "gui"))]
+                {
+                    anyhow::bail!(
+                        "windowed GUI requires the `gui` feature; rebuild with `cargo build --features gui`, or pass --headless"
+                    );
+                }
             }
         }
 
