@@ -6,12 +6,12 @@
 :toc-placement: preamble
 :icons: font
 
-image:https://img.shields.io/badge/OpenSSF-Best_Practices-green?logo=opensourcesecurity[OpenSSF Best Practices,link="https://www.bestpractices.dev/en/projects/new?repo_url=https://github.com/hyperpolymath/panic-attacker"]
-image:https://img.shields.io/badge/License-PMPL--1.0-blue.svg[License: PMPL-1.0,link="https://github.com/hyperpolymath/palimpsest-license"]
+image:https://img.shields.io/badge/OpenSSF-Best_Practices-green?logo=opensourcesecurity[OpenSSF Best Practices,link="https://www.bestpractices.dev/en/projects/new?repo_url=https://github.com/hyperpolymath/panic-attack"]
+image:https://img.shields.io/badge/License-MPL--2.0-blue.svg[License: MPL-2.0,link="https://www.mozilla.org/en-US/MPL/2.0/"]
 image:https://api.thegreenwebfoundation.org/greencheckimage/github.com[Green Web,link="https://www.thegreenwebfoundation.org/green-web-check/?url=github.com"]
 image:https://img.shields.io/badge/status-active-green[Status]
 image:https://img.shields.io/badge/domain-security--analysis-blue[Domain]
-image:https://img.shields.io/badge/tests-196%20passing-brightgreen[Tests]
+image:https://img.shields.io/badge/tests-402%20passing-brightgreen[Tests]
 image:https://img.shields.io/badge/languages-49-blue[Languages]
 
 **panic-attack** is a multi-language security analysis and stress-testing system.
@@ -199,15 +199,15 @@ VeriSimDB remains the foundation dependency for these exports, so every snapshot
 
 == Status
 
-Current state: **v2.1.0**
+Current state: **v2.5.0**
 
-* 19,000+ lines of Rust + Chapel
-* 196 tests
+* 32,000+ lines of Rust + Chapel
+* 400+ tests
 * 0 warnings
-* 22 CLI subcommands
+* 25+ CLI subcommands
 * 49 supported languages
 
-See link:ROADMAP.md[ROADMAP.md] for full capability breakdown and milestones.
+See link:ROADMAP.adoc[ROADMAP.adoc] for full capability breakdown and milestones.
 
 ---
 
