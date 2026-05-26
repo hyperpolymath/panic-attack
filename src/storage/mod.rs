@@ -92,6 +92,36 @@ pub struct HexadSemantic {
     /// single WeakPoint emitted by `build_finding_hexads`, issue #33 S1).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finding: Option<FindingSemantic>,
+    /// Campaign-state semantic data (present when this hexad is a lifecycle
+    /// update — PR registration, dismissal, poll — issue #33 S2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub campaign: Option<CampaignSemantic>,
+}
+
+/// Campaign-state facet of a hexad: tracks the lifecycle of a single
+/// finding (issue #33 S2).
+///
+/// Append-only: each `register-pr` / `dismiss` / `poll` emits a fresh
+/// hexad with the same `finding_id` subject. `status` aggregates by
+/// taking the newest by `created_at`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CampaignSemantic {
+    /// Subject — must match a `FindingSemantic.finding_id` written by S1.
+    pub finding_id: String,
+    /// State label. Canonical values: "open", "pr-filed", "pr-merged",
+    /// "pr-closed", "dismissed". Free-form so future states can be added
+    /// without a schema bump (forward-compatible by design).
+    pub state: String,
+    /// PR URL when `state` is `pr-*`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_url: Option<String>,
+    /// Human-readable dismissal reason when `state == "dismissed"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// ISO 8601 of the last PR-state poll (S2 follow-up sets this; S2
+    /// initial doesn't poll).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_polled: Option<String>,
 }
 
 /// Semantic facets of a per-finding hexad (issue #33 S1).
@@ -221,6 +251,7 @@ fn build_hexad(report: &AssaultReport) -> Result<PanicAttackHexad> {
             categories,
             migration,
             finding: None,
+            campaign: None,
         },
         document,
     })
@@ -343,6 +374,7 @@ fn build_assemblyline_hexad(
             categories,
             migration: None,
             finding: None,
+            campaign: None,
         },
         document,
     })
@@ -489,6 +521,7 @@ pub fn build_finding_hexads(
                         last_seen_run: run_id.clone(),
                         framework: None,
                     }),
+                    campaign: None,
                 },
                 document,
             });
@@ -510,6 +543,121 @@ fn write_finding_hexads(hexads: &[PanicAttackHexad], base_dir: &Path) -> Result<
         written.push(path);
     }
     Ok(written)
+}
+
+// ---------------------------------------------------------------------------
+// Issue #33 S2 — campaign-state hexad write/load helpers
+// ---------------------------------------------------------------------------
+
+/// Maximum size (in bytes) of a single hexad JSON file we'll load from
+/// disk. Hexads are small documents; anything past 16 MiB is corrupted
+/// or hostile.
+const HEXAD_FILE_READ_LIMIT: u64 = 16 * 1024 * 1024;
+
+/// Build a campaign-state hexad for one lifecycle event (issue #33 S2).
+///
+/// Append-only: each call produces a fresh hexad with a unique id. The
+/// `finding_id` is carried as the semantic subject so the newest hexad
+/// per finding is the current state.
+pub fn build_campaign_hexad(semantic: CampaignSemantic) -> PanicAttackHexad {
+    let now = Utc::now();
+    let hexad_id = format!(
+        "pa-campaign-{}-{}",
+        now.format("%Y%m%d%H%M%S"),
+        &uuid_from_timestamp(now.timestamp_millis())
+    );
+
+    PanicAttackHexad {
+        schema: "verisimdb.hexad.v1".to_string(),
+        id: hexad_id,
+        created_at: now.to_rfc3339(),
+        provenance: HexadProvenance {
+            tool: "panic-attack".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            program_path: "campaign".to_string(),
+            language: "n/a".to_string(),
+            attestation_hash: None,
+        },
+        semantic: HexadSemantic {
+            total_weak_points: 0,
+            critical_count: 0,
+            high_count: 0,
+            total_crashes: 0,
+            robustness_score: 0.0,
+            categories: Vec::new(),
+            migration: None,
+            finding: None,
+            campaign: Some(semantic),
+        },
+        document: serde_json::Value::Null,
+    }
+}
+
+/// Write a single campaign-state hexad under
+/// `<base_dir>/hexads/campaign/<hexad_id>.json`. Returns the path.
+pub fn write_campaign_hexad(hexad: &PanicAttackHexad, base_dir: &Path) -> Result<PathBuf> {
+    let dir = base_dir.join("hexads").join("campaign");
+    fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{}.json", hexad.id));
+    fs::write(&path, serde_json::to_string_pretty(hexad)?)?;
+    Ok(path)
+}
+
+/// Load every JSON hexad file from a directory.
+///
+/// Files that fail to parse are silently skipped — this is a "best
+/// effort" reader used by status/query subcommands, not a validation
+/// pass. Returns hexads in filesystem-order (the caller sorts as needed).
+fn load_hexad_dir(dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    use std::io::Read;
+
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut hexads = Vec::new();
+    for entry in fs::read_dir(dir)?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let mut content = String::new();
+        let Ok(file) = fs::File::open(&path) else {
+            continue;
+        };
+        if file
+            .take(HEXAD_FILE_READ_LIMIT)
+            .read_to_string(&mut content)
+            .is_err()
+        {
+            continue;
+        }
+        if let Ok(hexad) = serde_json::from_str::<PanicAttackHexad>(&content) {
+            hexads.push(hexad);
+        }
+    }
+    Ok(hexads)
+}
+
+/// Load every per-finding hexad from `<base_dir>/hexads/findings/`.
+pub fn load_finding_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    load_hexad_dir(&base_dir.join("hexads").join("findings"))
+}
+
+/// Load every campaign-state hexad from `<base_dir>/hexads/campaign/`.
+pub fn load_campaign_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    load_hexad_dir(&base_dir.join("hexads").join("campaign"))
+}
+
+/// Load every aggregate (per-run) hexad from `<base_dir>/hexads/`.
+///
+/// Aggregate hexads live at the top-level `hexads/` directory; per-finding
+/// and per-campaign hexads live in subdirs and are excluded here.
+///
+/// Reserved for S3 query — kept public so the upcoming `query` subcommand
+/// can compose it with the per-finding / per-campaign loaders.
+#[allow(dead_code)]
+pub fn load_aggregate_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    load_hexad_dir(&base_dir.join("hexads"))
 }
 
 /// Persist an assemblyline report to storage (filesystem and/or verisimdb).

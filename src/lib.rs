@@ -26,6 +26,7 @@ pub mod attestation;
 pub mod axial;
 #[cfg(feature = "http")]
 pub mod bridge;
+pub mod campaign;
 pub mod i18n;
 pub mod kanren;
 pub mod mass_panic;

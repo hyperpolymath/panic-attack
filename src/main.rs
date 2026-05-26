@@ -18,6 +18,7 @@ mod attestation;
 mod axial;
 #[cfg(feature = "http")]
 mod bridge;
+mod campaign;
 mod diagnostics;
 mod groove;
 mod i18n;
@@ -743,6 +744,15 @@ enum Commands {
         #[command(subcommand)]
         action: AttestAction,
     },
+
+    /// Campaign: lifecycle tracking for findings (register-pr, dismiss, status).
+    ///
+    /// Operates on the per-finding hexad store written by `assemblyline` when
+    /// `PANIC_ATTACK_STORE_FINDING_HEXADS=1` is set with verisimdb storage.
+    Campaign {
+        #[command(subcommand)]
+        action: CampaignAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -752,6 +762,46 @@ enum AttestAction {
         /// Path to the .attestation.json file
         #[arg(value_name = "FILE")]
         file: PathBuf,
+    },
+}
+
+/// Campaign subcommands for finding-lifecycle tracking (issue #33 S2).
+#[derive(Subcommand)]
+enum CampaignAction {
+    /// Register an open PR against a known finding-id.
+    RegisterPr {
+        /// Finding id (e.g. `finding:demo:src/a.rs:1:UnsafeCode`).
+        #[arg(value_name = "FINDING_ID")]
+        finding_id: String,
+        /// PR URL (e.g. `https://github.com/org/repo/pull/123`).
+        #[arg(value_name = "PR_URL")]
+        pr_url: String,
+        /// VeriSimDB data directory (default: `verisimdb-data`).
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+    },
+
+    /// Mark a finding as dismissed (parked, known-good, out-of-scope).
+    Dismiss {
+        /// Finding id.
+        #[arg(value_name = "FINDING_ID")]
+        finding_id: String,
+        /// Short human-readable reason.
+        #[arg(value_name = "REASON")]
+        reason: String,
+        /// VeriSimDB data directory (default: `verisimdb-data`).
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+    },
+
+    /// Render a Markdown tracker of the current campaign state.
+    Status {
+        /// VeriSimDB data directory (default: `verisimdb-data`).
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+        /// Write the Markdown to a file instead of stdout.
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
     },
 }
 
@@ -2353,6 +2403,53 @@ fn run_main() -> Result<()> {
                 return Ok(());
             }
         },
+
+        Commands::Campaign { action } => {
+            match action {
+                CampaignAction::RegisterPr {
+                    finding_id,
+                    pr_url,
+                    verisimdb_dir,
+                } => {
+                    let path = campaign::register_pr(&finding_id, &pr_url, &verisimdb_dir)?;
+                    qprintln!(
+                        cli.quiet,
+                        "Registered PR {} for {} ({})",
+                        pr_url,
+                        finding_id,
+                        path.display()
+                    );
+                }
+                CampaignAction::Dismiss {
+                    finding_id,
+                    reason,
+                    verisimdb_dir,
+                } => {
+                    let path = campaign::dismiss(&finding_id, &reason, &verisimdb_dir)?;
+                    qprintln!(
+                        cli.quiet,
+                        "Dismissed {} ({}): {}",
+                        finding_id,
+                        reason,
+                        path.display()
+                    );
+                }
+                CampaignAction::Status {
+                    verisimdb_dir,
+                    output,
+                } => {
+                    let md = campaign::status_markdown(&verisimdb_dir)?;
+                    match output {
+                        Some(path) => {
+                            std::fs::write(&path, &md)?;
+                            qprintln!(cli.quiet, "Status written to {}", path.display());
+                        }
+                        None => print!("{}", md),
+                    }
+                }
+            }
+            return Ok(());
+        }
 
         Commands::Temporal { action } => {
             match action {
