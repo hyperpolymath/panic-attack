@@ -1,4 +1,4 @@
-# PROOF-NEEDS.md — panic-attacker
+# PROOF-NEEDS.md — panic-attack
 
 ## Current State
 
@@ -11,7 +11,7 @@
 
 | Proof | File | What it proves |
 |-------|------|---------------|
-| PA1 Pattern detection completeness | `src/abi/PatternCompleteness.idr` | All 47 `Lang` constructors have an analyzer; all 20 `WPCategory` constructors have at least one detector; cross-language checks applied unconditionally to all languages. `completeScanForAll` is the top-level theorem. |
+| PA1 Pattern detection completeness | `src/abi/PatternCompleteness.idr` | All 49 `Lang` constructors have an analyzer; all 20 `WPCategory` constructors have at least one detector; cross-language checks applied unconditionally to all languages. `completeScanForAll` is the top-level theorem. |
 | PA2 Classification soundness | `src/abi/ClassificationSoundness.idr` | Severity (Low/Medium/High/Critical) is totally ordered (`LTE`); `maxSeverity` is commutative and idempotent; numeric ABI encoding preserves the ordering. |
 
 ## What Still Needs Proving

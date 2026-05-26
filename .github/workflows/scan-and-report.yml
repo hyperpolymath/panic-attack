@@ -32,7 +32,7 @@ jobs:
 
       - name: Install panic-attack
         run: |
-          cargo install --git https://github.com/hyperpolymath/panic-attacker --branch main
+          cargo install --git https://github.com/hyperpolymath/panic-attack --branch main
 
       - name: Run scan
         id: scan

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Template: QUICKSTART-DEV.adoc — clone → build → test → PR
-// Replace panic-attacker, {{BUILD_CMD}}, {{TEST_CMD}}, {{LANG_STACK}} with actuals
-= panic-attacker — Quick Start for Developers
+// Replace panic-attack, {{BUILD_CMD}}, {{TEST_CMD}}, {{LANG_STACK}} with actuals
+= panic-attack — Quick Start for Developers
 :toc:
 :toclevels: 2
 
@@ -29,8 +29,8 @@ nix develop
 
 [source,bash]
 ----
-git clone https://github.com/hyperpolymath/panic-attacker.git
-cd panic-attacker
+git clone https://github.com/hyperpolymath/panic-attack.git
+cd panic-attack
 just setup-dev
 ----
 
@@ -52,7 +52,7 @@ just setup-dev
 
 [source]
 ----
-panic-attacker/
+panic-attack/
 ├── src/                  # Source code
 ├── src/abi/              # Idris2 ABI definitions (if applicable)
 ├── ffi/zig/              # Zig FFI bridge (if applicable)
@@ -73,7 +73,7 @@ just build          # Build the project
 just test           # Run tests
 just doctor         # Self-diagnostic
 just lint           # Lint and format
-just panic-scan     # Security scan via panic-attacker
+just panic-scan     # Security scan via panic-attack
 just tour           # Guided tour of the codebase
 ----
 
@@ -107,5 +107,5 @@ Or read `0-AI-MANIFEST.a2ml` and `.claude/CLAUDE.md` directly.
 == Get Help
 
 * **Architecture**: link:EXPLAINME.adoc[EXPLAINME.adoc]
-* **Wiki**: https://github.com/hyperpolymath/panic-attacker/wiki
+* **Wiki**: https://github.com/hyperpolymath/panic-attack/wiki
 * **Report issue**: `just help-me`

@@ -90,11 +90,11 @@ INTEGRATION
 REPO INFRASTRUCTURE
   Justfile Automation               ██████████ 100%    build/test/readiness/lint/install
   .machine_readable/                ██████████ 100%    STATE/ECOSYSTEM/META + directives
-  Test Suite                        ██████████ 100%    282 tests, 0 failures
+  Test Suite                        ██████████ 100%    400+ tests, 0 failures
   Readiness Tests (CRG)             ██████████ 100%    18 tests: D(4) C(10) B(4)
 
 ─────────────────────────────────────────────────────────────────────────────
-OVERALL:                            █████████░  ~98%   v2.3.0 Stable
+OVERALL:                            █████████░  ~98%   v2.5.0 Stable
 ```
 
 ## Key Dependencies

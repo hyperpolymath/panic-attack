@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MPL-2.0
-# stapeln.toml — Layer-based container build for panic-attacker
+# stapeln.toml — Layer-based container build for panic-attack
 #
 # stapeln builds containers as composable layers (German: "to stack").
 # Each layer is independently cacheable, verifiable, and signable.
 
 [metadata]
-name = "panic-attacker"
+name = "panic-attack"
 version = "0.1.0"
 description = "panic attacker"
 author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
@@ -32,7 +32,7 @@ packages = ["rust", "build-base", "openssl-dev"]
 cache = true
 
 [layers.build]
-description = "panic-attacker build"
+description = "panic-attack build"
 extends = "toolchain"
 commands = ["cargo build --release"]
 
@@ -43,7 +43,7 @@ packages = ["ca-certificates", "curl"]
 copy-from = [
     { layer = "build", src = "/app/", dst = "/app/" },
 ]
-entrypoint = ["/app/target/release/panic-attacker"]
+entrypoint = ["/app/target/release/panic-attack"]
 user = "nonroot"
 
 # ── Security ───────────────────────────────────────────────────

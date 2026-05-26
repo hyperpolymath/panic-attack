@@ -1,4 +1,4 @@
-# TEST-NEEDS.md — panic-attacker
+# TEST-NEEDS.md — panic-attack
 
 ## CRG Grade: B — ACHIEVED 2026-04-04
 

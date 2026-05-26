@@ -1,4 +1,4 @@
-# panic-attacker JSON Output Schema
+# panic-attack JSON Output Schema
 
 Version: 1.0 (stable as of v1.0.0)
 

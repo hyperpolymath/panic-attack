@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Template: QUICKSTART-MAINTAINER.adoc — packaging, deploying, and maintaining
-// Replace panic-attacker, panic-attack, rustc, cargo, mold, pkg-config with actuals
+// Replace panic-attack, panic-attack, rustc, cargo, mold, pkg-config with actuals
 = panic-attack — Quick Start for Platform Maintainers
 :toc:
 :toclevels: 2
@@ -125,5 +125,5 @@ Each instance has isolated config, data, and logs.
 
 == Reporting Issues
 
-* Upstream: https://github.com/hyperpolymath/panic-attacker/issues
+* Upstream: https://github.com/hyperpolymath/panic-attack/issues
 * With diagnostic: `just help-me` (pre-fills context)

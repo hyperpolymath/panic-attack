@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
-# panic-attacker configuration file example
+# panic-attack configuration file example
 # Copy to panic-attack.toml and customize
 
 [assail]

@@ -41,7 +41,7 @@ We follow the principle of [Coordinated Vulnerability Disclosure](https://vuls.c
 
 ## Security Measures
 
-panic-attacker implements several security measures:
+panic-attack implements several security measures:
 
 1. **No unsafe code** in the core library (only in specific performance-critical sections with documented justification)
 2. **Dependency auditing** via cargo-audit in CI
@@ -52,7 +52,7 @@ panic-attacker implements several security measures:
 
 ## Self-Testing
 
-panic-attacker is tested against itself ("eating our own dogfood") to verify its own robustness and identify potential security issues in its implementation.
+panic-attack is tested against itself ("eating our own dogfood") to verify its own robustness and identify potential security issues in its implementation.
 
 ## Security Advisories
 

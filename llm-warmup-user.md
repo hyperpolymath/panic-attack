@@ -1,6 +1,6 @@
-# LLM Warmup — panic-attacker (User)
+# LLM Warmup — panic-attack (User)
 
-## What is panic-attacker?
+## What is panic-attack?
 See README.adoc for overview.
 
 ## Key Commands

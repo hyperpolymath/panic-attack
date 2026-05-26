@@ -95,7 +95,7 @@ unsafe {
 **Solutions**:
 - Add suppression comments for build.zig and similar files
 - Distinguish between actual FFI calls and documentation
-- Improve panic-attacker's Zig analyzer to recognize build system patterns
+- Improve panic-attack's Zig analyzer to recognize build system patterns
 
 **Example**:
 ```zig
@@ -126,7 +126,7 @@ const TEST_URLS = [
 **Problem**: Comments mentioning "unsafe" trigger warnings.
 
 **Solutions**:
-- Improve panic-attacker to distinguish code from comments
+- Improve panic-attack to distinguish code from comments
 - Use more specific terminology in documentation
 - Add suppression when documenting security aspects
 
@@ -152,12 +152,12 @@ fn test_no_unsafe_code() {
 ### Phase 2: Code Quality Improvements (NEXT)
 - [ ] Replace unwrap/expect with proper error handling in 5 key files
 - [ ] Convert TODO/FIXME markers to GitHub issues (15 markers)
-- [ ] Improve panic-attacker's comment analysis to reduce false positives
+- [ ] Improve panic-attack's comment analysis to reduce false positives
 
 ### Phase 3: Systematic Refactoring (FUTURE)
 - [ ] Eliminate unwrap/expect from production code paths
 - [ ] Replace remaining TODO/FIXME with proper documentation
-- [ ] Enhance panic-attacker's context awareness for test files
+- [ ] Enhance panic-attack's context awareness for test files
 
 ### Phase 4: Prevention (CONTINUOUS)
 - [ ] Add CI check for new unwrap/expect in production code

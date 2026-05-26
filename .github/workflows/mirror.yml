@@ -12,7 +12,7 @@ jobs:
   mirror:
     name: Mirror repositories
     runs-on: ubuntu-latest
-    if: github.repository == 'hyperpolymath/panic-attacker'
+    if: github.repository == 'hyperpolymath/panic-attack'
     steps:
       - name: Checkout code
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -25,7 +25,7 @@ jobs:
           GITLAB_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
         run: |
           echo "Mirroring to GitLab..."
-          # git push --mirror https://oauth2:${GITLAB_TOKEN}@gitlab.com/hyperpolymath/panic-attacker.git
+          # git push --mirror https://oauth2:${GITLAB_TOKEN}@gitlab.com/hyperpolymath/panic-attack.git
 
       - name: Mirror to Bitbucket
         if: vars.BITBUCKET_MIRROR_ENABLED == 'true'
@@ -33,4 +33,4 @@ jobs:
           BITBUCKET_TOKEN: ${{ secrets.BITBUCKET_MIRROR_TOKEN }}
         run: |
           echo "Mirroring to Bitbucket..."
-          # git push --mirror https://x-token-auth:${BITBUCKET_TOKEN}@bitbucket.org/hyperpolymath/panic-attacker.git
+          # git push --mirror https://x-token-auth:${BITBUCKET_TOKEN}@bitbucket.org/hyperpolymath/panic-attack.git

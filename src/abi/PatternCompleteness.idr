@@ -18,7 +18,7 @@ module PanicAttack.ABI.PatternCompleteness
 %default total
 
 -- ═══════════════════════════════════════════════════════════════════════
--- Language enumeration (mirrors src/types.rs Language enum, 47 variants)
+-- Language enumeration (mirrors src/types.rs Language enum, 49 variants)
 -- ═══════════════════════════════════════════════════════════════════════
 
 ||| All 49 programming languages supported by the scanner.

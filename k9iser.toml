@@ -1,12 +1,12 @@
 # k9iser manifest — wrap configs into self-validating K9 contracts
 # SPDX-License-Identifier: MPL-2.0
 #
-# panic-attacker: universal static analysis and bug signature detection tool
+# panic-attack: universal static analysis and bug signature detection tool
 # for 49 languages. Safety-tier "hunt" because this is a security tool whose
 # own configuration must be above reproach.
 
 [project]
-name = "panic-attacker"
+name = "panic-attack"
 safety-tier = "hunt"  # security tool — highest scrutiny
 
 # ── Cargo.toml — Rust package manifest ───────────────────────────────────────
@@ -19,7 +19,7 @@ must = [
   "package.name == 'panic-attack'",
   "package.edition == '2021'",
   "package.rust-version is set",             # minimum MSRV declared
-  "package.license-file is set",             # LICENSE present (PMPL)
+  "package.license-file is set",             # LICENSE present (MPL-2.0)
   "package.repository is non-empty",
   "profile.release.lto is set",              # LTO enabled for security binary
   "profile.release.codegen-units == 1",      # single CGU for max optimisation
