@@ -11,7 +11,7 @@ Modern software testing often focuses on either:
 2. **Property Testing**: Verification of invariants (QuickCheck, PropTest)
 3. **Static Analysis**: Code inspection without execution (Clippy, CodeQL)
 
-`panic-attacker` fills a different niche: **systematic stress testing combined with logic-based bug detection**.
+`panic-attack` fills a different niche: **systematic stress testing combined with logic-based bug detection**.
 
 ## Core Concepts
 
@@ -268,9 +268,9 @@ Mozart/Oz pioneered **constraint logic programming** with:
 3. **Search**: Automatic exploration of solution spaces
 4. **Concurrency**: First-class concurrent constraints
 
-### Mapping to panic-attacker
+### Mapping to panic-attack
 
-| Mozart/Oz Concept | panic-attacker Implementation |
+| Mozart/Oz Concept | panic-attack Implementation |
 |-------------------|-------------------------------|
 | **Variables** | Program variables and locations |
 | **Constraints** | Temporal ordering, type constraints |
@@ -293,7 +293,7 @@ proc {DetectUAF Facts ?Bugs}
 end
 ```
 
-**panic-attacker style** (Rust):
+**panic-attack style** (Rust):
 ```rust
 fn infer_use_after_free(&self, facts: &HashSet<Fact>) -> Vec<BugSignature> {
     let mut signatures = Vec::new();
@@ -385,7 +385,7 @@ Some rules (like deadlock detection) require quadratic or higher complexity. Opt
 | **AddressSanitizer** | Memory bugs | Runtime instrumentation | Execution |
 | **ThreadSanitizer** | Concurrency bugs | Happens-before analysis | Thread interactions |
 | **Valgrind** | Memory errors | Binary instrumentation | All allocations |
-| **panic-attacker** | **Robustness** | **Multi-axis stress + logic** | **Resource pressure + patterns** |
+| **panic-attack** | **Robustness** | **Multi-axis stress + logic** | **Resource pressure + patterns** |
 
 **Key differentiator**: We test under resource pressure, not just correctness.
 
@@ -396,7 +396,7 @@ Some rules (like deadlock detection) require quadratic or higher complexity. Opt
 - **Correctness**: "Does it work?"
 - **Robustness**: "Does it work under adversarial conditions?"
 
-Many programs are correct under normal conditions but fail catastrophically under stress. panic-attacker targets this gap.
+Many programs are correct under normal conditions but fail catastrophically under stress. panic-attack targets this gap.
 
 ### Resource-Aware Testing
 
@@ -406,7 +406,7 @@ Traditional testing assumes infinite resources. Real systems have:
 - Bounded I/O bandwidth
 - Contended locks
 
-panic-attacker respects these limits and exploits them.
+panic-attack respects these limits and exploits them.
 
 ### Logic as Specification
 
@@ -421,7 +421,7 @@ This is more principled than ad-hoc pattern matching.
 ## Extended Design Vision (2026-02-07)
 
 The following concepts emerged from design exploration and represent the
-longer-term trajectory of panic-attacker.
+longer-term trajectory of panic-attack.
 
 ### Constraint Sets (Composable Stress Profiles)
 
@@ -472,7 +472,7 @@ rest of the system from cascading failure, like an electrical fuse.
 - Backpressure (Reactive Streams) -- single pipeline only
 
 **What doesn't exist yet**: A way to DESIGN fuse placement based on resource
-flow modelling. panic-attacker reveals where fuses are needed by finding where
+flow modelling. panic-attack reveals where fuses are needed by finding where
 things actually break.
 
 ```
@@ -498,7 +498,7 @@ things actually break.
                     └────────────────┘
 ```
 
-panic-attacker's role:
+panic-attack's role:
 1. **Where fuses are needed** (which resources exhaust first)
 2. **What thresholds to set** (at what level does degradation begin)
 3. **Whether fuses work** (does the system actually degrade gracefully)
@@ -542,20 +542,20 @@ resource_policy:
   never_shed: [1]
 ```
 
-panic-attacker tests these policies by simulating pressure and verifying
+panic-attack tests these policies by simulating pressure and verifying
 shedding happens correctly.
 
 ### eclexia Integration
 
 eclexia's resource-tracking creates a natural integration:
 1. eclexia programs declare resource expectations
-2. panic-attacker verifies those declarations under stress
+2. panic-attack verifies those declarations under stress
 3. eclexia programs can BE software fuses (adaptive resource response)
-4. panic-attacker profiles eclexia as a demonstration of its value
+4. panic-attack profiles eclexia as a demonstration of its value
 
 ### ML Extensions
 
-Every panic-attacker run generates labelled training data:
+Every panic-attack run generates labelled training data:
 - Input: program type, language, frameworks, attack axes, intensity
 - Output: crash/survive, signatures detected, resource curves
 
@@ -567,7 +567,7 @@ Over time, this enables:
 
 ## Product Boundaries
 
-### Definitely panic-attacker (this repo)
+### Definitely panic-attack (this repo)
 - Assail static analysis
 - Multi-axis attack execution
 - Signature detection (Datalog-style)

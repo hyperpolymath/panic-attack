@@ -13,7 +13,7 @@
 
 | Component           | Grade | Release Stage      | Evidence Summary                                                    |
 |---------------------|-------|--------------------|---------------------------------------------------------------------|
-| `assail`            | B     | Beta               | Dogfooded on self; 22 findings. Tested on 283+ repos (diverse: Rust, Elixir, Gleam, Julia, ReScript, Idris2, Zig, OCaml, Ada, Haskell, 007-lang, Coq) via assemblyline and estate-wide CI. |
+| `assail`            | B     | Beta               | Dogfooded on self; 22 findings. Tested on 283+ repos (diverse: Rust, Elixir, Gleam, Julia, ReScript, Idris2, Zig, OCaml, Ada, Haskell, 007-lang, Coq, Isabelle) via assemblyline and estate-wide CI. |
 | `attack`            | D     | Alpha              | Works on example binary (cpu axis). Other axes not tested on diverse targets. |
 | `assault`           | D     | Alpha              | Works on self + example binary. Full multi-axis only tested on one target. |
 | `ambush`            | D     | Alpha              | Works with and without timeline. Timeline events skip when target exits fast (correct behaviour). |

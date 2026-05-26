@@ -26,7 +26,7 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 * Pre-commit hook integration (`panic-attack assail` before every commit)
 * Component Readiness Grades: D (Alpha) through B (RC) verified
 
-== v2.1.0 -- Logic Engine Refinement (Next)
+== v2.1.0 -- Logic Engine Refinement
 
 * [x] miniKanren v2.0.0 core (Term, Substitution, unification, FactDB)
 * [x] Taint analysis: source-to-sink tracking

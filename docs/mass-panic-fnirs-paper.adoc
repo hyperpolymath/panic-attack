@@ -438,7 +438,7 @@ between development sessions, supporting data-driven software health management.
 
 The full implementation is available under the MPL-2.0 license
 (MPL-2.0 as legal fallback) at:
-https://github.com/hyperpolymath/panic-attacker/tree/main/chapel/
+https://github.com/hyperpolymath/panic-attack/tree/main/chapel/
 
 [bibliography]
 == References

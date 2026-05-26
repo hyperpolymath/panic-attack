@@ -327,7 +327,7 @@ Update `007/docs/CONTRIBUTING.md` with:
 
 ### 3. Panic-Attacker Repository
 
-Update `panic-attacker/docs/hypatia-integration.md` with:
+Update `panic-attack/docs/hypatia-integration.md` with:
 - Rule mapping guide
 - Context detection details
 - GitBot configuration

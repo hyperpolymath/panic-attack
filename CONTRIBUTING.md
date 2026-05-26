@@ -52,8 +52,8 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 ### Building
 
 ```bash
-git clone https://github.com/hyperpolymath/panic-attacker.git
-cd panic-attacker
+git clone https://github.com/hyperpolymath/panic-attack.git
+cd panic-attack
 cargo build
 ```
 
@@ -143,7 +143,7 @@ Closes #42
 ## Project Structure
 
 ```
-panic-attacker/
+panic-attack/
 ├── src/
 │   ├── main.rs              # CLI entry point (clap) — 20 subcommands
 │   ├── lib.rs               # Library API

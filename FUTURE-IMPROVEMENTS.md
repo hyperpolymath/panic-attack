@@ -331,7 +331,7 @@ CI integration requires external scripting to interpret results.
 
 **Proposed solution:**
 
-- Add a `[thresholds]` section to `panic-attacker.toml`:
+- Add a `[thresholds]` section to `panic-attack.toml`:
 
   ```toml
   [thresholds]
@@ -377,7 +377,7 @@ patterns) require deeper static analysis capabilities. They should be
 planned for post-v1.0 milestones.
 
 Improvement 10 (configurable thresholds) extends the existing
-`panic-attacker.toml` configuration and is straightforward to implement
+`panic-attack.toml` configuration and is straightforward to implement
 once the metrics it depends on (from improvements 1-4) are accurate.
 
 ### Recommended Implementation Order

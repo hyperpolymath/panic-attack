@@ -8,7 +8,7 @@
 ## Raw Design Thinking (2026-02-07)
 
 This document captures the full stream-of-consciousness design exploration
-that led to panic-attacker. These are ideas at various stages of maturity --
+that led to panic-attack. These are ideas at various stages of maturity --
 some immediately actionable, some long-term visions, some may turn out to be
 separate products entirely. They're preserved here as a seedbed for future
 development.
@@ -130,7 +130,7 @@ resource flow modelling. Nobody has built a system for designing safety
 topologies -- placing fuses deliberately based on how resources actually
 flow through a system.
 
-panic-attacker reveals where fuses are needed by finding where things
+panic-attack reveals where fuses are needed by finding where things
 actually break. Then you can build programs that operate as fuses
 themselves, cutting out before other parts of the system are damaged --
 like a surge protector for software.
@@ -138,12 +138,12 @@ like a surge protector for software.
 **Connection to eclexia:** eclexia's resource-tracking makes programs
 that are inherently fuse-aware. An eclexia program monitors its own
 resource consumption as a first-class language feature and can respond
-adaptively. panic-attacker proves whether that response actually works.
+adaptively. panic-attack proves whether that response actually works.
 
 ### 6. The Cisco Analogy (Resource Topology Simulator)
 
 Cisco Packet Tracer lets you design network topologies, simulate traffic,
-and test failure scenarios. panic-attacker could evolve into the same
+and test failure scenarios. panic-attack could evolve into the same
 thing for **resource topologies**:
 
 ```
@@ -188,7 +188,7 @@ priority_3_shed_first:
   - preview-generator
 ```
 
-panic-attacker tests whether shedding works:
+panic-attack tests whether shedding works:
 1. Simulate resource pressure
 2. Verify priority 3 sheds first
 3. Verify priority 1 maintains performance
@@ -196,7 +196,7 @@ panic-attacker tests whether shedding works:
 
 ### 8. ML and Pattern Recognition
 
-Every panic-attacker run generates labelled training data. Over time:
+Every panic-attack run generates labelled training data. Over time:
 
 1. **Bug classification** -- "This crash is 87% similar to known
    use-after-free patterns"
@@ -209,7 +209,7 @@ Every panic-attacker run generates labelled training data. Over time:
 
 ## Product Boundaries: One Tool or Many?
 
-### Definitely panic-attacker (this repo)
+### Definitely panic-attack (this repo)
 - Assail static analysis
 - Multi-axis attack execution
 - Signature detection (Datalog-style)
@@ -229,7 +229,7 @@ Every panic-attacker run generates labelled training data. Over time:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                panic-attacker (core)                     │
+│                panic-attack (core)                     │
 │  Assail │ Attack │ Signatures │ Profiles │ Reports       │
 └────┬────────┬────────┬────────────┬──────────┬──────────┘
      │        │        │            │          │
@@ -252,7 +252,7 @@ Every panic-attacker run generates labelled training data. Over time:
 
 ## The Name
 
-"panic-attacker" was chosen because:
+"panic-attack" was chosen because:
 1. It attacks programs to make them panic
 2. It identifies panic-worthy issues before production
 3. It's easy to spell (unlike "claustrophobia")
@@ -268,7 +268,7 @@ But the constraint idea lives on in the "constraint sets" feature.
 
 ### The Physical World Connection
 
-If we integrate panic-attacker's constraint sets with **soft systems
+If we integrate panic-attack's constraint sets with **soft systems
 methodology** (Checkland) and **set theory**, we arrive at something
 genuinely novel: modelling real-world sensor/actuator systems using the
 same constraint-based stress testing framework.
@@ -307,20 +307,20 @@ Invariant: ∀s ∈ CRITICAL, ∃i : FUSE_i(s) ∈ SAFE
 the system to a safe state."
 ```
 
-panic-attacker tests whether this invariant actually holds.
+panic-attack tests whether this invariant actually holds.
 
 ### Soft Systems Methodology (SSM)
 
 Peter Checkland's SSM provides a framework for analysing "messy" real-world
-situations. Applied to panic-attacker:
+situations. Applied to panic-attack:
 
 - **Root definitions** -- What is the system trying to do?
 - **CATWOE analysis** -- Customers, Actors, Transformation, Weltanschauung,
   Owner, Environment
 - **Conceptual models** -- Ideal system behaviour under stress
-- **Comparison** -- Compare ideal with actual (panic-attacker results)
+- **Comparison** -- Compare ideal with actual (panic-attack results)
 
-This is NOT immediate work. But it places panic-attacker in a trajectory
+This is NOT immediate work. But it places panic-attack in a trajectory
 toward being useful for:
 
 1. **Industrial control systems** -- Test PLCs and SCADA-like setups
@@ -406,7 +406,7 @@ the same rigour as physical/chemical engineering. You design fuses the
 way you'd design pressure relief valves or thermal cutoffs -- with
 equations, not if-statements.
 
-panic-attacker's role becomes testing whether these engineered fuses
+panic-attack's role becomes testing whether these engineered fuses
 actually work under real stress, just as you'd test a physical safety
 valve under real pressure.
 
@@ -460,11 +460,11 @@ The same eclexia program could model:
 change, but the constraint logic, the fuse behaviour, and the testing
 methodology remain the same.
 
-This makes panic-attacker the **universal test rig** for any constraint-
+This makes panic-attack the **universal test rig** for any constraint-
 based safety system, regardless of whether it protects software resources,
 models physical systems, or operates in purely abstract mathematical
 spaces. eclexia provides the language to express these constraints with
-engineering precision, and panic-attacker proves they hold under stress.
+engineering precision, and panic-attack proves they hold under stress.
 
 ---
 

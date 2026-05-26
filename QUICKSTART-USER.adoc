@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // Template: QUICKSTART-USER.adoc — 5-minute path to working software
-// Replace panic-attacker, Panic Attacker — See README.adoc for details., just run, Panic Attacker started successfully. with actuals
-= panic-attacker — Quick Start for Users
+// Replace panic-attack, Panic Attacker — See README.adoc for details., just run, Panic Attacker started successfully. with actuals
+= panic-attack — Quick Start for Users
 :toc:
 :toclevels: 2
 
-== What is panic-attacker?
+== What is panic-attack?
 
 Panic Attacker — See README.adoc for details.
 
@@ -37,8 +37,8 @@ Before you begin, ensure you have:
 [source,bash]
 ----
 # Clone and set up
-git clone https://github.com/hyperpolymath/panic-attacker.git
-cd panic-attacker
+git clone https://github.com/hyperpolymath/panic-attack.git
+cd panic-attack
 just setup
 ----
 
@@ -61,7 +61,7 @@ just stapeln-run
 
 [source,bash]
 ----
-just install --portable --prefix=./panic-attacker-portable
+just install --portable --prefix=./panic-attack-portable
 ----
 
 == First Run
@@ -102,7 +102,7 @@ just heal
 * **In-app**: `just run --help`
 * **Guided tour**: `just tour`
 * **Report a problem**: `just help-me` (pre-fills diagnostic context)
-* **Wiki**: https://github.com/hyperpolymath/panic-attacker/wiki
+* **Wiki**: https://github.com/hyperpolymath/panic-attack/wiki
 
 == Uninstall
 
