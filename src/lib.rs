@@ -35,4 +35,5 @@ pub mod panll;
 pub mod report;
 pub mod signatures;
 pub mod storage;
+pub mod sweep_tracker;
 pub mod types;

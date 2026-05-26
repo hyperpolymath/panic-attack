@@ -30,6 +30,7 @@ mod panll;
 mod report;
 mod signatures;
 mod storage;
+mod sweep_tracker;
 mod types;
 
 extern crate walkdir;
@@ -752,6 +753,30 @@ enum Commands {
     Campaign {
         #[command(subcommand)]
         action: CampaignAction,
+    },
+
+    /// Sweep-tracker: render an issue-#32-style estate-sweep Markdown report.
+    ///
+    /// Joins per-finding hexads (issue #33 S1) with campaign-state hexads
+    /// (issue #33 S2) and groups them by repo and/or category. Distinct
+    /// from `campaign status`: that is a flat per-finding table; this is
+    /// a hierarchical sweep checklist.
+    SweepTracker {
+        /// VeriSimDB data directory (default: `verisimdb-data`).
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+
+        /// Write the Markdown to a file instead of stdout.
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+
+        /// Emit only the "By repo" section.
+        #[arg(long, group = "sweep_shape", default_value_t = false)]
+        by_repo: bool,
+
+        /// Emit only the "By category" section.
+        #[arg(long, group = "sweep_shape", default_value_t = false)]
+        by_category: bool,
     },
 }
 
@@ -2447,6 +2472,28 @@ fn run_main() -> Result<()> {
                         None => print!("{}", md),
                     }
                 }
+            }
+            return Ok(());
+        }
+
+        Commands::SweepTracker {
+            verisimdb_dir,
+            output,
+            by_repo,
+            by_category,
+        } => {
+            let shape = match (by_repo, by_category) {
+                (true, false) => sweep_tracker::ReportShape::ByRepo,
+                (false, true) => sweep_tracker::ReportShape::ByCategory,
+                _ => sweep_tracker::ReportShape::Both,
+            };
+            let md = sweep_tracker::render_report(&verisimdb_dir, shape)?;
+            match output {
+                Some(path) => {
+                    std::fs::write(&path, &md)?;
+                    qprintln!(cli.quiet, "Sweep tracker written to {}", path.display());
+                }
+                None => print!("{}", md),
             }
             return Ok(());
         }
