@@ -4729,15 +4729,26 @@ impl Analyzer {
         file_path: &str,
     ) -> Result<()> {
         // HTTP (insecure) URLs - should be HTTPS
-        // Count http:// URLs that are NOT localhost/127.0.0.1 (those are fine)
+        // Count http:// URLs that are NOT localhost/127.0.0.1 (those are fine).
+        //
+        // Strip C-family line comments first: `/// example: http://example.com`
+        // in a doc-comment is illustrative prose, not a configured endpoint,
+        // and was the source of repeated FPs on JSON-LD `@type` namespace URIs
+        // documented in /// blocks. The same heuristic naturally handles JS,
+        // Java, C, C++, Go — every language whose comment syntax is `//`.
+        // Python `#`, Lisp `;`, etc. are not currently de-noised; the
+        // cross-language detector is best-effort, and a follow-up can add
+        // language-aware stripping per file_path extension.
+        let scan_content_owned = strip_c_family_line_comments(content);
+        let scan_content: &str = &scan_content_owned;
         let http_re = RE_HTTP_URL
             .get_or_init(|| Regex::new(r#"http://[a-zA-Z0-9]"#).expect("static regex is valid"));
         let http_localhost_re = RE_HTTP_LOCALHOST.get_or_init(|| {
             Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#)
                 .expect("static regex is valid")
         });
-        let http_total = http_re.find_iter(content).count();
-        let http_local = http_localhost_re.find_iter(content).count();
+        let http_total = http_re.find_iter(scan_content).count();
+        let http_local = http_localhost_re.find_iter(scan_content).count();
         let http_count = http_total.saturating_sub(http_local);
         if http_count > 0 {
             weak_points.push(WeakPoint {
@@ -5531,6 +5542,57 @@ fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &
     out
 }
 
+/// Strip C-family line comments (`//`, `///`, `//!`) from each line, leaving
+/// the rest of the source intact. String literals are detected so a `//`
+/// inside `"http://example.com"` is NOT treated as a comment.
+///
+/// Used by `analyze_cross_language` to keep URL / secret regexes from firing
+/// on illustrative code in doc-comments. Best-effort: handles `"..."` strings
+/// with `\\` escapes. Raw-string literals (`r#"..."#`) and block comments
+/// (`/* ... */`) are NOT consumed here — adding them would broaden semantics
+/// and is left for a follow-up if FP evidence warrants it.
+fn strip_c_family_line_comments(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    for (i, line) in content.lines().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(strip_c_family_line_comment(line));
+    }
+    out
+}
+
+fn strip_c_family_line_comment(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut in_string = false;
+    let mut escape = false;
+    let mut idx = 0;
+    while idx < bytes.len() {
+        let b = bytes[idx];
+        if escape {
+            escape = false;
+            idx += 1;
+            continue;
+        }
+        if in_string {
+            if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            idx += 1;
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'/' if idx + 1 < bytes.len() && bytes[idx + 1] == b'/' => return &line[..idx],
+            _ => {}
+        }
+        idx += 1;
+    }
+    line
+}
+
 /// Strip Isabelle prose constructs that are documentation, not proof code:
 ///
 /// 1. `@{text ...}` antiquotations — used inside prose blocks AND inside
@@ -5868,6 +5930,73 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    // ---------------------------------------------------------------
+    // 0a. C-family line-comment stripping (cross-lang URL/secret FPs)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn strip_c_family_line_comment_handles_basic_double_slash() {
+        let line = "let x = 1;  // a comment";
+        assert_eq!(strip_c_family_line_comment(line), "let x = 1;  ");
+    }
+
+    #[test]
+    fn strip_c_family_line_comment_handles_doc_comments() {
+        // URLs use http://localhost so panic-attack's own InsecureProtocol
+        // detector (which scans this file during self-scan) treats them as
+        // exempt — otherwise the regression test plants a finding in its
+        // own source. Same exemption rule used in production for dev
+        // endpoints.
+        for prefix in ["///", "//!"] {
+            let line = format!("{prefix} example: http://localhost/example");
+            assert_eq!(strip_c_family_line_comment(&line), "");
+        }
+    }
+
+    #[test]
+    fn strip_c_family_line_comment_preserves_urls_in_strings() {
+        // Real string literals containing // must NOT be treated as comments.
+        let line = r#"let url = "http://localhost/path";"#;
+        let kept = strip_c_family_line_comment(line);
+        assert!(
+            kept.contains("http://localhost"),
+            "string-literal URL was wrongly stripped: {kept:?}"
+        );
+    }
+
+    #[test]
+    fn strip_c_family_line_comment_handles_escaped_quote_in_string() {
+        let line = r#"let s = "she said \"hi\"";  // trailing"#;
+        let kept = strip_c_family_line_comment(line);
+        assert!(kept.contains(r#"\"hi\""#));
+        assert!(!kept.contains("trailing"));
+    }
+
+    #[test]
+    fn strip_c_family_line_comments_doc_comment_url_fp_gone() {
+        // Self-scan repro: doc-comment example URL must not feed the
+        // InsecureProtocol detector.
+        let src = "/// Endpoint: http://localhost/X\nfn foo() {}\n";
+        let stripped = strip_c_family_line_comments(src);
+        assert!(!stripped.contains("http://"));
+        assert!(stripped.contains("fn foo"));
+    }
+
+    #[test]
+    fn strip_c_family_line_comments_keeps_jsonld_type_string() {
+        // The second self-scan FP: an http:// URL inside a JSON literal
+        // (NOT a comment) must STILL be present after stripping. The
+        // JSON-LD-identifier-vs-endpoint distinction is left to the
+        // user-classification registry; the comment stripper must not
+        // accidentally hide real string-literal URLs.
+        let src = r#"json!({"types": ["http://localhost/X"]});"#;
+        let stripped = strip_c_family_line_comments(src);
+        assert!(
+            stripped.contains("http://"),
+            "string-literal URL was wrongly stripped: {stripped:?}"
+        );
+    }
 
     // ---------------------------------------------------------------
     // 0. Isabelle prose-stripping (regression for #43 false positives)
