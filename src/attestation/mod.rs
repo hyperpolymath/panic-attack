@@ -67,8 +67,19 @@ pub enum VerifyResult {
 /// with a list of failure reasons otherwise.
 pub fn verify_attestation_file(path: &std::path::Path) -> anyhow::Result<VerifyResult> {
     use sha2::{Digest, Sha256};
+    use std::io::Read;
 
-    let content = std::fs::read_to_string(path)
+    // Attestation envelopes are JSON. They embed three hashes plus a small
+    // signature; legitimate envelopes are well under 1 MiB. Capping at
+    // 16 MiB stops a malicious or accidental input from exhausting memory
+    // before verification can even begin.
+    const ATTESTATION_FILE_READ_LIMIT: u64 = 16 * 1024 * 1024;
+
+    let mut content = String::new();
+    std::fs::File::open(path)
+        .map_err(|e| anyhow::anyhow!("opening {}: {}", path.display(), e))?
+        .take(ATTESTATION_FILE_READ_LIMIT)
+        .read_to_string(&mut content)
         .map_err(|e| anyhow::anyhow!("reading {}: {}", path.display(), e))?;
 
     let envelope: A2mlEnvelope = serde_json::from_str(&content)

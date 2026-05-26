@@ -115,9 +115,20 @@ impl FingerprintCache {
         Ok(())
     }
 
-    /// Load fingerprint cache from a standalone cache JSON file
+    /// Load fingerprint cache from a standalone cache JSON file.
+    ///
+    /// Bounded at 256 MiB — fingerprint caches grow with the size of the
+    /// estate being scanned, but even an aggressive multi-thousand-repo
+    /// rollup should land well under this cap. A larger file is almost
+    /// certainly corrupted or hostile.
     pub fn load_cache_file(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path)?;
+        use std::io::Read;
+        const CACHE_FILE_READ_LIMIT: u64 = 256 * 1024 * 1024;
+
+        let mut content = String::new();
+        fs::File::open(path)?
+            .take(CACHE_FILE_READ_LIMIT)
+            .read_to_string(&mut content)?;
         let cache: Self = serde_json::from_str(&content)?;
         Ok(cache)
     }
