@@ -19,15 +19,18 @@ repos:
         args: ['--maxkb=1024']
 
   # --- A2ML manifest validation ---
+  # SHA-pinned (neither hook repo cuts tags). Bump by running
+  # `gh api repos/hyperpolymath/a2ml-pre-commit/commits/main --jq .sha`
+  # (and the k9 equivalent) and replacing the rev when a refresh is needed.
   - repo: https://github.com/hyperpolymath/a2ml-pre-commit
-    rev: main
+    rev: cee7b74f1b9c3da521e9d05999552fa4d03b8b28  # main @ 2026-05-22
     hooks:
       - id: validate-a2ml
         name: Validate A2ML manifests
 
   # --- K9 contract validation ---
   - repo: https://github.com/hyperpolymath/k9-pre-commit
-    rev: main
+    rev: 18bcd863af84d9dea24e14fae5c1f6afa10f6866  # main @ 2026-05-22
     hooks:
       - id: validate-k9
         name: Validate K9 contracts
