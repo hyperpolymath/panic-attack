@@ -198,7 +198,7 @@ pub fn build_image(report: &AssemblylineReport) -> SystemImage {
                 .into_iter()
                 .map(|(name, count)| CategoryCount { name, count })
                 .collect();
-            cats.sort_by(|a, b| b.count.cmp(&a.count));
+            cats.sort_by_key(|c| std::cmp::Reverse(c.count));
             cats
         } else {
             Vec::new()

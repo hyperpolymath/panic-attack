@@ -3966,7 +3966,7 @@ impl Analyzer {
 
             // Detect function definitions
             if line.trim().starts_with("fn ") && !line.trim().starts_with("fn test") {
-                if let Some(func_name) = line.trim().split_whitespace().nth(1) {
+                if let Some(func_name) = line.split_whitespace().nth(1) {
                     let func_name = func_name.split('(').next().unwrap_or(func_name);
                     current_function = func_name.to_string();
                     function_calls
@@ -5174,12 +5174,11 @@ impl Analyzer {
                     }
                 }
 
-                Language::Erlang => {
-                    if content.contains("-behaviour(gen_server)")
-                        || content.contains("-behaviour(supervisor)")
-                    {
-                        frameworks.insert(Framework::OTP);
-                    }
+                Language::Erlang
+                    if (content.contains("-behaviour(gen_server)")
+                        || content.contains("-behaviour(supervisor)")) =>
+                {
+                    frameworks.insert(Framework::OTP);
                 }
 
                 Language::Go => {
@@ -6007,7 +6006,7 @@ func main() {
                     && wp
                         .location
                         .as_deref()
-                        .map_or(false, |loc| loc.contains("node_modules"))
+                        .is_some_and(|loc| loc.contains("node_modules"))
             })
             .collect();
 

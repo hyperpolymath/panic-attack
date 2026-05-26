@@ -90,6 +90,19 @@ jobs:
         with:
           path: '.'
           strict: 'false'
+          # Preserves the action's default carve-outs and adds generated/ —
+          # k9iser output in generated/ uses a scaffold dialect that lacks
+          # the K9! magic + pedigree block the validator requires. Track the
+          # generator fix in the k9iser repo, not here.
+          paths-ignore: |
+            vendor/
+            vendored/
+            verified-container-spec/
+            .audittraining/
+            integration/fixtures/
+            test/fixtures/
+            tests/fixtures/
+            generated/
 
       - name: Write summary
         run: |

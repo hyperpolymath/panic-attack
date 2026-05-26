@@ -134,7 +134,7 @@ fn prop_kanren_self_unification() {
     let subst = Substitution::new();
 
     // If unification works correctly, these atoms should unify
-    if let Some(_) = subst.unify(&term1, &term2) {
+    if subst.unify(&term1, &term2).is_some() {
         // Success: atoms unify correctly
         assert_eq!(term1, term2);
     }
@@ -257,7 +257,7 @@ fn prop_report_statistics_consistency() {
 /// Property: Weak point list should not contain duplicates by location
 #[test]
 fn prop_no_duplicate_weak_points_at_same_location() {
-    let points = vec![
+    let points = [
         WeakPoint {
             category: WeakPointCategory::UnsafeCode,
             severity: Severity::High,
@@ -321,6 +321,7 @@ fn prop_long_file_names() {
 #[test]
 fn prop_unicode_content_handling() {
     let unicode_content = "fn test() { // 你好世界 🦀 }\n";
-    // Should not panic on unicode
-    assert!(unicode_content.len() > 0);
+    // Should not panic when iterating chars across multi-byte boundaries.
+    let char_count = unicode_content.chars().count();
+    assert!(char_count > 0);
 }

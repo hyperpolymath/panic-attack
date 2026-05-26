@@ -432,7 +432,7 @@ pub fn run_with_cache(
         .count();
 
     // Sort by weak point count descending (riskiest repos first)
-    results.sort_by(|a, b| b.weak_point_count.cmp(&a.weak_point_count));
+    results.sort_by_key(|r| std::cmp::Reverse(r.weak_point_count));
 
     // Apply filters
     if config.findings_only {

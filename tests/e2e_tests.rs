@@ -116,35 +116,31 @@ fn e2e_scan_vulnerable_examples() {
 // ============================================================================
 
 /// E2E test: Scan single Python file
+///
+/// The fixture is written to a tempdir at test time so no `.py` source
+/// is committed to the tree — the estate-wide Python ban is governance-
+/// enforced (see .github/workflows/governance.yml), and a committed
+/// `.py` fixture would fail that gate even though its purpose here is
+/// to exercise Python-pattern detection.
 #[test]
 fn e2e_scan_python_file() {
-    let py_file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/example.py");
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let py_file = tmp.path().join("example.py");
+    std::fs::write(
+        &py_file,
+        "import pickle\n\
+         import subprocess\n\
+         \n\
+         def unsafe_deserialization(data):\n    \
+             return pickle.loads(data)  # Unsafe!\n\
+         \n\
+         def command_injection(user_input):\n    \
+             subprocess.call(\"echo \" + user_input, shell=True)  # Unsafe!\n",
+    )
+    .expect("write python fixture");
 
-    // Create temp Python file if it doesn't exist
-    if !py_file.exists() {
-        use std::fs;
-        let _ = fs::create_dir_all(py_file.parent().unwrap_or(std::path::Path::new(".")));
-        let _ = fs::write(
-            &py_file,
-            r#"
-import pickle
-import subprocess
-
-def unsafe_deserialization(data):
-    return pickle.loads(data)  # Unsafe!
-
-def command_injection(user_input):
-    subprocess.call("echo " + user_input, shell=True)  # Unsafe!
-"#,
-        );
-    }
-
-    if py_file.exists() {
-        let report = assail::analyze(&py_file).expect("Python analysis should succeed");
-
-        assert_eq!(report.language, Language::Python);
-        // Should detect unsafe patterns in Python code
-    }
+    let report = assail::analyze(&py_file).expect("Python analysis should succeed");
+    assert_eq!(report.language, Language::Python);
 }
 
 // ============================================================================

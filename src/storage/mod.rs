@@ -451,7 +451,7 @@ pub fn push_hexad_http(hexad: &PanicAttackHexad, gateway_url: &str) -> Result<St
     let status = response.status().as_u16();
     let body = read_body(response);
 
-    if status >= 200 && status < 300 {
+    if (200..300).contains(&status) {
         Ok(body)
     } else {
         Err(anyhow!("VeriSimDB returned {}: {}", status, body))
@@ -580,16 +580,16 @@ pub fn push_hexad_http_with_retry(hexad: &PanicAttackHexad, gateway_url: &str) -
         std::time::Duration::from_secs(2),
         std::time::Duration::from_secs(4),
     ];
-    let max_attempts: usize = 3;
+    let max_attempts = delays.len();
     let mut last_err: Option<anyhow::Error> = None;
 
-    for attempt in 0..max_attempts {
+    for (attempt, delay) in delays.iter().enumerate() {
         match push_hexad_http(hexad, gateway_url) {
             Ok(body) => return Ok(body),
             Err(e) => {
                 last_err = Some(e);
                 if attempt < max_attempts - 1 {
-                    std::thread::sleep(delays[attempt]);
+                    std::thread::sleep(*delay);
                 }
             }
         }
@@ -632,7 +632,7 @@ pub fn push_hexads_batch(hexads: &[PanicAttackHexad], gateway_url: &str) -> Resu
                     results.push(body);
                 }
                 Ok(results)
-            } else if status >= 200 && status < 300 {
+            } else if (200..300).contains(&status) {
                 Ok(vec![read_body(response)])
             } else {
                 let body = read_body(response);
@@ -669,7 +669,7 @@ pub fn query_hexads(gateway_url: &str, limit: usize) -> Result<Vec<PanicAttackHe
     let status = response.status().as_u16();
     let body = read_body(response);
 
-    if status >= 200 && status < 300 {
+    if (200..300).contains(&status) {
         let hexads: Vec<PanicAttackHexad> = serde_json::from_str(&body)
             .map_err(|e| anyhow!("Failed to parse VeriSimDB response: {}", e))?;
         Ok(hexads)
@@ -708,7 +708,7 @@ pub fn check_gateway(gateway_url: &str) -> bool {
     let is_healthy = match builder.call() {
         Ok(resp) => {
             let s = resp.status().as_u16();
-            s >= 200 && s < 300
+            (200..300).contains(&s)
         }
         Err(_) => false,
     };

@@ -22,9 +22,9 @@
 //! - **Schema version sentinel** (all consumers):
 //!   reads `schema_version` to detect incompatible changes
 
-use panic_attack::abduct::{self, AbductReport};
-use panic_attack::amuck::{self, AmuckReport};
-use panic_attack::axial::{self, AxialReport};
+use panic_attack::abduct::AbductReport;
+use panic_attack::amuck::AmuckReport;
+use panic_attack::axial::AxialReport;
 use panic_attack::types::*;
 use serde_json::Value;
 
