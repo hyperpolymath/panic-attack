@@ -23,9 +23,12 @@ module PanicAttack.ABI.PatternCompleteness
 
 ||| All 49 programming languages supported by the scanner.
 ||| This MUST stay in sync with src/types.rs Language enum.
+||| Note: Cpp is the C/C++ unified analyzer (analyze_c_cpp dispatches
+||| on .c / .cpp / .h / .hpp / .cc / .hh — there is no separate C
+||| constructor in the Rust enum).
 public export
 data Lang
-  = Rust | C | Cpp | Go | Java | Python | JavaScript | Ruby
+  = Rust | Cpp | Go | Java | Python | JavaScript | Ruby
   -- BEAM family
   | Elixir | Erlang | Gleam
   -- ML family
@@ -44,6 +47,8 @@ data Lang
   | Nickel | Nix
   -- Scripting / data
   | Shell | Julia | Lua
+  -- HPC / parallel
+  | Chapel
   -- Nextgen custom DSLs
   | WokeLang | Eclexia | MyLang | JuliaTheViper | Oblibeny
   | Anvomidav | AffineScript | Ephapax | BetLang | ErrorLang
@@ -70,7 +75,6 @@ data HasAnalyzer : Lang -> Type where
 public export
 analyzerFor : (lang : Lang) -> HasAnalyzer lang
 analyzerFor Rust          = SpecificAnalyzer
-analyzerFor C             = SpecificAnalyzer
 analyzerFor Cpp           = SpecificAnalyzer
 analyzerFor Go            = SpecificAnalyzer
 analyzerFor Java          = SpecificAnalyzer
@@ -106,6 +110,7 @@ analyzerFor Nix           = SpecificAnalyzer
 analyzerFor Shell         = SpecificAnalyzer
 analyzerFor Julia         = SpecificAnalyzer
 analyzerFor Lua           = SpecificAnalyzer
+analyzerFor Chapel        = SpecificAnalyzer
 analyzerFor WokeLang      = SpecificAnalyzer
 analyzerFor Eclexia       = SpecificAnalyzer
 analyzerFor MyLang        = SpecificAnalyzer
@@ -206,24 +211,24 @@ data HasDetector : WPCategory -> Type where
 ||| matching code in analyzer.rs.
 public export
 detectorsFor : (cat : WPCategory) -> HasDetector cat
-detectorsFor UncheckedAllocation  = DetectedBy [C, Cpp]
-detectorsFor UnboundedLoop        = DetectedBy [Rust, C, Cpp, Go, Python, JavaScript]
+detectorsFor UncheckedAllocation  = DetectedBy [Cpp]
+detectorsFor UnboundedLoop        = DetectedBy [Rust, Cpp, Go, Python, JavaScript]
 detectorsFor BlockingIO           = DetectedBy [Rust, Go, Python, JavaScript]
-detectorsFor UnsafeCode           = DetectedBy [Rust, C, Cpp, Zig, Nim, DLang]
+detectorsFor UnsafeCode           = DetectedBy [Rust, Cpp, Zig, Nim, DLang]
 detectorsFor PanicPath            = DetectedBy [Rust, Go, Haskell]
-detectorsFor RaceCondition        = DetectedBy [Rust, C, Cpp, Go]
-detectorsFor DeadlockPotential    = DetectedBy [Rust, C, Cpp, Go]
-detectorsFor ResourceLeak         = DetectedBy [Rust, C, Cpp]
+detectorsFor RaceCondition        = DetectedBy [Rust, Cpp, Go]
+detectorsFor DeadlockPotential    = DetectedBy [Rust, Cpp, Go]
+detectorsFor ResourceLeak         = DetectedBy [Rust, Cpp]
 detectorsFor CommandInjection     = DetectedBy [Python, Ruby, JavaScript, Shell, Elixir, Erlang]
 detectorsFor UnsafeDeserialization = DetectedBy [Python, Ruby, JavaScript, Java]
 detectorsFor DynamicCodeExecution  = DetectedBy [Python, JavaScript, Ruby, Elixir, Shell]
 detectorsFor UnsafeFFI            = DetectedBy [Elixir, Erlang, Haskell, Pony, OCaml, Zig]
 detectorsFor AtomExhaustion       = DetectedBy [Elixir, Erlang]
-detectorsFor InsecureProtocol     = DetectedBy [Rust, C, Cpp, Go, Python, JavaScript, Ruby]
+detectorsFor InsecureProtocol     = DetectedBy [Rust, Cpp, Go, Python, JavaScript, Ruby]
 detectorsFor ExcessivePermissions = DetectedBy [Shell]
 detectorsFor PathTraversal        = DetectedBy [Python, JavaScript, Ruby, Go, Java]
-detectorsFor HardcodedSecret      = DetectedBy [Rust, C, Cpp, Go, Python, JavaScript, Ruby]
-detectorsFor UncheckedError       = DetectedBy [Go, Rust, C, Cpp]
+detectorsFor HardcodedSecret      = DetectedBy [Rust, Cpp, Go, Python, JavaScript, Ruby]
+detectorsFor UncheckedError       = DetectedBy [Go, Rust, Cpp]
 detectorsFor InfiniteRecursion    = DetectedBy [Haskell, PureScript, Scheme, Racket]
 detectorsFor UnsafeTypeCoercion   = DetectedBy [OCaml, Haskell, DLang, Nim]
 detectorsFor ProofDrift           = DetectedBy [Idris, Lean, Agda, Isabelle, Coq, Julia]
