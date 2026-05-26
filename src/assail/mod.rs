@@ -225,11 +225,25 @@ pub fn load_user_classifications(project_root: &Path) -> Vec<UserClassification>
             .join("assail-classifications.a2ml"),
         project_root.join(".panic-attack-classifications.a2ml"),
     ];
+    // User-classification a2ml files are hand-edited audit registries. A
+    // legitimate one rarely exceeds a few dozen KiB. Capping at 4 MiB
+    // stops a malicious or accidental input from exhausting memory during
+    // a multi-thousand-repo mass-panic sweep.
+    use std::io::Read;
+    const CLASSIFICATIONS_FILE_READ_LIMIT: u64 = 4 * 1024 * 1024;
+
     let mut content = String::new();
     for p in &candidate_paths {
-        if let Ok(c) = fs::read_to_string(p) {
-            content = c;
-            break;
+        if let Ok(mut f) = fs::File::open(p) {
+            let mut buf = String::new();
+            if (&mut f)
+                .take(CLASSIFICATIONS_FILE_READ_LIMIT)
+                .read_to_string(&mut buf)
+                .is_ok()
+            {
+                content = buf;
+                break;
+            }
         }
     }
     if content.is_empty() {
