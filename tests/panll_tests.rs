@@ -220,6 +220,7 @@ fn test_panll_export_constraints_from_failed_attacks() -> Result<(), Box<dyn std
             duration: Duration::from_millis(100),
             peak_memory: 0,
             crashes: vec![CrashReport {
+                schema_version: "2.5".to_string(),
                 timestamp: "2026-03-01T00:00:00Z".to_string(),
                 signal: Some("SIGSEGV".to_string()),
                 backtrace: None,
@@ -245,7 +246,7 @@ fn test_panll_export_constraints_from_failed_attacks() -> Result<(), Box<dyn std
     assert!(
         constraints.iter().any(|c| c["id"]
             .as_str()
-            .map_or(false, |id| id.starts_with("attack-fail-"))),
+            .is_some_and(|id| id.starts_with("attack-fail-"))),
         "failed attack should generate a constraint"
     );
     Ok(())

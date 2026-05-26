@@ -2250,8 +2250,8 @@ fn run_main() -> Result<()> {
                         println!("Run `panic-attack bridge triage --register` to populate.");
                     } else {
                         println!(
-                            "{:<12} {:<20} {:<15} {:<15} {}",
-                            "ID", "ADVISORY", "PACKAGE", "STATUS", "ACTION"
+                            "{:<12} {:<20} {:<15} {:<15} ACTION",
+                            "ID", "ADVISORY", "PACKAGE", "STATUS"
                         );
                         println!("{}", "-".repeat(80));
                         for entry in &registry.entries {

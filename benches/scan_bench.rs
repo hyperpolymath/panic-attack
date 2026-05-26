@@ -5,8 +5,9 @@
 //!
 //! Measures: language detection, pattern matching, full analysis pipeline.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use panic_attack::types::Language;
+use std::hint::black_box;
 
 /// Benchmark language detection from file extension
 fn bench_language_detect(c: &mut Criterion) {
@@ -223,6 +224,7 @@ fn bench_statistics_calculation(c: &mut Criterion) {
             unsafe_blocks: 5,
             panic_sites: 0,
             unwrap_calls: 50,
+            safe_unwrap_calls: 0,
             allocation_sites: 12,
             io_operations: 4,
             threading_constructs: 3,
