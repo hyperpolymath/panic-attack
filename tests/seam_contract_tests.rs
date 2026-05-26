@@ -433,8 +433,7 @@ fn old_amuck_report_without_schema_version_deserializes_with_default() {
         "combinations_run": 0,
         "outcomes": []
     }"#;
-    let report: AmuckReport =
-        serde_json::from_str(json_str).expect("deserialize old amuck report");
+    let report: AmuckReport = serde_json::from_str(json_str).expect("deserialize old amuck report");
     assert_eq!(
         report.schema_version, "2.5",
         "old AmuckReport missing schema_version must default to '2.5'"
@@ -490,8 +489,7 @@ fn old_axial_report_without_schema_version_deserializes_with_default() {
         "observed_reports": 0,
         "language": "en"
     }"#;
-    let report: AxialReport =
-        serde_json::from_str(json_str).expect("deserialize old axial report");
+    let report: AxialReport = serde_json::from_str(json_str).expect("deserialize old axial report");
     assert_eq!(
         report.schema_version, "2.5",
         "old AxialReport missing schema_version must default to '2.5'"
