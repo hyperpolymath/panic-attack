@@ -54,7 +54,7 @@ pub fn check_reachability(project_dir: &Path, crate_name: &str) -> Result<Reacha
         }
 
         let path = entry.path();
-        if path.extension().map_or(true, |ext| ext != "rs") {
+        if path.extension().is_none_or(|ext| ext != "rs") {
             continue;
         }
 

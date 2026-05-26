@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: PMPL-1.0
+# SPDX-License-Identifier: MPL-2.0
 name: CodeQL Security Analysis
 
 on:
@@ -30,7 +30,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - language: javascript-typescript
+          # Repo is pure Rust; CodeQL does not support Rust as a target.
+          # We analyse `actions` (GitHub Actions workflow files) so the
+          # SAST capability still adds value — workflow files are a real
+          # supply-chain surface for this repo.
+          - language: actions
             build-mode: none
 
     steps:

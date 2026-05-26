@@ -60,6 +60,7 @@ fn make_assail_report() -> AssailReport {
 fn make_attack_result(axis: AttackAxis, success: bool, crashes: usize) -> AttackResult {
     let crash_reports: Vec<CrashReport> = (0..crashes)
         .map(|_| CrashReport {
+            schema_version: "2.5".to_string(),
             timestamp: "2026-03-01T00:00:00Z".to_string(),
             signal: Some("SIGSEGV".to_string()),
             backtrace: None,

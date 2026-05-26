@@ -68,6 +68,12 @@ pub struct MitigationRegistry {
     pub entries: Vec<MitigationEntry>,
 }
 
+impl Default for MitigationRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MitigationRegistry {
     /// Create an empty registry.
     pub fn new() -> Self {
