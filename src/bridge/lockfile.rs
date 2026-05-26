@@ -318,6 +318,161 @@ fn unquote(s: &str) -> String {
 }
 
 // ============================================================================
+// Direct-dependency detection (Cargo.toml)
+// ============================================================================
+
+/// Collect the set of crate names declared as **direct** dependencies in the
+/// project's `Cargo.toml`. Used to distinguish direct phantoms (genuine
+/// "remove the unused dep" candidates) from transitive phantoms (pulled in
+/// by an upstream crate — different remediation path).
+///
+/// Sections inspected (root manifest + each workspace.member manifest):
+///
+/// - `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`
+/// - `[workspace.dependencies]`
+/// - `[target.X.dependencies]`, `[target.X.dev-dependencies]`, `[target.X.build-dependencies]`
+///
+/// Names are normalised to lowercase with `_` → `-` so a CVE feed reporting
+/// `serde_json` matches a manifest line `serde-json = ...` and vice versa.
+///
+/// Best-effort parser: handles plain `crate = "version"` and `crate = { ... }`
+/// table forms. Quoted keys (`"crate-name" = ...`) are supported. Lines
+/// inside comments (`# ...`) are skipped.
+///
+/// Returns an empty set on parse failure — callers should treat that as
+/// "unknown direct-deps", falling back to the conservative (transitive)
+/// classification rather than asserting "direct".
+pub fn collect_direct_cargo_dependencies(project_dir: &Path) -> std::collections::HashSet<String> {
+    let mut acc = std::collections::HashSet::new();
+    collect_from_manifest(&project_dir.join("Cargo.toml"), &mut acc, project_dir);
+    acc
+}
+
+fn collect_from_manifest(
+    manifest: &Path,
+    acc: &mut std::collections::HashSet<String>,
+    project_dir: &Path,
+) {
+    let Ok(content) = std::fs::read_to_string(manifest) else {
+        return;
+    };
+
+    let mut current_section: Option<String> = None;
+    let mut workspace_members: Vec<String> = Vec::new();
+
+    for raw_line in content.lines() {
+        // Strip inline comments (`key = "val" # note`). Be careful: a `#`
+        // inside a quoted string is data, not a comment. Single quotes don't
+        // matter in TOML. For our use, the strict version below is enough.
+        let line = strip_toml_inline_comment(raw_line);
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        // Section header?
+        if let Some(name) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            current_section = Some(name.trim().to_string());
+            continue;
+        }
+
+        let Some(section) = current_section.as_deref() else {
+            continue;
+        };
+
+        if is_dependency_section(section) {
+            if let Some(crate_name) = extract_dependency_key(trimmed) {
+                acc.insert(normalise_crate_name(&crate_name));
+            }
+        } else if section == "workspace" {
+            // members = ["a", "b/c"]
+            if let Some(members) = parse_workspace_members(trimmed) {
+                workspace_members.extend(members);
+            }
+        }
+    }
+
+    // Recurse into workspace members (one level — we don't support nested
+    // workspaces, which are not a real Cargo pattern).
+    for member in workspace_members {
+        let member_manifest = project_dir.join(&member).join("Cargo.toml");
+        if member_manifest.exists() && member_manifest != manifest {
+            collect_from_manifest(&member_manifest, acc, project_dir);
+        }
+    }
+}
+
+fn is_dependency_section(section: &str) -> bool {
+    // Direct matches
+    matches!(
+        section,
+        "dependencies" | "dev-dependencies" | "build-dependencies" | "workspace.dependencies"
+    ) || section.ends_with(".dependencies")
+        || section.ends_with(".dev-dependencies")
+        || section.ends_with(".build-dependencies")
+}
+
+fn extract_dependency_key(line: &str) -> Option<String> {
+    // Lines look like one of:
+    //   serde = "1.0"
+    //   serde = { version = "1.0", features = ["derive"] }
+    //   "serde-json" = "1.0"
+    // We only care about the LHS of the first `=`.
+    let eq = line.find('=')?;
+    let lhs = line[..eq].trim();
+    let key = lhs.trim_matches('"').trim_matches('\'').trim();
+    if key.is_empty() {
+        return None;
+    }
+    // Reject obviously-not-a-crate-name tokens that can appear in nested
+    // tables (e.g. `version`, `features`, `default-features`). These would
+    // only appear here if a section line is malformed; the section-header
+    // check normally keeps us out of nested-table bodies, but a paranoid
+    // filter is cheap.
+    if key.contains(char::is_whitespace) || key.contains('.') {
+        return None;
+    }
+    Some(key.to_string())
+}
+
+fn parse_workspace_members(line: &str) -> Option<Vec<String>> {
+    let lhs = line.split('=').next()?.trim();
+    if lhs != "members" {
+        return None;
+    }
+    let rhs = line.split_once('=')?.1.trim();
+    let inner = rhs
+        .trim()
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))?;
+    Some(
+        inner
+            .split(',')
+            .map(|s| s.trim().trim_matches('"').to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+    )
+}
+
+fn strip_toml_inline_comment(line: &str) -> &str {
+    // Conservative: only strip when the `#` is NOT inside a "..." string.
+    let bytes = line.as_bytes();
+    let mut in_string = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'"' {
+            in_string = !in_string;
+        } else if b == b'#' && !in_string {
+            return &line[..i];
+        }
+    }
+    line
+}
+
+fn normalise_crate_name(s: &str) -> String {
+    s.to_ascii_lowercase().replace('_', "-")
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -467,5 +622,165 @@ sqlalchemy[asyncio]==2.0.0; python_version >= "3.8"
         let deps = discover_and_parse(dir.path());
         assert_eq!(deps.len(), 1);
         assert_eq!(deps[0].name, "serde");
+    }
+
+    // ------------------------------------------------------------------
+    // Direct-dependency parser (regression for #47)
+    // ------------------------------------------------------------------
+
+    fn write_cargo_toml(dir: &Path, body: &str) {
+        let mut f = std::fs::File::create(dir.join("Cargo.toml")).unwrap();
+        write!(f, "{body}").unwrap();
+    }
+
+    #[test]
+    fn direct_deps_finds_dependencies_section_entries() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_toml(
+            dir.path(),
+            r#"
+[package]
+name = "demo"
+
+[dependencies]
+serde = "1.0"
+anyhow = { version = "1.0" }
+"serde-json" = "1.0"
+"#,
+        );
+        let direct = collect_direct_cargo_dependencies(dir.path());
+        assert!(direct.contains("serde"));
+        assert!(direct.contains("anyhow"));
+        assert!(direct.contains("serde-json"));
+    }
+
+    #[test]
+    fn direct_deps_skips_transitive_only_crates() {
+        // The crate `lru` only appears as a transitive dep through `ratatui`
+        // in the real-world repro (#47). Cargo.toml has no `lru =` line, so
+        // the parser must NOT consider it direct.
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_toml(
+            dir.path(),
+            r#"
+[package]
+name = "demo"
+
+[dependencies]
+ratatui = "0.29"
+"#,
+        );
+        let direct = collect_direct_cargo_dependencies(dir.path());
+        assert!(direct.contains("ratatui"));
+        assert!(
+            !direct.contains("lru"),
+            "transitive deps must not be reported as direct"
+        );
+    }
+
+    #[test]
+    fn direct_deps_collects_dev_and_build_sections() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_toml(
+            dir.path(),
+            r#"
+[dependencies]
+serde = "1.0"
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+cc = "1"
+"#,
+        );
+        let direct = collect_direct_cargo_dependencies(dir.path());
+        for name in ["serde", "tempfile", "cc"] {
+            assert!(direct.contains(name), "missing {name}");
+        }
+    }
+
+    #[test]
+    fn direct_deps_handles_target_sections() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_toml(
+            dir.path(),
+            r#"
+[target.'cfg(unix)'.dependencies]
+nix = "0.27"
+
+[target.x86_64-pc-windows-msvc.build-dependencies]
+winapi = "0.3"
+"#,
+        );
+        let direct = collect_direct_cargo_dependencies(dir.path());
+        assert!(direct.contains("nix"));
+        assert!(direct.contains("winapi"));
+    }
+
+    #[test]
+    fn direct_deps_handles_workspace_members() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_toml(
+            dir.path(),
+            r#"
+[workspace]
+members = ["crates/a", "crates/b"]
+"#,
+        );
+        std::fs::create_dir_all(dir.path().join("crates/a")).unwrap();
+        std::fs::create_dir_all(dir.path().join("crates/b")).unwrap();
+        write_cargo_toml(
+            &dir.path().join("crates/a"),
+            "[dependencies]\nrand = \"0.8\"\n",
+        );
+        write_cargo_toml(
+            &dir.path().join("crates/b"),
+            "[dev-dependencies]\nproptest = \"1\"\n",
+        );
+
+        let direct = collect_direct_cargo_dependencies(dir.path());
+        assert!(direct.contains("rand"));
+        assert!(direct.contains("proptest"));
+    }
+
+    #[test]
+    fn direct_deps_normalises_underscore_to_hyphen() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_toml(dir.path(), "[dependencies]\nserde_json = \"1.0\"\n");
+        let direct = collect_direct_cargo_dependencies(dir.path());
+        assert!(
+            direct.contains("serde-json"),
+            "underscore should normalise to hyphen for CVE feed matching"
+        );
+        // Either spelling of the same crate must match the same normalised entry.
+        for spelling in ["serde_json", "serde-json"] {
+            let normalised = normalise_crate_name(spelling);
+            assert!(direct.contains(&normalised));
+        }
+    }
+
+    #[test]
+    fn direct_deps_ignores_commented_lines_and_strings_with_hash() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_toml(
+            dir.path(),
+            r#"
+[dependencies]
+# commented = "1.0"
+serde = "1.0"  # inline comment is fine
+"#,
+        );
+        let direct = collect_direct_cargo_dependencies(dir.path());
+        assert!(direct.contains("serde"));
+        assert!(!direct.contains("commented"));
+    }
+
+    #[test]
+    fn direct_deps_empty_when_no_manifest() {
+        let dir = tempfile::TempDir::new().unwrap();
+        // No Cargo.toml written
+        let direct = collect_direct_cargo_dependencies(dir.path());
+        assert!(direct.is_empty());
     }
 }
