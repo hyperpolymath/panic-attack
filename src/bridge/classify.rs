@@ -16,14 +16,22 @@ use super::{Classification, ReachabilityEvidence, ReachabilityStatus, Vulnerabil
 
 /// Classify a vulnerability given its reachability evidence.
 ///
+/// `is_direct` indicates whether the vulnerable package appears as a key in
+/// the project's `Cargo.toml` dependency tables. Phantom + transitive is
+/// common (a vulnerable crate pulled in through the dep graph but never
+/// imported in this project's source) and warrants a different remediation
+/// path than phantom + direct (where the manifest entry is genuinely
+/// unused). See #47.
+///
 /// Returns (classification, rationale, suggested_action).
 pub fn classify(
     vuln: &Vulnerability,
     evidence: &ReachabilityEvidence,
+    is_direct: bool,
 ) -> (Classification, String, String) {
     match evidence.status {
         // ─── Phantom dependency: declared but never imported ───
-        ReachabilityStatus::Phantom => (
+        ReachabilityStatus::Phantom if is_direct => (
             Classification::Informational,
             format!(
                 "{} {} is declared in Cargo.toml but never imported in any .rs file. \
@@ -33,6 +41,24 @@ pub fn classify(
             ),
             format!(
                 "Remove unused dependency `{}` from Cargo.toml",
+                vuln.package
+            ),
+        ),
+
+        // ─── Phantom + transitive: pulled in by an upstream, not declared here ───
+        ReachabilityStatus::Phantom => (
+            Classification::Informational,
+            format!(
+                "{} {} is a transitive dependency (not declared in this project's Cargo.toml) \
+                 and never imported in any .rs file. The vulnerable code is compiled but \
+                 unreachable from this project. The CVE rides along through the dependency \
+                 graph; remediation is upstream, not local.",
+                vuln.package, vuln.version
+            ),
+            format!(
+                "Transitive — run `cargo update -p {}` to pull a non-vulnerable version if \
+                 one is published, or upgrade the upstream crate that pulls it in. \
+                 Otherwise informational: code unreachable from this project.",
                 vuln.package
             ),
         ),
@@ -178,29 +204,66 @@ mod tests {
     }
 
     #[test]
-    fn test_phantom_is_informational() {
-        let (cls, _, action) = classify(&mock_vuln(false, false), &phantom_evidence());
+    fn test_phantom_direct_recommends_removal() {
+        let (cls, _, action) = classify(&mock_vuln(false, false), &phantom_evidence(), true);
         assert_eq!(cls, Classification::Informational);
-        assert!(action.contains("Remove"));
+        assert!(
+            action.contains("Remove unused dependency"),
+            "direct phantom should recommend removal, got: {action}"
+        );
+    }
+
+    #[test]
+    fn test_phantom_transitive_recommends_cargo_update() {
+        // Regression for #47: phantom-classified transitive deps were
+        // incorrectly told to "Remove unused dependency from Cargo.toml".
+        let (cls, rationale, action) =
+            classify(&mock_vuln(false, false), &phantom_evidence(), false);
+        assert_eq!(cls, Classification::Informational);
+        assert!(
+            !action.contains("Remove unused dependency"),
+            "transitive phantom must NOT recommend manifest removal, got: {action}"
+        );
+        assert!(
+            action.contains("Transitive"),
+            "transitive phantom action should label itself transitive, got: {action}"
+        );
+        assert!(
+            action.contains("cargo update"),
+            "transitive phantom action should suggest cargo update, got: {action}"
+        );
+        assert!(
+            rationale.contains("transitive dependency"),
+            "rationale should explain transitive status, got: {rationale}"
+        );
     }
 
     #[test]
     fn test_reachable_no_fix_is_unmitigable() {
-        let (cls, _, _) = classify(&mock_vuln(false, false), &reachable_evidence());
+        let (cls, _, _) = classify(&mock_vuln(false, false), &reachable_evidence(), true);
         assert_eq!(cls, Classification::Unmitigable);
     }
 
     #[test]
     fn test_reachable_semver_fix_is_mitigable() {
-        let (cls, _, action) = classify(&mock_vuln(true, true), &reachable_evidence());
+        let (cls, _, action) = classify(&mock_vuln(true, true), &reachable_evidence(), true);
         assert_eq!(cls, Classification::Mitigable);
         assert!(action.contains("cargo update"));
     }
 
     #[test]
     fn test_reachable_breaking_fix_is_mitigable() {
-        let (cls, _, action) = classify(&mock_vuln(true, false), &reachable_evidence());
+        let (cls, _, action) = classify(&mock_vuln(true, false), &reachable_evidence(), true);
         assert_eq!(cls, Classification::Mitigable);
         assert!(action.contains("breaking change"));
+    }
+
+    #[test]
+    fn test_reachable_classification_unaffected_by_is_direct() {
+        // is_direct is only used for the Phantom arm — reachable findings
+        // should classify identically regardless of manifest declaration.
+        let (cls_a, _, _) = classify(&mock_vuln(true, true), &reachable_evidence(), true);
+        let (cls_b, _, _) = classify(&mock_vuln(true, true), &reachable_evidence(), false);
+        assert_eq!(cls_a, cls_b);
     }
 }

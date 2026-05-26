@@ -264,11 +264,21 @@ pub fn triage(project_dir: &Path, offline: bool) -> anyhow::Result<BridgeReport>
         return Ok(BridgeReport::empty(project_dir, total_deps));
     }
 
+    // Direct-vs-transitive lookup table for the project's Cargo.toml.
+    // Collected once (not per-CVE) to avoid re-parsing the manifest for
+    // every vulnerable dep — see #47.
+    let direct_deps = lockfile::collect_direct_cargo_dependencies(project_dir);
+    let is_direct = |pkg: &str| {
+        let normalised = pkg.to_ascii_lowercase().replace('_', "-");
+        direct_deps.contains(&normalised)
+    };
+
     // Step 3 & 4: For each vuln, check reachability and classify
     let mut assessed = Vec::new();
     for vuln in vulns {
         let evidence = reachability::check_reachability(project_dir, &vuln.package)?;
-        let (classification, rationale, action) = classify::classify(&vuln, &evidence);
+        let (classification, rationale, action) =
+            classify::classify(&vuln, &evidence, is_direct(&vuln.package));
 
         assessed.push(AssessedCve {
             vulnerability: vuln,
