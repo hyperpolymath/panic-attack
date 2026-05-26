@@ -5,6 +5,7 @@
 pub mod diff;
 pub mod formatter;
 pub mod generator;
+#[cfg(feature = "gui")]
 pub mod gui;
 pub mod migration;
 pub mod output;
@@ -19,6 +20,7 @@ use std::path::Path;
 pub use diff::{format_diff, load_report};
 pub use formatter::{ReportFormatter, ReportView};
 pub use generator::ReportGenerator;
+#[cfg(feature = "gui")]
 pub use gui::ReportGui;
 pub use output::ReportOutputFormat;
 pub use tui::ReportTui;
