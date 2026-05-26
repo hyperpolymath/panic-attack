@@ -468,7 +468,8 @@ enum Commands {
         headless: bool,
     },
 
-    /// GUI review of a saved report
+    /// GUI review of a saved report (requires `--features gui` at build time)
+    #[cfg(feature = "gui")]
     Gui {
         /// Assault report JSON file
         #[arg(value_name = "REPORT")]
@@ -1700,6 +1701,7 @@ fn run_main() -> Result<()> {
             }
         }
 
+        #[cfg(feature = "gui")]
         Commands::Gui { report, headless } => {
             let content = read_report_bounded(&report)?;
             let assault_report: AssaultReport = serde_json::from_str(&content)?;

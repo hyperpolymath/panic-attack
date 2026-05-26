@@ -24,7 +24,7 @@ chrono = "0.4"
 filetime = "0.2"
 encoding_rs = "0.8"
 crossterm = "0.29"
-eframe = "0.34"
+eframe = { version = "0.34", optional = true }
 rayon = "1.12"
 blake3 = { version = "1.8", features = ["mmap"] }
 sha2 = "0.11"
@@ -39,6 +39,9 @@ ureq = { version = "3.3", optional = true }
 default = []
 signing = ["ed25519-dalek"]
 http = ["ureq"]
+# Native GUI viewer (eframe/egui). Opt-in because eframe raises MSRV above the
+# 1.85.0 baseline; default builds remain pure-CLI and MSRV-clean.
+gui = ["eframe"]
 
 [dev-dependencies]
 tempfile = "3.27"

@@ -68,4 +68,6 @@ jobs:
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
 
       - name: Check build
-        run: cargo check --all-features
+        # NB: the `gui` feature pulls eframe/egui which raise MSRV above 1.85.
+        # Verify the default + non-GUI optional features compile on MSRV.
+        run: cargo check --features signing,http
