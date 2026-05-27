@@ -32,6 +32,7 @@ pub mod kanren;
 pub mod mass_panic;
 pub mod notify;
 pub mod panll;
+pub mod query;
 pub mod report;
 pub mod signatures;
 pub mod storage;
