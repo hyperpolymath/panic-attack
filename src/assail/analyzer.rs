@@ -5641,6 +5641,11 @@ fn skip_antiquotation_end(haystack: &str, start: usize) -> usize {
 
 /// Given a position just past the first `\<open>` (depth = 1), scan forward and
 /// return the byte index just past the matching `\<close>`. Nesting-aware.
+///
+/// The byte-advance branch steps by `char.len_utf8()` rather than 1 so the
+/// next iteration's `haystack[j..]` slice lands on a UTF-8 char boundary —
+/// Isabelle prose routinely contains non-ASCII (e.g. `¬`, `∀`, `⟹`) inside
+/// `text \<open>...\<close>` blocks.
 fn skip_cartouche_end(haystack: &str, after_open: usize, open: &str, close: &str) -> usize {
     let mut depth: i32 = 1;
     let mut j = after_open;
@@ -5652,7 +5657,13 @@ fn skip_cartouche_end(haystack: &str, after_open: usize, open: &str, close: &str
             depth -= 1;
             j += close.len();
         } else {
-            j += 1;
+            // Step by char width to keep `j` on a UTF-8 boundary. `chars()`
+            // is guaranteed non-empty here because `j < haystack.len()`.
+            j += haystack[j..]
+                .chars()
+                .next()
+                .map(|c| c.len_utf8())
+                .unwrap_or(1);
         }
     }
     j
@@ -5922,6 +5933,34 @@ mod tests {
             stripped.contains("sorry"),
             "genuine sorry was wrongly stripped: {stripped:?}"
         );
+    }
+
+    #[test]
+    fn isabelle_cartouche_with_non_ascii_does_not_panic() {
+        // Regression: prior to the char-boundary fix in skip_cartouche_end,
+        // any non-ASCII byte inside a `\<open>...\<close>` block panicked
+        // with "byte index N is not a char boundary" because the helper
+        // advanced by 1 byte at a time through multi-byte UTF-8 sequences.
+        // This content is shortened from a real echidna .thy file that
+        // triggered the panic on a full-tree assail scan.
+        let src = "text \\<open>\n  Double negation: ¬¬A ≡ A.\n  ∀x. ¬(P x) ⟹ True\n\\<close>\nlemma foo: True by simp";
+        let stripped = strip_isabelle_prose(src);
+        assert!(
+            !stripped.contains("¬¬"),
+            "cartouche body containing non-ASCII not stripped: {stripped:?}"
+        );
+        assert!(stripped.contains("lemma foo"));
+    }
+
+    #[test]
+    fn isabelle_cartouche_emoji_grapheme_clusters() {
+        // 4-byte UTF-8 sequences (U+1F389 🎉) inside a cartouche also
+        // exercise the char-boundary path. A surrogate-pair-style multi-
+        // byte char being skipped by 1-byte advances is the same bug.
+        let src = "section \\<open>release notes 🎉 — celebrate!\\<close>\nlemma g: True by simp";
+        let stripped = strip_isabelle_prose(src);
+        assert!(!stripped.contains("🎉"), "got: {stripped:?}");
+        assert!(stripped.contains("lemma g"));
     }
 
     #[test]
