@@ -112,6 +112,11 @@ pub struct ReachabilityEvidence {
     pub import_sites: Vec<ImportSite>,
     /// Classification based on import analysis
     pub status: ReachabilityStatus,
+    /// For `PhantomTransitive`: the direct dep (declared in Cargo.toml) whose
+    /// dependency closure pulls in this crate, best-effort. `None` if the
+    /// parent could not be identified or if status is not `PhantomTransitive`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_dep: Option<String>,
 }
 
 /// Where a dependency is imported in source code.
@@ -126,11 +131,28 @@ pub struct ImportSite {
 }
 
 /// Whether a dependency is reachable from application code.
+///
+/// `PhantomDeclared` and `PhantomTransitive` are both informational, but
+/// distinguish the remediation path:
+///
+/// - **PhantomDeclared** — crate IS listed in the project's `Cargo.toml`
+///   (root or workspace member) but no `use <crate>` site exists. Fix:
+///   strip the manifest line (`cargo machete --fix` or manual removal).
+/// - **PhantomTransitive** — crate is NOT in any Cargo.toml; it's pulled
+///   in by a parent dep. Local stripping is impossible; the fix requires
+///   bumping the parent dependency past the affected version.
+///
+/// JSON wire format uses `phantom-declared` / `phantom-transitive` /
+/// `unreachable` / `reachable`. See `schema_version` 0.2.0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub enum ReachabilityStatus {
-    /// Declared in manifest but never imported — phantom dependency
-    Phantom,
+    /// Declared in Cargo.toml but never imported — the manifest entry is
+    /// genuinely unused. Strip the dep to eliminate the CVE entirely.
+    PhantomDeclared,
+    /// NOT declared in any Cargo.toml; pulled in transitively by a parent
+    /// crate. Local strip is impossible; fix the parent.
+    PhantomTransitive,
     /// Imported but no data flow to vulnerable code path (Phase 2: kanren taint)
     Unreachable,
     /// Imported and potentially reachable
@@ -191,7 +213,7 @@ impl BridgeReport {
     /// Create an empty report for a project with no vulnerabilities.
     pub fn empty(project: &Path, total_deps: usize) -> Self {
         Self {
-            schema_version: "0.1.0".to_string(),
+            schema_version: "0.2.0".to_string(),
             project: project.to_path_buf(),
             total_dependencies: total_deps,
             vulnerable_dependencies: 0,
@@ -268,17 +290,20 @@ pub fn triage(project_dir: &Path, offline: bool) -> anyhow::Result<BridgeReport>
     // Collected once (not per-CVE) to avoid re-parsing the manifest for
     // every vulnerable dep — see #47.
     let direct_deps = lockfile::collect_direct_cargo_dependencies(project_dir);
-    let is_direct = |pkg: &str| {
-        let normalised = pkg.to_ascii_lowercase().replace('_', "-");
-        direct_deps.contains(&normalised)
-    };
+    // Parent-dep map from Cargo.lock: for any transitive crate, identify
+    // which direct dep's closure pulls it in (best-effort, first match wins).
+    let parent_map = lockfile::collect_cargo_parents(project_dir, &direct_deps);
 
     // Step 3 & 4: For each vuln, check reachability and classify
     let mut assessed = Vec::new();
     for vuln in vulns {
-        let evidence = reachability::check_reachability(project_dir, &vuln.package)?;
-        let (classification, rationale, action) =
-            classify::classify(&vuln, &evidence, is_direct(&vuln.package));
+        let evidence = reachability::check_reachability_with_manifest(
+            project_dir,
+            &vuln.package,
+            &direct_deps,
+            &parent_map,
+        )?;
+        let (classification, rationale, action) = classify::classify(&vuln, &evidence);
 
         assessed.push(AssessedCve {
             vulnerability: vuln,
@@ -290,7 +315,7 @@ pub fn triage(project_dir: &Path, offline: bool) -> anyhow::Result<BridgeReport>
     }
 
     let mut report = BridgeReport {
-        schema_version: "0.1.0".to_string(),
+        schema_version: "0.2.0".to_string(),
         project: project_dir.to_path_buf(),
         total_dependencies: total_deps,
         vulnerable_dependencies: 0,

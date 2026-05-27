@@ -16,52 +16,63 @@ use super::{Classification, ReachabilityEvidence, ReachabilityStatus, Vulnerabil
 
 /// Classify a vulnerability given its reachability evidence.
 ///
-/// `is_direct` indicates whether the vulnerable package appears as a key in
-/// the project's `Cargo.toml` dependency tables. Phantom + transitive is
-/// common (a vulnerable crate pulled in through the dep graph but never
-/// imported in this project's source) and warrants a different remediation
-/// path than phantom + direct (where the manifest entry is genuinely
-/// unused). See #47.
+/// The three-way output (Mitigable / Unmitigable / Informational) is
+/// unchanged from #47 — both phantom variants classify as `Informational` —
+/// but the rationale and suggested fix differ:
+///
+/// - [`ReachabilityStatus::PhantomDeclared`] — declared in Cargo.toml but
+///   no `use` site. Strip the dep via `cargo machete --fix`. Canonical
+///   case: file-soup#50.
+/// - [`ReachabilityStatus::PhantomTransitive`] — not declared anywhere in
+///   the workspace, pulled in by a parent dep. Local strip is impossible;
+///   the fix requires bumping the parent (named in `evidence.parent_dep`
+///   when identifiable). Track E found ~26 of 29 issues here.
 ///
 /// Returns (classification, rationale, suggested_action).
 pub fn classify(
     vuln: &Vulnerability,
     evidence: &ReachabilityEvidence,
-    is_direct: bool,
 ) -> (Classification, String, String) {
     match evidence.status {
-        // ─── Phantom dependency: declared but never imported ───
-        ReachabilityStatus::Phantom if is_direct => (
+        // ─── Phantom + declared: manifest entry is genuinely unused ───
+        ReachabilityStatus::PhantomDeclared => (
             Classification::Informational,
             format!(
                 "{} {} is declared in Cargo.toml but never imported in any .rs file. \
                  The vulnerable code is compiled but unreachable. \
-                 Removing the dependency from Cargo.toml eliminates this CVE entirely.",
+                 Stripping the dependency eliminates this CVE entirely.",
                 vuln.package, vuln.version
             ),
             format!(
-                "Remove unused dependency `{}` from Cargo.toml",
+                "Strip from Cargo.toml — run `cargo machete --fix` (or remove the \
+                 dependency line manually) for `{}`.",
                 vuln.package
             ),
         ),
 
-        // ─── Phantom + transitive: pulled in by an upstream, not declared here ───
-        ReachabilityStatus::Phantom => (
-            Classification::Informational,
-            format!(
-                "{} {} is a transitive dependency (not declared in this project's Cargo.toml) \
-                 and never imported in any .rs file. The vulnerable code is compiled but \
-                 unreachable from this project. The CVE rides along through the dependency \
-                 graph; remediation is upstream, not local.",
-                vuln.package, vuln.version
-            ),
-            format!(
-                "Transitive — run `cargo update -p {}` to pull a non-vulnerable version if \
-                 one is published, or upgrade the upstream crate that pulls it in. \
-                 Otherwise informational: code unreachable from this project.",
-                vuln.package
-            ),
-        ),
+        // ─── Phantom + transitive: pulled in by an upstream parent ───
+        ReachabilityStatus::PhantomTransitive => {
+            let parent_clause = match evidence.parent_dep.as_deref() {
+                Some(p) => format!("`{p}`"),
+                None => "an upstream parent dependency".to_string(),
+            };
+            (
+                Classification::Informational,
+                format!(
+                    "{} {} is a transitive dependency (not declared in this project's \
+                     Cargo.toml) and never imported in any .rs file. Pulled in by \
+                     {parent_clause}. The vulnerable code is compiled but unreachable \
+                     from this project; remediation lives upstream.",
+                    vuln.package, vuln.version
+                ),
+                format!(
+                    "Pulled in transitively by {parent_clause} — fix requires bumping \
+                     the parent dependency past the affected version of `{}`. No local \
+                     strip is possible.",
+                    vuln.package
+                ),
+            )
+        }
 
         // ─── Unreachable: imported but no taint flow (Phase 2) ───
         ReachabilityStatus::Unreachable => (
@@ -183,11 +194,21 @@ mod tests {
         }
     }
 
-    fn phantom_evidence() -> ReachabilityEvidence {
+    fn phantom_declared_evidence() -> ReachabilityEvidence {
         ReachabilityEvidence {
             is_imported: false,
             import_sites: vec![],
-            status: ReachabilityStatus::Phantom,
+            status: ReachabilityStatus::PhantomDeclared,
+            parent_dep: None,
+        }
+    }
+
+    fn phantom_transitive_evidence(parent: Option<&str>) -> ReachabilityEvidence {
+        ReachabilityEvidence {
+            is_imported: false,
+            import_sites: vec![],
+            status: ReachabilityStatus::PhantomTransitive,
+            parent_dep: parent.map(str::to_string),
         }
     }
 
@@ -200,37 +221,51 @@ mod tests {
                 statement: "use test_crate::Thing;".to_string(),
             }],
             status: ReachabilityStatus::Reachable,
+            parent_dep: None,
         }
     }
 
     #[test]
-    fn test_phantom_direct_recommends_removal() {
-        let (cls, _, action) = classify(&mock_vuln(false, false), &phantom_evidence(), true);
+    fn test_phantom_declared_recommends_machete_strip() {
+        // file-soup#50 shape: crate declared in Cargo.toml, no `use` site —
+        // strip the manifest entry.
+        let (cls, rationale, action) = classify(&mock_vuln(false, false), &phantom_declared_evidence());
         assert_eq!(cls, Classification::Informational);
         assert!(
-            action.contains("Remove unused dependency"),
-            "direct phantom should recommend removal, got: {action}"
+            action.contains("cargo machete --fix") || action.contains("Strip from Cargo.toml"),
+            "declared phantom should recommend strip, got: {action}"
+        );
+        assert!(
+            rationale.contains("declared in Cargo.toml"),
+            "rationale should explain declared status, got: {rationale}"
         );
     }
 
     #[test]
-    fn test_phantom_transitive_recommends_cargo_update() {
-        // Regression for #47: phantom-classified transitive deps were
-        // incorrectly told to "Remove unused dependency from Cargo.toml".
-        let (cls, rationale, action) =
-            classify(&mock_vuln(false, false), &phantom_evidence(), false);
+    fn test_phantom_transitive_recommends_parent_bump() {
+        // Track E shape: ~26 of 29 issues were misclassified as phantom-declared
+        // when they're actually transitive. The fix is to bump the parent, NOT
+        // to strip the local manifest.
+        let (cls, rationale, action) = classify(
+            &mock_vuln(false, false),
+            &phantom_transitive_evidence(Some("reqwest")),
+        );
         assert_eq!(cls, Classification::Informational);
         assert!(
-            !action.contains("Remove unused dependency"),
-            "transitive phantom must NOT recommend manifest removal, got: {action}"
+            !action.contains("cargo machete --fix"),
+            "transitive phantom must NOT recommend manifest strip, got: {action}"
         );
         assert!(
-            action.contains("Transitive"),
+            action.contains("Pulled in transitively"),
             "transitive phantom action should label itself transitive, got: {action}"
         );
         assert!(
-            action.contains("cargo update"),
-            "transitive phantom action should suggest cargo update, got: {action}"
+            action.contains("`reqwest`"),
+            "transitive phantom action should name the parent dep, got: {action}"
+        );
+        assert!(
+            action.contains("bumping the parent"),
+            "transitive phantom action should suggest parent bump, got: {action}"
         );
         assert!(
             rationale.contains("transitive dependency"),
@@ -239,31 +274,47 @@ mod tests {
     }
 
     #[test]
+    fn test_phantom_transitive_unknown_parent_falls_back_gracefully() {
+        // Best-effort parent identification: if Cargo.lock didn't reveal one,
+        // we still produce useful output.
+        let (cls, rationale, action) = classify(
+            &mock_vuln(false, false),
+            &phantom_transitive_evidence(None),
+        );
+        assert_eq!(cls, Classification::Informational);
+        assert!(
+            action.contains("an upstream parent dependency"),
+            "unknown-parent transitive should fall back to generic phrasing, got: {action}"
+        );
+        assert!(rationale.contains("transitive dependency"));
+    }
+
+    #[test]
     fn test_reachable_no_fix_is_unmitigable() {
-        let (cls, _, _) = classify(&mock_vuln(false, false), &reachable_evidence(), true);
+        let (cls, _, _) = classify(&mock_vuln(false, false), &reachable_evidence());
         assert_eq!(cls, Classification::Unmitigable);
     }
 
     #[test]
     fn test_reachable_semver_fix_is_mitigable() {
-        let (cls, _, action) = classify(&mock_vuln(true, true), &reachable_evidence(), true);
+        let (cls, _, action) = classify(&mock_vuln(true, true), &reachable_evidence());
         assert_eq!(cls, Classification::Mitigable);
         assert!(action.contains("cargo update"));
     }
 
     #[test]
     fn test_reachable_breaking_fix_is_mitigable() {
-        let (cls, _, action) = classify(&mock_vuln(true, false), &reachable_evidence(), true);
+        let (cls, _, action) = classify(&mock_vuln(true, false), &reachable_evidence());
         assert_eq!(cls, Classification::Mitigable);
         assert!(action.contains("breaking change"));
     }
 
     #[test]
-    fn test_reachable_classification_unaffected_by_is_direct() {
-        // is_direct is only used for the Phantom arm — reachable findings
-        // should classify identically regardless of manifest declaration.
-        let (cls_a, _, _) = classify(&mock_vuln(true, true), &reachable_evidence(), true);
-        let (cls_b, _, _) = classify(&mock_vuln(true, true), &reachable_evidence(), false);
-        assert_eq!(cls_a, cls_b);
+    fn test_phantom_variants_both_classify_informational() {
+        // Three-way classifier output is unchanged from #47.
+        let (cls_decl, _, _) = classify(&mock_vuln(false, false), &phantom_declared_evidence());
+        let (cls_trans, _, _) = classify(&mock_vuln(false, false), &phantom_transitive_evidence(None));
+        assert_eq!(cls_decl, Classification::Informational);
+        assert_eq!(cls_trans, Classification::Informational);
     }
 }
