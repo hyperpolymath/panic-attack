@@ -7,7 +7,7 @@
 //! (issue #33 S2). Returns a list of `FindingHit`s the caller can render
 //! as a table or JSON.
 //!
-//! ## Supported forms (S3 initial)
+//! ## Supported forms
 //!
 //! ```text
 //! (category UnsafeCode)
@@ -16,25 +16,34 @@
 //! (repo <name-substring>)
 //! (file <path-substring>)
 //! (pr-state open | pr-filed | pr-merged | pr-closed | dismissed | nil)
+//! (since 2026-04-12)               ; or (since "2026-04-12T00:00:00Z")
+//! (crosslang :from FFI :to ProofDrift)
+//! (crosslang FFI ProofDrift)       ; positional shorthand
 //! (and <expr> <expr> ...)
 //! (or  <expr> <expr> ...)
 //! (not <expr>)
 //! ```
 //!
-//! ## Deferred to S3 follow-ups
+//! ## Semantic notes
 //!
-//! - `(crosslang :from FFI :to ProofDrift)` — relational chain over the
-//!   kanren cross-language fact base. Needs an integration with
-//!   `src/kanren/crosslang.rs` that runs *after* the persistence layer
-//!   is settled in S1/S2/S3 initial.
-//! - `(diff :since 2026-04-12 :category PA022)` — temporal slicing by
-//!   run id. Requires an explicit "since" cursor in the hexad store
-//!   beyond `created_at` (e.g. a "baseline run id" marker).
+//! - `(since ...)` compares the finding's `first_seen_run` (when it
+//!   parses as ISO-8601) or its hexad `created_at` against the cutoff
+//!   lexicographically. RFC-3339 / ISO-8601 strings sort correctly under
+//!   string comparison, which is what we use.
 //!
-//! The initial form is enough to express the operational queries the
-//! estate-sweep campaign actually needs day-to-day: "all PA001 of
-//! Critical severity that don't have an open PR yet", "all dismissed
-//! findings in repo foo", etc.
+//! - `(crosslang :from X :to Y)` is a **co-occurrence proxy** for
+//!   FFI/cross-language reachability: it matches a `Y`-category finding
+//!   in a repo that also has at least one `X`-category finding. This is
+//!   the operationally useful case for the estate sweep — most
+//!   FFI-driven proof drift surfaces in the same repository. A future
+//!   slice will persist `kanren::crosslang` derived facts as hexads
+//!   and tighten this to true reachability over the FFI boundary graph.
+//!
+//! ## Deferred to later follow-ups
+//!
+//! - True kanren-derived `(crosslang ...)` evaluation backed by
+//!   persisted FFI-boundary facts (rather than the current
+//!   co-occurrence proxy).
 
 use crate::storage::{
     load_campaign_hexads, load_finding_hexads, CampaignSemantic, FindingSemantic,
@@ -63,6 +72,20 @@ pub enum Query {
     File(String),
     /// Match by campaign state. `None` means "no campaign hexad yet".
     PrState(Option<String>),
+    /// `(crosslang :from FROM_CAT :to TO_CAT)` — match a `TO_CAT` finding
+    /// in a repo that also has at least one `FROM_CAT` finding.
+    ///
+    /// Co-occurrence proxy: until kanren-derived cross-language facts are
+    /// persisted as hexads (S3b follow-up), "the FROM finding is reachable
+    /// from the TO finding" is approximated by "they live in the same
+    /// repository", which is the operationally-useful case for the estate
+    /// sweep — most FFI-driven proof drift surfaces in the same repo.
+    Crosslang { from: String, to: String },
+    /// Match by ISO-8601 / RFC-3339 first-seen timestamp ≥ `since`.
+    /// Filed under the `(since ...)` keyword for compactness; combined
+    /// with `(and (category ...) (since ...))` gives the "what's new
+    /// since DATE" diff query the issue calls out.
+    Since(String),
     /// Conjunction.
     And(Vec<Query>),
     /// Disjunction.
@@ -259,6 +282,52 @@ fn parse_form(tokens: &[Token], cursor: &mut usize) -> Result<Query> {
             close_paren(tokens, cursor)?;
             Ok(Query::Not(Box::new(child)))
         }
+        "since" => {
+            let v = parse_value(tokens, cursor)?;
+            close_paren(tokens, cursor)?;
+            Ok(Query::Since(v))
+        }
+        "crosslang" => {
+            // Two accepted shapes:
+            //   (crosslang FROM TO)           — positional
+            //   (crosslang :from FROM :to TO) — keyword
+            // First token decides which.
+            let mut from: Option<String> = None;
+            let mut to: Option<String> = None;
+            loop {
+                match tokens.get(*cursor) {
+                    Some(Token::RParen) => {
+                        *cursor += 1;
+                        break;
+                    }
+                    Some(Token::Atom(a)) if a.starts_with(':') => {
+                        let kw = a[1..].to_ascii_lowercase();
+                        *cursor += 1;
+                        let v = parse_value(tokens, cursor)?;
+                        match kw.as_str() {
+                            "from" => from = Some(v),
+                            "to" => to = Some(v),
+                            other => bail!("unknown crosslang keyword: :{}", other),
+                        }
+                    }
+                    Some(_) => {
+                        // Positional fallback — `from` first, then `to`.
+                        let v = parse_value(tokens, cursor)?;
+                        if from.is_none() {
+                            from = Some(v);
+                        } else if to.is_none() {
+                            to = Some(v);
+                        } else {
+                            bail!("too many positional args to crosslang");
+                        }
+                    }
+                    None => bail!("missing ')' in crosslang"),
+                }
+            }
+            let from = from.ok_or_else(|| anyhow!("crosslang missing :from"))?;
+            let to = to.ok_or_else(|| anyhow!("crosslang missing :to"))?;
+            Ok(Query::Crosslang { from, to })
+        }
         other => bail!("unknown query head: {}", other),
     }
 }
@@ -321,14 +390,24 @@ fn close_paren(tokens: &[Token], cursor: &mut usize) -> Result<()> {
 struct FindingRow {
     finding: FindingSemantic,
     campaign: Option<CampaignSemantic>,
+    /// `created_at` of the finding hexad — used by `(since ...)`.
+    created_at: String,
 }
 
-fn load_rows(base_dir: &Path) -> Result<Vec<FindingRow>> {
+/// Index from repo name → set of category Debug-names present in that
+/// repo. Used by `(crosslang ...)` to check co-occurrence.
+type RepoCategoryIndex = HashMap<String, std::collections::HashSet<String>>;
+
+struct EvalContext {
+    rows: Vec<FindingRow>,
+    repo_categories: RepoCategoryIndex,
+}
+
+fn load_context(base_dir: &Path) -> Result<EvalContext> {
     let finding_hexads = load_finding_hexads(base_dir)?;
     let mut campaign_hexads = load_campaign_hexads(base_dir)?;
     campaign_hexads.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
-    // Latest campaign event wins per finding_id.
     let mut latest: HashMap<String, CampaignSemantic> = HashMap::new();
     for h in campaign_hexads {
         if let Some(c) = h.semantic.campaign {
@@ -337,19 +416,29 @@ fn load_rows(base_dir: &Path) -> Result<Vec<FindingRow>> {
     }
 
     let mut rows = Vec::new();
+    let mut repo_categories: RepoCategoryIndex = HashMap::new();
     for h in finding_hexads {
+        let created_at = h.created_at.clone();
         if let Some(f) = h.semantic.finding {
+            repo_categories
+                .entry(f.repo_name.to_ascii_lowercase())
+                .or_default()
+                .insert(f.category.to_ascii_lowercase());
             let campaign = latest.get(&f.finding_id).cloned();
             rows.push(FindingRow {
                 finding: f,
                 campaign,
+                created_at,
             });
         }
     }
-    Ok(rows)
+    Ok(EvalContext {
+        rows,
+        repo_categories,
+    })
 }
 
-fn matches(query: &Query, row: &FindingRow) -> bool {
+fn matches(query: &Query, row: &FindingRow, ctx: &EvalContext) -> bool {
     match query {
         Query::Category(target) => row.finding.category.eq_ignore_ascii_case(target),
         Query::RuleId(target) => row.finding.rule_id.eq_ignore_ascii_case(target),
@@ -369,19 +458,46 @@ fn matches(query: &Query, row: &FindingRow) -> bool {
             (Some(want), Some(c)) => c.state.eq_ignore_ascii_case(want),
             _ => false,
         },
-        Query::And(children) => children.iter().all(|c| matches(c, row)),
-        Query::Or(children) => children.iter().any(|c| matches(c, row)),
-        Query::Not(inner) => !matches(inner, row),
+        Query::Since(since) => {
+            // ISO-8601 / RFC-3339 timestamps sort lexicographically when
+            // the format is well-formed. Falls back to `>=` string compare
+            // against either the finding hexad's created_at or the
+            // first_seen_run if it parses as a timestamp.
+            let candidate = if !row.finding.first_seen_run.is_empty()
+                && row.finding.first_seen_run.contains('T')
+            {
+                row.finding.first_seen_run.as_str()
+            } else {
+                row.created_at.as_str()
+            };
+            candidate >= since.as_str()
+        }
+        Query::Crosslang { from, to } => {
+            // `to`-matching finding in a repo that also has at least one
+            // `from`-category finding. The current finding must be the
+            // `to` side (so callers can wrap with `and`/`or`).
+            if !row.finding.category.eq_ignore_ascii_case(to) {
+                return false;
+            }
+            let from_lower = from.to_ascii_lowercase();
+            ctx.repo_categories
+                .get(&row.finding.repo_name.to_ascii_lowercase())
+                .map(|cats| cats.contains(&from_lower))
+                .unwrap_or(false)
+        }
+        Query::And(children) => children.iter().all(|c| matches(c, row, ctx)),
+        Query::Or(children) => children.iter().any(|c| matches(c, row, ctx)),
+        Query::Not(inner) => !matches(inner, row, ctx),
     }
 }
 
 /// Execute a query against the persisted hexad store and return all
 /// matching findings.
 pub fn run(query: &Query, base_dir: &Path) -> Result<Vec<FindingHit>> {
-    let rows = load_rows(base_dir)?;
+    let ctx = load_context(base_dir)?;
     let mut hits = Vec::new();
-    for row in rows {
-        if matches(query, &row) {
+    for row in &ctx.rows {
+        if matches(query, row, &ctx) {
             hits.push(FindingHit {
                 finding_id: row.finding.finding_id.clone(),
                 repo_name: row.finding.repo_name.clone(),
@@ -687,6 +803,91 @@ mod tests {
             hits[0].pr_url.as_deref(),
             Some("https://example.invalid/pr/1")
         );
+    }
+
+    #[test]
+    fn parse_since_atom() {
+        let q = parse("(since 2026-04-12)").unwrap();
+        assert_eq!(q, Query::Since("2026-04-12".to_string()));
+    }
+
+    #[test]
+    fn parse_since_quoted() {
+        let q = parse("(since \"2026-04-12T00:00:00Z\")").unwrap();
+        assert_eq!(q, Query::Since("2026-04-12T00:00:00Z".to_string()));
+    }
+
+    #[test]
+    fn parse_crosslang_keyword_form() {
+        let q = parse("(crosslang :from UnsafeFFI :to ProofDrift)").unwrap();
+        assert_eq!(
+            q,
+            Query::Crosslang {
+                from: "UnsafeFFI".to_string(),
+                to: "ProofDrift".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_crosslang_positional_form() {
+        let q = parse("(crosslang UnsafeFFI ProofDrift)").unwrap();
+        assert_eq!(
+            q,
+            Query::Crosslang {
+                from: "UnsafeFFI".to_string(),
+                to: "ProofDrift".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_crosslang_missing_keyword_errors() {
+        assert!(parse("(crosslang :from UnsafeFFI)").is_err());
+        assert!(parse("(crosslang :to ProofDrift)").is_err());
+    }
+
+    #[test]
+    fn parse_crosslang_unknown_keyword_errors() {
+        assert!(parse("(crosslang :bogus UnsafeFFI :to ProofDrift)").is_err());
+    }
+
+    #[test]
+    fn run_since_filters_old_findings() {
+        let dir = tempdir().unwrap();
+        write_test_findings(dir.path());
+        // All test fixtures stamp first_seen_run with a hexad-id that
+        // does not look like an ISO timestamp; fallback is the hexad's
+        // created_at, which is "now". So (since 2099) returns nothing.
+        let q_future = parse("(since 2099-01-01)").unwrap();
+        assert!(run(&q_future, dir.path()).unwrap().is_empty());
+        // Conversely (since 2000) returns everything.
+        let q_past = parse("(since 2000-01-01)").unwrap();
+        assert_eq!(run(&q_past, dir.path()).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn run_crosslang_matches_co_occurrence() {
+        let dir = tempdir().unwrap();
+        write_test_findings(dir.path());
+        // Test fixture: repo "alpha" has UnsafeCode + CryptoMisuse.
+        // (crosslang :from UnsafeCode :to CryptoMisuse) should match
+        // the CryptoMisuse finding in alpha.
+        let q = parse("(crosslang :from UnsafeCode :to CryptoMisuse)").unwrap();
+        let hits = run(&q, dir.path()).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].repo_name, "alpha");
+        assert_eq!(hits[0].category, "CryptoMisuse");
+    }
+
+    #[test]
+    fn run_crosslang_excludes_missing_source() {
+        let dir = tempdir().unwrap();
+        write_test_findings(dir.path());
+        // Test fixture: no PanicPath finding anywhere. So
+        // (crosslang :from PanicPath :to UnsafeCode) finds nothing.
+        let q = parse("(crosslang :from PanicPath :to UnsafeCode)").unwrap();
+        assert!(run(&q, dir.path()).unwrap().is_empty());
     }
 
     #[test]
