@@ -1,0 +1,379 @@
+;; SPDX-License-Identifier: MPL-2.0
+;; Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+;;
+;; Estate sweep campaign report — machine-readable A2ML form.
+;; Companion to reports/campaign-2026-05-26.md (human-readable).
+;;
+;; Schema: panic-attack campaign-report v1.0.0
+;; Tracker: hyperpolymath/panic-attack#32
+
+(campaign-report
+  (metadata
+    (schema-version "1.0.0")
+    (campaign-id "campaign-2026-05-26")
+    (date "2026-05-26")
+    (owner "hyperpolymath")
+    (tracker "hyperpolymath/panic-attack#32")
+    (tool "panic-attack")
+    (tool-version "2.5.0")
+    (estate-root "~/developer/repos/")
+    (estate-size-repos 369)
+    (sessions 2))
+
+  (scope
+    (repos-walked 368)
+    (repos-scanned 349)
+    (repos-skipped 19)
+    (nested-containers 6)
+    (nested-containers-list
+      "a2ml" "awesome-projects" "idaptik" "isers" "julia-libraries" "k9"))
+
+  ;; ─── Findings (post-scan, pre-classification) ──────────────────────────────
+
+  (findings-summary
+    (total-critical-high 6069)
+    (already-suppressed 961)
+    (worktree-artefacts-skipped 40)
+    (actionable 2477))
+
+  (findings-by-category
+    (entry (category "UnsafeCode") (count 424) (severity "critical-high"))
+    (entry (category "UnsafeFFI") (count 73) (severity "critical-high"))
+    (entry (category "SupplyChain") (count 398) (severity "critical-high"))
+    (entry (category "UnboundedAllocation") (count 516) (severity "critical-high"))
+    (entry (category "DynamicCodeExecution") (count 472) (severity "critical-high"))
+    (entry (category "HardcodedSecret") (count 122) (severity "critical-high"))
+    (entry (category "CommandInjection") (count 113) (severity "critical-high"))
+    (entry (category "UnsafeDeserialization") (count 73) (severity "critical-high"))
+    (entry (category "UnsafeTypeCoercion") (count 32) (severity "critical-high"))
+    (entry (category "CryptoMisuse") (count 28) (severity "critical-high"))
+    (entry (category "ProofDrift") (count 219) (severity "critical-high"))
+    (entry (category "ExcessivePermissions") (count 13) (severity "critical-high"))
+    (entry (category "UncheckedAllocation") (count 12) (severity "critical-high"))
+    (entry (category "AtomExhaustion") (count 10) (severity "critical-high"))
+    (entry (category "PanicPath") (count 7) (severity "critical-high"))
+    (entry (category "UnboundedLoop") (count 5) (severity "critical-high")))
+
+  ;; ─── Track A — FFI/fixture classification PRs ──────────────────────────────
+
+  (track-a
+    (description "Per-repo audits/assail-classifications.a2ml + audit doc writing a narrow allow-list for legitimate unsafe / fixture-context findings.")
+    (prs-count 13)
+    (findings-classified 391)
+    (pr
+      (repo "svalinn") (number 11) (state "open") (findings 4)
+      (classification "test-context-fixture")
+      (rationale "JWT decodeJwt in benches and tests; not production paths."))
+    (pr
+      (repo "proven") (number 67) (state "open") (findings 150)
+      (classification "legitimate-ffi + protocol-type-identifier + binding-wrapper-naming")
+      (rationale "bindings/<lang>/src and ffi/<lang>/src wrappers over libproven C ABI; Idris2 protocol-type identifiers; binding-wrapper naming patterns."))
+    (pr
+      (repo "gossamer") (number 54) (state "open") (findings 24)
+      (classification "legitimate-ffi")
+      (rationale "Zig FFI to GTK WebKit (webview_gtk) and CSP enforcer."))
+    (pr
+      (repo "docudactyl") (number 20) (state "open") (findings 15)
+      (classification "legitimate-ffi")
+      (rationale "ffi/zig/src C-ABI bridge."))
+    (pr
+      (repo "proven-servers") (number 11) (state "open") (findings 10)
+      (classification "legitimate-ffi")
+      (rationale "bindings/rust/src C-ABI bridge to libproven."))
+    (pr
+      (repo "aerie") (number 35) (state "open") (findings 10)
+      (classification "legitimate-ffi")
+      (rationale "src/api/zig C-ABI bridge."))
+    (pr
+      (repo "stapeln") (number 62) (state "open") (findings 10)
+      (classification "legitimate-ffi")
+      (rationale "vordr eBPF (kernel) + Zig FFI + Ada↔liboqs bindings via Unchecked_Conversion."))
+    (pr
+      (repo "ambientops") (number 102) (state "open") (findings 10)
+      (classification "legitimate-ffi")
+      (rationale "Cross-subproject syscall + FFI cluster (cfk-providers libc::statvfs; ffi/{fuse,systemd}; port-endoscope; session-sentinel DBus; nerdsafe-restart ncurses)."))
+    (pr
+      (repo "valence-shell") (number 32) (state "open") (findings 8)
+      (classification "legitimate-ffi")
+      (rationale "POSIX shell job-control libc (chown/getpwnam/getgrnam/getpgrp/kill/pipe/WIFSTOPPED) + Zig FFI to Lean-verified core."))
+    (pr
+      (repo "panll") (number 47) (state "open") (findings 6)
+      (classification "legitimate-ffi")
+      (rationale "Idris2 Zig FFI + src-gossamer (frozen, ADR-0001) OS-FFI for system_tray, sysinfo, coprocessor, llm_coding."))
+    (pr
+      (repo "linguist") (number 3) (state "open") (findings 13)
+      (classification "sample-reference-fixture + vendored-grammar-tool")
+      (rationale "samples/ is third-party language-detection corpus (verbatim git/redis/JSON-C++); tools/grammars/pcre is vendored Go cgo binding."))
+    (pr
+      (repo "boj-server") (number 154) (state "open") (findings 119)
+      (classification "legitimate-ffi")
+      (rationale "117 MCP cartridge_shim.zig + 2 backend FFI (federation, cartridge_shim). Supersedes #153."))
+    (pr
+      (repo "idaptik") (number 98) (state "open") (findings 12)
+      (classification "game-content-fixture")
+      (rationale "In-game password dictionaries (PasswordCracker mini-game) + fictional credentials in GlobalNetworkData; file itself documents these as 'NOT real secrets'.")))
+
+  ;; ─── Track B — real-bug remainder ──────────────────────────────────────────
+
+  (track-b
+    (description "Genuine code-bug findings after Track A classifications drained the FFI noise.")
+    (issues-filed 1)
+    (prs-filed 1)
+    (item
+      (repo "svalinn")
+      (issue 12)
+      (pr 14)
+      (severity "critical-functional")
+      (severity-initial-assessment "critical-security-bypass")
+      (severity-final-assessment "critical-functional (fail-closed by accident, not by signature-skip)")
+      (description "Jwt.verifyJwt did not verify signatures; chain of %raw blocks referenced bindings ReScript optimised away as unused, so verifyJwt threw ReferenceError on every call. AuthMiddleware caught and returned authenticated:false — JWT auth fail-closed by accident, not by design.")
+      (related-bugs
+        "base64UrlDecode (_i vs i mismatch)"
+        "OAuth2.generateState (array var elided)"
+        "OAuth2.URLSearchParams (module shadowed global constructor)")
+      (fix-summary "Wire crypto.subtle.importKey + verify against JWK; build signing input via TextEncoder from raw b64 segments; algorithm allow-list (RS/PS/ES 256-512, EdDSA); reject 'none' and unrecognised algs; no-OIDC fallback in AuthMiddleware fails closed explicitly.")
+      (tests "29/29 auth tests pass (was 17/12 split on main).")))
+
+  ;; ─── Track C — per-repo human-triage tracking issues ───────────────────────
+
+  (track-c
+    (description "Critical/High findings aggregated per repo for human triage. Excludes PA001/PA007 (Track A) and ProofDrift (Track D).")
+    (issues-count 35)
+    (findings-surfaced 1300)
+    (issue (repo "stapeln") (number 63) (findings 13))
+    (issue (repo "ambientops") (number 103) (findings 34))
+    (issue (repo "gitbot-fleet") (number 207) (findings 51))
+    (issue (repo "standards") (number 178) (findings 39))
+    (issue (repo "reposystem") (number 68) (findings 37))
+    (issue (repo "panll") (number 48) (findings 44))
+    (issue (repo "proven") (number 68) (findings 33))
+    (issue (repo "boj-server") (number 155))
+    (issue (repo "valence-shell") (number 33))
+    (issue (repo "grim-repo") (number 22) (findings 29))
+    (issue (repo "protocol-squisher") (number 64) (findings 23))
+    (issue (repo "burble") (number 91) (findings 19))
+    (issue (repo "svalinn") (number 13))
+    (issue (repo "wordpress-tools") (number 25) (findings 18))
+    (issue (repo "academic-workflow-suite") (number 201) (findings 15))
+    (issue (repo "my-lang") (number 67) (findings 14))
+    (issue (repo "januskey") (number 37) (findings 13))
+    (issue (repo "idaptik") (number 99) (findings 23))
+    (issue (repo "patallm-gallery") (number 55) (findings 15))
+    (issue (repo "echo-types") (number 113) (findings 12))
+    (issue (repo "verisimdb") (number 47) (findings 10))
+    (issue (repo "eclexia") (number 20) (findings 10))
+    (issue (repo "conflow") (number 17) (findings 10))
+    (issue (repo "claude-integrations") (number 38) (findings 10))
+    (issue (repo "bofig") (number 80) (findings 10))
+    (issue (repo "ssg-collection") (number 13) (findings 9))
+    (issue (repo "asdf-tool-plugins") (number 32) (findings 9))
+    (issue (repo "affinescript") (number 378) (findings 9))
+    (issue (repo "game-server-admin") (number 20) (findings 8))
+    (issue (repo "ephapax") (number 138) (findings 8))
+    (issue (repo "echidna") (number 104) (findings 8))
+    (issue (repo "conative-gating") (number 53) (findings 8))
+    (issue (repo "proven-servers") (number 12) (findings 7))
+    (issue (repo "odds-and-sods-package-manager") (number 31) (findings 7))
+    (issue (repo "absolute-zero") (number 43) (findings 7))
+    (issue (repo "wokelang") (number 61) (findings 6))
+    (issue (repo "proof-burrower") (number 14) (findings 6))
+    (issue (repo "julia-ecosystem") (number 6) (findings 209))
+    (issue (repo "developer-ecosystem") (number 83) (findings 166))
+    (issue (repo "project-wharf") (number 34) (findings 6))
+    (issue (repo "palimpsest-plasma") (number 19) (findings 6))
+    (issue (repo "betlang") (number 31) (findings 6))
+    (issue (repo "zotero-tools") (number 14) (findings 5))
+    (issue (repo "vex-tools") (number 24) (findings 5))
+    (issue (repo "vexometer") (number 20) (findings 5))
+    (issue (repo "social-media-tools") (number 27) (findings 5))
+    (issue (repo "maa-framework") (number 72) (findings 5))
+    (issue (repo "fireflag") (number 29) (findings 5))
+    (issue (repo "filesoup") (number 18) (findings 5))
+    (issue (repo "file-soup") (number 41) (findings 5))
+    (issue (repo "accessibility-everywhere") (number 41) (findings 5)))
+
+  ;; ─── Track D / Phase 5 — proof-aware ───────────────────────────────────────
+
+  (track-d
+    (description "ProofDrift findings in 3 proof repos. ZERO required actual proof discharge — all classifications.")
+    (prs-count 3)
+    (real-proof-debt-discharged 0)
+    (pr
+      (repo "echidna") (number 107) (state "merged") (findings 2)
+      (classification "legitimate-mathematical-axiom + intentional-parameter")
+      (rationale "Basic.agda funext (HoTT-standard function extensionality) + SoundnessPreservation.agda Conflicts (intentional design parameter, not debt)."))
+    (pr
+      (repo "tropical-resource-typing") (number 4) (state "merged") (findings 4)
+      (classification "detector-false-positive-comment-text")
+      (rationale "PA021 matched 'sorry'/'oops' inside Isabelle \\<open>...\\</close> and @{text ...} comment antiquotations. No real proof debt."))
+    (pr
+      (repo "standards") (number 184) (state "open") (findings 1)
+      (file "lol/proofs/theories/information_theory.agda")
+      (postulate-count 4)
+      (classification "justified-postulate-real-analysis")
+      (rationale "entropy-nonneg, kl-nonneg, js-symmetric, js-bounded; textbook proofs (HoTT/Gibbs/Lin 1991) requiring real-analysis formalisation over ℝ. File's own line 112 comment classifies these as 'justified postulates, not proof debt'."))
+    (tracking-issues-closed
+      "hyperpolymath/echidna#105"
+      "hyperpolymath/tropical-resource-typing#3"
+      "hyperpolymath/standards#181")
+    (parked-debts-honoured
+      (entry (repo "ephapax") (file "formal/Semantics.v") (line 3327) (debt "preservation"))
+      (entry (repo "boj-server") (file "src/abi/Boj/SafetyLemmas.idr") (debt "5 believe_me — class-J primitive axioms (3-month dedicated harness)"))
+      (entry (repo "betlang") (debt "substTop_preserves_typing axiom (discharge recipe in PR#27)"))))
+
+  ;; ─── Track E — bridge CVE triage ───────────────────────────────────────────
+
+  (track-e-bridge
+    (description "panic-attack bridge triage (RustSec advisory DB + reachability) across Rust repos with Cargo.lock.")
+    (rust-repos-scanned 58)
+    (rust-repos-with-cves 29)
+    (issues-filed 24)
+    (cves-total 165)
+    (cves-by-classification
+      (entry (classification "informational") (status "phantom") (count 157))
+      (entry (classification "unmitigable") (status "reachable") (count 8)))
+    (real-risk-cves 8)
+    (real-risk-detail
+      (entry (repo "hesiod-dns-map") (package "hickory-proto") (version "0.25.2") (cves "GHSA-3v94-mw7p-v465" "GHSA-q2qq-hmj6-3wpp" "RUSTSEC-2026-0118" "RUSTSEC-2026-0119") (fix-available false))
+      (entry (repo "presswerk") (package "rand") (version "0.7.3") (cves "GHSA-cq8v-f236-94qc" "RUSTSEC-2026-0097") (fix-available false))
+      (entry (repo "reposystem") (package "rand") (version "0.9.2") (cves "GHSA-cq8v-f236-94qc" "RUSTSEC-2026-0097") (fix-available false))))
+
+  ;; ─── Track E — other specialised modes ─────────────────────────────────────
+
+  (track-e-specialised
+    (subtrack
+      (name "signatures")
+      (status "n/a")
+      (reason "Subcommand does not exist in panic-attack v2.5.0; planned but never shipped."))
+    (subtrack
+      (name "temporal")
+      (status "blocked")
+      (reason "No verisimdb-data/temporal-index.json exists anywhere in the estate. The 4 .verisimdb/ dirs found are verisimdb-service deployment configs, not snapshot data. Real coverage depends on panic-attack#33 (VeriSimDB hexad persistence) landing."))
+    (subtrack
+      (name "assault")
+      (status "deferred")
+      (reason "Needs per-target long-running build + manually-chosen stdin/args. CLIs that exit on --help return 100% robustness because attacks never land. Not estate-wide automatable.")
+      (smoke-test
+        (target "panic-attack --help")
+        (intensity "light")
+        (duration-per-axis-seconds 5)
+        (axes "cpu,memory")
+        (crashes 0)
+        (signatures 0)
+        (robustness-percent 100.0)
+        (verdict "as-expected for fast-exit CLI"))))
+
+  ;; ─── Upstream bugs filed against panic-attack itself ───────────────────────
+
+  (upstream-bugs
+    (bug
+      (number 33)
+      (type "design")
+      (title "Complete VeriSimDB hexad persistence")
+      (rationale "JSON output schema doesn't handle multi-axis well; would shrink scan-output and enable real temporal-diff coverage."))
+    (bug
+      (number 43)
+      (type "bug")
+      (title "PA021 ProofDrift: detector matches sorry/oops inside Isabelle comment text")
+      (evidence "4 false positives on tropical-resource-typing; same blind spot likely in Agda/Coq/Idris detectors."))
+    (bug
+      (number 47)
+      (type "bug")
+      (title "bridge triage: 'Remove unused dependency' action assumes direct dep, fires on transitive deps")
+      (evidence "28/28 phantom packages sampled across 6 repos were transitive, never declared in any Cargo.toml.")))
+
+  ;; ─── Skipped / blocked ─────────────────────────────────────────────────────
+
+  (skipped
+    (entry (repo "polystack") (reason "archived on GitHub (read-only)") (unblocking-action "owner unarchive"))
+    (entry (repo "hypatia") (reason "active working tree with 280+ untracked files at session start") (unblocking-action "wait for active session to commit/clear, then re-attempt classification"))
+    (entry (repo "linguist") (reason "fork with issues disabled") (unblocking-action "Track A PR #3 landed; Track C not filed"))
+    (entry (repo "rescript") (reason "fork with issues disabled") (unblocking-action "n/a — covered via developer-ecosystem container issue #83"))
+    (entry (repo "HOL") (reason "fork with issues disabled") (unblocking-action "n/a"))
+    (entry (repo "hyperpolymath-archive") (reason "repo deleted on GitHub") (unblocking-action "n/a"))
+    (entry (repo "standards-as-port") (reason "remote points to standards.git; orphan duplicate") (unblocking-action "n/a"))
+    (entry (repo "julia-libraries/*") (reason "Julia chapter closed per project memory") (unblocking-action "n/a — covered via julia-ecosystem container issue #6"))
+    (entry (repo "agda-stdlib") (reason "upstream agda/agda-stdlib clone, no hyperpolymath/ fork") (unblocking-action "n/a")))
+
+  ;; ─── Mid-campaign corrections ──────────────────────────────────────────────
+
+  (corrections
+    (entry
+      (kind "file-overwrite")
+      (repo "echidna")
+      (pr 107)
+      (description "Initial commit overwrote 14 pre-existing FFI-boundary classification entries on audits/assail-classifications.a2ml. Driver script did 'cat >' without checking existing.")
+      (fix-commit "fix: restore pre-existing FFI-boundary classifications (was overwritten)")
+      (final-state "16 entries (14 original + 2 new PA021)")
+      (lesson "Future per-repo classification PRs should 'git show origin/main:audits/assail-classifications.a2ml' before truncating.")))
+
+  ;; ─── Discoveries (significant findings worth surfacing) ────────────────────
+
+  (discoveries
+    (entry
+      (kind "language-level-bug")
+      (project "svalinn")
+      (title "ReScript %raw blocks elide bindings the compiler can't see")
+      (impact "JWT auth + OAuth2 state generation + URLSearchParams wrapper all non-functional at runtime despite looking correct in source. Fail-closed by accident.")
+      (resolution "PR svalinn#14; lesson: never trust a %raw block whose only 'use' of a binding is through the %raw string."))
+    (entry
+      (kind "tool-limitation")
+      (project "panic-attack")
+      (title "bridge triage doesn't distinguish direct from transitive deps")
+      (impact "'Remove unused dependency' action is misleading for transitive deps (all 28 sampled phantoms); Lane 1 mechanical PR approach collapses.")
+      (resolution "panic-attack#47 filed; underlying 'informational + phantom' classification is correct."))
+    (entry
+      (kind "tool-limitation")
+      (project "panic-attack")
+      (title "PA021 ProofDrift counts keywords inside docstring antiquotations")
+      (impact "All 4 tropical-resource-typing findings false positives; same blind spot likely affects Agda/Coq/Idris detectors.")
+      (resolution "panic-attack#43 filed; tropical-resource-typing PR #4 classified all 4 as detector-false-positive-comment-text and merged.")))
+
+  ;; ─── Guardrails honoured ──────────────────────────────────────────────────
+
+  (guardrails
+    (entry "All commits GPG-signed (key 4A03639C1EB1F86C7F0C97A91835A14A2867091E).")
+    (entry "Base = main for every PR.")
+    (entry "Auto-merge disabled on every PR (estate-wide auto-merge banned).")
+    (entry "No --no-verify / --no-gpg-sign.")
+    (entry "features/panic-attacker/ stub dirs untouched.")
+    (entry "vcl-ut/_wt-vclut*, hypatia/.claude/worktrees/agent-*, ephapax _wt-eph-* — all untouched.")
+    (entry "Parked debts (ephapax preservation, betlang substTop, boj-server class-J) not refiled.")
+    (entry "Julia chapter closed — no per-.jl issues filed.")
+    (entry "Parallel-session branches left alone: standards on claude/governance-allowlist-foundation, panic-attack on fix/idris-lang-chapel-not-c.")
+    (entry "valence-shell's stray local main commit preserved by branching from origin/main."))
+
+  ;; ─── Outputs summary ──────────────────────────────────────────────────────
+
+  (outputs-summary
+    (prs-filed 17)
+    (prs-merged 2)
+    (prs-open 15)
+    (issues-filed 62)
+    (upstream-bugs-filed 3)
+    (tracker-comments 5)
+    (total-actions 87))
+
+  ;; ─── What remains (owner-side) ────────────────────────────────────────────
+
+  (carry-forward
+    (entry (kind "owner-review") (description "Merge the 15 open PRs."))
+    (entry (kind "owner-triage") (description "Triage Track C tracking issues (~1300 findings) per-repo."))
+    (entry (kind "owner-decision") (description "Decide on the 3 upstream panic-attack bugs (#33, #43, #47)."))
+    (entry (kind "deferred-session") (description "hypatia classification once active session clears."))
+    (entry (kind "deferred-session") (description "polystack — owner unarchive on GitHub."))
+    (entry (kind "deferred-session") (description "Track E assault campaign — heavyweight per-target work, dedicated session.")))
+
+  ;; ─── Campaign workspace (preserved) ───────────────────────────────────────
+
+  (workspace
+    (path "/tmp/panic-attack-campaign-2026-05-26/")
+    (artefacts
+      (entry "per-repo/*.json — 349 assail reports")
+      (entry "bridge/*.json — 58 Rust-repo bridge reports")
+      (entry "02-plan.json — triage classification plan")
+      (entry "assault/self-test.json — Track E smoke test")
+      (entry "00-per-repo.sh, 00b-nested.sh, 01-triage.ts, file-ffi-pr-v2.sh, file-track-c-issue.sh — driver scripts")
+      (entry "TRACKER-UPDATE.md … TRACKER-UPDATE-V5.md — intermediate session summaries posted on #32")))
+
+  (status "complete-bounded-by-owner-throughput"))
