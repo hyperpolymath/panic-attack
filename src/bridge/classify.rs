@@ -14,6 +14,62 @@
 
 use super::{Classification, ReachabilityEvidence, ReachabilityStatus, Vulnerability};
 
+/// Build-script-only / vendored-pin allowlist (issue #74).
+///
+/// These crates are commonly declared in `[dependencies]` but have **zero
+/// `use` sites by design**: they're used purely from `build.rs`, for their
+/// linker side-effects, or as the canonical Rust binding for a native lib
+/// (declared via `links = "…"`). A naive `cargo machete --fix` strip
+/// breaks cross-compile TLS, native-lib resolution, and build-time codegen.
+///
+/// Match by crate name. Feature-based detection (e.g. `openssl-sys` with
+/// the `vendored` feature) is a planned follow-up requiring feature-set
+/// plumbing into the bridge.
+fn is_build_script_only_or_vendored_pin(name: &str) -> bool {
+    matches!(
+        name,
+        // Build-script side-effect crates (no `use` site by design).
+        "pkg-config"
+            | "cc"
+            | "bindgen"
+            | "cmake"
+            | "autocfg"
+            | "vcpkg"
+            | "winres"
+            | "embed-resource"
+            // Canonical vendored-pin crate (declares vendored native lib).
+            | "openssl-src"
+    )
+}
+
+/// Dioxus desktop / wry transitive GUI parent set (issue #75).
+fn is_dioxus_gui_parent(parent: &str) -> bool {
+    matches!(parent, "wry" | "dioxus-desktop" | "dioxus")
+}
+
+/// GTK / webkit family crates pulled in transitively by wry / dioxus-desktop.
+/// When parent is a Dioxus GUI parent AND the crate is in this family, the
+/// vulnerability is a Cohort E-2 informational — the host repo cannot fix it
+/// short of swapping out the Dioxus desktop renderer.
+fn is_gtk_webkit_family(name: &str) -> bool {
+    // Heuristic prefix/exact match across the atk/gdk/gtk/glib/wry transitive
+    // surface observed in presswerk (Track E 2026-05-27).
+    name.starts_with("atk")
+        || name.starts_with("gdk")
+        || name.starts_with("gtk")
+        || name == "glib"
+        || name == "glib-sys"
+        || name == "gio"
+        || name == "gio-sys"
+        || name == "gobject-sys"
+        || name == "gtk3-macros"
+        || name == "proc-macro-error"
+        || name == "paste"
+        || name == "fxhash"
+        || name == "webkit2gtk"
+        || name == "webkit2gtk-sys"
+}
+
 /// Classify a vulnerability given its reachability evidence.
 ///
 /// The three-way output (Mitigable / Unmitigable / Informational) is
@@ -35,20 +91,46 @@ pub fn classify(
 ) -> (Classification, String, String) {
     match evidence.status {
         // ─── Phantom + declared: manifest entry is genuinely unused ───
-        ReachabilityStatus::PhantomDeclared => (
-            Classification::Informational,
-            format!(
-                "{} {} is declared in Cargo.toml but never imported in any .rs file. \
-                 The vulnerable code is compiled but unreachable. \
-                 Stripping the dependency eliminates this CVE entirely.",
-                vuln.package, vuln.version
-            ),
-            format!(
-                "Strip from Cargo.toml — run `cargo machete --fix` (or remove the \
-                 dependency line manually) for `{}`.",
-                vuln.package
-            ),
-        ),
+        ReachabilityStatus::PhantomDeclared => {
+            // Cohort E-3 override (issue #74): build-script-only / vendored-pin
+            // crates have no `use` site BY DESIGN. Stripping them breaks the
+            // build inscrutably. Keep Informational classification but flip
+            // the action from "strip" to "DO NOT STRIP".
+            if is_build_script_only_or_vendored_pin(&vuln.package) {
+                return (
+                    Classification::Informational,
+                    format!(
+                        "{} {} is declared in Cargo.toml with no `use` site, but it \
+                         is a build-script-only or vendored-pin crate (load-bearing \
+                         via build.rs side-effects or native-lib linkage). \
+                         The vulnerable code is compiled but never executed at runtime.",
+                        vuln.package, vuln.version
+                    ),
+                    format!(
+                        "DO NOT STRIP — `{}` is on the build-script-only / \
+                         vendored-pin allowlist. Stripping would break the build \
+                         (cross-compile TLS, native-lib resolution, or build-time \
+                         codegen). Bump to a patched version when one is available, \
+                         or accept as informational.",
+                        vuln.package
+                    ),
+                );
+            }
+            (
+                Classification::Informational,
+                format!(
+                    "{} {} is declared in Cargo.toml but never imported in any .rs file. \
+                     The vulnerable code is compiled but unreachable. \
+                     Stripping the dependency eliminates this CVE entirely.",
+                    vuln.package, vuln.version
+                ),
+                format!(
+                    "Strip from Cargo.toml — run `cargo machete --fix` (or remove the \
+                     dependency line manually) for `{}`.",
+                    vuln.package
+                ),
+            )
+        }
 
         // ─── Phantom + transitive: pulled in by an upstream parent ───
         ReachabilityStatus::PhantomTransitive => {
@@ -56,6 +138,50 @@ pub fn classify(
                 Some(p) => format!("`{p}`"),
                 None => "an upstream parent dependency".to_string(),
             };
+
+            // Cohort E-2 override (issue #75): Dioxus desktop / wry pulls in
+            // the entire GTK/webkit family; presswerk-class repos cannot fix
+            // these short of swapping the renderer. Annotate the cohort
+            // explicitly so triage tooling can batch-suppress.
+            if let Some(parent) = evidence.parent_dep.as_deref() {
+                if is_dioxus_gui_parent(parent) && is_gtk_webkit_family(&vuln.package) {
+                    return (
+                        Classification::Informational,
+                        format!(
+                            "{} {} is a Cohort E-2 transitive: pulled in by {parent_clause}, \
+                             part of the GTK/webkit transitive surface that ships with \
+                             Dioxus desktop / wry. The vulnerable code is compiled but \
+                             not reachable from this project's code paths.",
+                            vuln.package, vuln.version
+                        ),
+                        format!(
+                            "Cohort E-2 (Dioxus/GTK transitive): no local fix. Either \
+                             (a) wait for `{parent}` to ship a release that bumps the \
+                             GTK family past the affected versions, or (b) swap the \
+                             Dioxus desktop renderer for an alternative (egui, slint, \
+                             gpui). Tracked at hyperpolymath/panic-attack#75."
+                        ),
+                    );
+                }
+                // Cohort E-2 sub-rule: printpdf internalises kuchiki as its
+                // HTML→PDF parser; not host-exposed.
+                if parent == "printpdf" && vuln.package == "kuchiki" {
+                    return (
+                        Classification::Informational,
+                        format!(
+                            "{} {} is a Cohort E-2 transitive: printpdf internalises \
+                             kuchiki for HTML→PDF parsing. Not exposed on host paths.",
+                            vuln.package, vuln.version
+                        ),
+                        "Cohort E-2 (printpdf-internal): no local fix. Wait for \
+                         `printpdf` to swap its HTML parser, or replace `printpdf` \
+                         with a non-kuchiki PDF library (e.g. lopdf, pdf-writer). \
+                         Tracked at hyperpolymath/panic-attack#75."
+                            .to_string(),
+                    );
+                }
+            }
+
             (
                 Classification::Informational,
                 format!(
@@ -316,5 +442,119 @@ mod tests {
         let (cls_trans, _, _) = classify(&mock_vuln(false, false), &phantom_transitive_evidence(None));
         assert_eq!(cls_decl, Classification::Informational);
         assert_eq!(cls_trans, Classification::Informational);
+    }
+
+    // ─── Cohort E-3 — build-script-only / vendored-pin allowlist (#74) ───
+
+    fn vuln_named(name: &str) -> Vulnerability {
+        let mut v = mock_vuln(false, false);
+        v.package = name.to_string();
+        v
+    }
+
+    #[test]
+    fn test_phantom_declared_build_script_only_says_do_not_strip() {
+        // pkg-config / cc / bindgen / etc. have no `use` site by design;
+        // a naive strip breaks the build.
+        for name in ["pkg-config", "cc", "bindgen", "cmake", "autocfg", "vcpkg"] {
+            let (cls, _, action) = classify(&vuln_named(name), &phantom_declared_evidence());
+            assert_eq!(cls, Classification::Informational, "`{name}` must classify Informational");
+            assert!(
+                action.contains("DO NOT STRIP"),
+                "`{name}` must NOT recommend strip, got: {action}"
+            );
+            assert!(
+                !action.contains("cargo machete"),
+                "`{name}` must NOT mention machete, got: {action}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_phantom_declared_openssl_src_says_do_not_strip() {
+        // openssl-src is the canonical "vendored OpenSSL" crate — load-bearing
+        // even when nothing imports it.
+        let (cls, _, action) = classify(&vuln_named("openssl-src"), &phantom_declared_evidence());
+        assert_eq!(cls, Classification::Informational);
+        assert!(action.contains("DO NOT STRIP"));
+        assert!(action.contains("vendored-pin"));
+    }
+
+    #[test]
+    fn test_phantom_declared_normal_crate_still_recommends_strip() {
+        // Regression: the allowlist must not over-fire on ordinary crates.
+        let (cls, _, action) = classify(&vuln_named("serde_json"), &phantom_declared_evidence());
+        assert_eq!(cls, Classification::Informational);
+        assert!(action.contains("cargo machete --fix"));
+        assert!(!action.contains("DO NOT STRIP"));
+    }
+
+    // ─── Cohort E-2 — Dioxus / GTK transitive (#75) ───
+
+    #[test]
+    fn test_phantom_transitive_dioxus_gtk_family_annotates_cohort_e2() {
+        // presswerk shape: gtk@0.18 pulled in by wry → dioxus-desktop.
+        let (cls, rationale, action) = classify(
+            &vuln_named("gtk"),
+            &phantom_transitive_evidence(Some("wry")),
+        );
+        assert_eq!(cls, Classification::Informational);
+        assert!(
+            rationale.contains("Cohort E-2"),
+            "rationale should label as Cohort E-2, got: {rationale}"
+        );
+        assert!(
+            action.contains("Cohort E-2") && action.contains("Dioxus/GTK"),
+            "action should describe the cohort + no-local-fix path, got: {action}"
+        );
+        assert!(
+            action.contains("panic-attack#75"),
+            "action should reference the tracking issue, got: {action}"
+        );
+    }
+
+    #[test]
+    fn test_phantom_transitive_gtk_family_via_dioxus_parent() {
+        // Same family check but parent is dioxus-desktop directly.
+        for name in ["atk", "atk-sys", "gdk", "gdk-sys", "glib", "gtk3-macros", "paste", "fxhash"] {
+            let (_, rationale, _) = classify(
+                &vuln_named(name),
+                &phantom_transitive_evidence(Some("dioxus-desktop")),
+            );
+            assert!(
+                rationale.contains("Cohort E-2"),
+                "`{name}` via dioxus-desktop should label Cohort E-2, got: {rationale}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_phantom_transitive_kuchiki_via_printpdf_annotates_cohort_e2() {
+        let (cls, rationale, action) = classify(
+            &vuln_named("kuchiki"),
+            &phantom_transitive_evidence(Some("printpdf")),
+        );
+        assert_eq!(cls, Classification::Informational);
+        assert!(rationale.contains("Cohort E-2"));
+        assert!(action.contains("printpdf-internal"));
+        assert!(action.contains("panic-attack#75"));
+    }
+
+    #[test]
+    fn test_phantom_transitive_non_dioxus_parent_uses_generic_message() {
+        // Regression: gtk-family check must only fire when parent is in the
+        // Dioxus GUI parent set. gtk pulled in by something else (e.g. an
+        // experimental UI lib that happens to use gtk) shouldn't get the
+        // Cohort E-2 message.
+        let (cls, rationale, action) = classify(
+            &vuln_named("gtk"),
+            &phantom_transitive_evidence(Some("some-other-gui")),
+        );
+        assert_eq!(cls, Classification::Informational);
+        assert!(
+            !rationale.contains("Cohort E-2"),
+            "non-Dioxus parent should NOT trigger E-2 cohort, got: {rationale}"
+        );
+        assert!(action.contains("bumping the parent"));
     }
 }
