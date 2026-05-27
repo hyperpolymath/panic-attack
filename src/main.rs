@@ -851,6 +851,18 @@ enum CampaignAction {
         #[arg(short, long, value_name = "FILE")]
         output: Option<PathBuf>,
     },
+
+    /// Poll GitHub for PR-state transitions on every `pr-filed` finding
+    /// and write new campaign hexads when state changes (issue #33 S2b).
+    ///
+    /// Requires the `http` feature. Reads auth token from `GH_TOKEN` or
+    /// `GITHUB_TOKEN` (falls back to unauthenticated, 60 req/hr).
+    #[cfg(feature = "http")]
+    Poll {
+        /// VeriSimDB data directory (default: `verisimdb-data`).
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+    },
 }
 
 /// Patch Bridge subcommands for CVE lifecycle management.
@@ -2511,6 +2523,28 @@ fn run_main() -> Result<()> {
                             qprintln!(cli.quiet, "Status written to {}", path.display());
                         }
                         None => print!("{}", md),
+                    }
+                }
+                #[cfg(feature = "http")]
+                CampaignAction::Poll { verisimdb_dir } => {
+                    let outcomes = campaign::poll(&verisimdb_dir)?;
+                    let transitioned = outcomes.iter().filter(|o| o.transitioned).count();
+                    qprintln!(
+                        cli.quiet,
+                        "Polled {} open findings, {} state transitions",
+                        outcomes.len(),
+                        transitioned
+                    );
+                    for o in &outcomes {
+                        if o.transitioned {
+                            qprintln!(
+                                cli.quiet,
+                                "  {} : {} -> {}",
+                                o.finding_id,
+                                o.old_state,
+                                o.new_state
+                            );
+                        }
                     }
                 }
             }
