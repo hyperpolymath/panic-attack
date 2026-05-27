@@ -4457,8 +4457,18 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
+        // Julia package-extension pattern: *Ext.jl files use eval/Meta.parse
+        // idiomatically as part of the language's extension mechanism. Skip DCE
+        // detection for these files to avoid mass false positives.
+        let is_julia_package_extension = file_path.ends_with("Ext.jl")
+            || file_path.starts_with("ext/")
+            || file_path.contains("/ext/")
+            || file_path.contains("\\ext\\");
+
         // eval / Meta.parse (dynamic code execution)
-        if content.contains("eval(") || content.contains("Meta.parse(") {
+        if !is_julia_package_extension
+            && (content.contains("eval(") || content.contains("Meta.parse("))
+        {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -7761,6 +7771,54 @@ pub fn safe_get_x() -> Option<String> {
         assert!(
             Analyzer::is_rust_ffi_safe_wrapper(src),
             "unsafe fn / unsafe extern must not count toward the unsafe-block tally"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Julia package-extension DCE exemption
+    // ---------------------------------------------------------------
+
+    fn count_julia_dce(content: &str, file_path: &str) -> usize {
+        let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
+        let mut stats = ProgramStatistics::default();
+        let mut wp = Vec::new();
+        analyzer
+            .analyze_julia(content, &mut stats, &mut wp, file_path)
+            .expect("analyze_julia");
+        wp.iter()
+            .filter(|w| matches!(w.category, WeakPointCategory::DynamicCodeExecution))
+            .count()
+    }
+
+    #[test]
+    fn julia_ext_jl_dce_is_exempt() {
+        let src = r#"function __init__() Meta.parse("1 + 1") end"#;
+        assert_eq!(
+            count_julia_dce(src, "FooExt.jl"),
+            0,
+            "*Ext.jl files use eval/Meta.parse idiomatically — must be exempt"
+        );
+    }
+
+    #[test]
+    fn julia_ext_dir_dce_is_exempt() {
+        // Per Julia convention some package extensions live under ext/<Name>.jl
+        // rather than the trailing-Ext.jl filename — both shapes must skip DCE.
+        let src = r#"eval(:(x = 1))"#;
+        assert_eq!(
+            count_julia_dce(src, "ext/MyExtension.jl"),
+            0,
+            "files under ext/ must be exempt"
+        );
+    }
+
+    #[test]
+    fn julia_regular_file_still_flags_eval() {
+        // Non-extension Julia files must still report eval/Meta.parse usage.
+        let src = r#"function dangerous() eval(user_input) end"#;
+        assert!(
+            count_julia_dce(src, "src/dangerous.jl") > 0,
+            "non-extension Julia files must still flag eval()"
         );
     }
 }
