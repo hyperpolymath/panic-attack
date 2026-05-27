@@ -869,11 +869,6 @@ pub fn load_campaign_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
 /// directory doesn't exist — callers (notably the `(crosslang :from :to)`
 /// query evaluator's facts-backed path) treat the empty case as "fall back
 /// to co-occurrence proxy".
-///
-/// `#[allow(dead_code)]` because the next stack PR (query evaluator
-/// facts-backed mode) is the first caller — kept public so that consumer
-/// can pick it up without further plumbing.
-#[allow(dead_code)]
 pub fn load_crosslang_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
     load_hexad_dir(&base_dir.join("hexads").join("crosslang"))
 }

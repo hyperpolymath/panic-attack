@@ -31,26 +31,32 @@
 //!   lexicographically. RFC-3339 / ISO-8601 strings sort correctly under
 //!   string comparison, which is what we use.
 //!
-//! - `(crosslang :from X :to Y)` is a **co-occurrence proxy** for
-//!   FFI/cross-language reachability: it matches a `Y`-category finding
-//!   in a repo that also has at least one `X`-category finding. This is
-//!   the operationally useful case for the estate sweep — most
-//!   FFI-driven proof drift surfaces in the same repository. A future
-//!   slice will persist `kanren::crosslang` derived facts as hexads
-//!   and tighten this to true reachability over the FFI boundary graph.
+//! - `(crosslang :from X :to Y)` is evaluated in two modes:
+//!     * **Facts-backed** (`<dir>/hexads/crosslang/` is non-empty):
+//!       matches a `Y`-category finding when there exists a persisted
+//!       kanren-derived `CrossLangInteraction` in the same repo where one
+//!       endpoint of the interaction is the file of an `X`-category
+//!       finding. This is the "real" FFI/cross-language reachability
+//!       semantics.
+//!     * **Co-occurrence proxy** (fallback when no crosslang hexads are
+//!       on disk): matches a `Y`-category finding in any repo that also
+//!       has ≥ 1 `X`-category finding. Preserves the historical
+//!       co-occurrence behaviour for users who haven't enabled crosslang
+//!       persistence yet (`PANIC_ATTACK_STORE_CROSSLANG_HEXADS=1`).
 //!
-//! ## Deferred to later follow-ups
-//!
-//! - True kanren-derived `(crosslang ...)` evaluation backed by
-//!   persisted FFI-boundary facts (rather than the current
-//!   co-occurrence proxy).
+//!   Most FFI-driven proof drift surfaces in the same repo, so both
+//!   modes converge on the operationally common case, but the
+//!   facts-backed mode prunes cross-repo false-positive co-occurrences
+//!   (e.g. an `UnsafeFFI`-bearing repo that contains an unrelated
+//!   `ProofDrift` finding in a non-FFI module).
 
 use crate::storage::{
-    load_campaign_hexads, load_finding_hexads, CampaignSemantic, FindingSemantic,
+    load_campaign_hexads, load_crosslang_hexads, load_finding_hexads, CampaignSemantic,
+    FindingSemantic,
 };
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 // ===========================================================================
@@ -73,13 +79,13 @@ pub enum Query {
     /// Match by campaign state. `None` means "no campaign hexad yet".
     PrState(Option<String>),
     /// `(crosslang :from FROM_CAT :to TO_CAT)` — match a `TO_CAT` finding
-    /// in a repo that also has at least one `FROM_CAT` finding.
+    /// reachable from a `FROM_CAT` finding via an FFI boundary.
     ///
-    /// Co-occurrence proxy: until kanren-derived cross-language facts are
-    /// persisted as hexads (S3b follow-up), "the FROM finding is reachable
-    /// from the TO finding" is approximated by "they live in the same
-    /// repository", which is the operationally-useful case for the estate
-    /// sweep — most FFI-driven proof drift surfaces in the same repo.
+    /// Evaluated in two modes depending on whether crosslang hexads have
+    /// been persisted (see the module-level doc for the full semantics):
+    /// facts-backed FFI-endpoint reachability when
+    /// `<dir>/hexads/crosslang/` is populated, same-repo co-occurrence
+    /// proxy otherwise.
     Crosslang { from: String, to: String },
     /// Match by ISO-8601 / RFC-3339 first-seen timestamp ≥ `since`.
     /// Filed under the `(since ...)` keyword for compactness; combined
@@ -395,12 +401,31 @@ struct FindingRow {
 }
 
 /// Index from repo name → set of category Debug-names present in that
-/// repo. Used by `(crosslang ...)` to check co-occurrence.
-type RepoCategoryIndex = HashMap<String, std::collections::HashSet<String>>;
+/// repo. Used by the co-occurrence proxy path of `(crosslang ...)`.
+type RepoCategoryIndex = HashMap<String, HashSet<String>>;
+
+/// Index from `(repo_name_lower, category_lower)` → set of files in that
+/// repo that carry a finding of that category. Used by the facts-backed
+/// `(crosslang ...)` path so we can check whether a candidate
+/// `from`-category finding's file is an endpoint of any persisted
+/// `CrossLangInteraction` in the same repo.
+type RepoCategoryFileIndex = HashMap<(String, String), HashSet<String>>;
+
+/// Index from repo name (lowercased) → list of `(source_file,
+/// target_file)` pairs derived from persisted crosslang hexads. Used by
+/// the facts-backed `(crosslang ...)` path.
+type RepoInteractionIndex = HashMap<String, Vec<(String, String)>>;
 
 struct EvalContext {
     rows: Vec<FindingRow>,
     repo_categories: RepoCategoryIndex,
+    /// Per-repo, per-category file index. Populated unconditionally; only
+    /// consulted by the facts-backed crosslang path.
+    repo_category_files: RepoCategoryFileIndex,
+    /// Per-repo crosslang interaction endpoints. `None` when
+    /// `<dir>/hexads/crosslang/` is empty (signal to the evaluator that
+    /// it should fall back to the co-occurrence proxy).
+    crosslang_interactions: Option<RepoInteractionIndex>,
 }
 
 fn load_context(base_dir: &Path) -> Result<EvalContext> {
@@ -417,13 +442,20 @@ fn load_context(base_dir: &Path) -> Result<EvalContext> {
 
     let mut rows = Vec::new();
     let mut repo_categories: RepoCategoryIndex = HashMap::new();
+    let mut repo_category_files: RepoCategoryFileIndex = HashMap::new();
     for h in finding_hexads {
         let created_at = h.created_at.clone();
         if let Some(f) = h.semantic.finding {
+            let repo_lower = f.repo_name.to_ascii_lowercase();
+            let cat_lower = f.category.to_ascii_lowercase();
             repo_categories
-                .entry(f.repo_name.to_ascii_lowercase())
+                .entry(repo_lower.clone())
                 .or_default()
-                .insert(f.category.to_ascii_lowercase());
+                .insert(cat_lower.clone());
+            repo_category_files
+                .entry((repo_lower, cat_lower))
+                .or_default()
+                .insert(f.file.clone());
             let campaign = latest.get(&f.finding_id).cloned();
             rows.push(FindingRow {
                 finding: f,
@@ -432,10 +464,53 @@ fn load_context(base_dir: &Path) -> Result<EvalContext> {
             });
         }
     }
+
+    // Crosslang facts: load hexads; treat empty dir as "fall back to
+    // co-occurrence proxy" by leaving `crosslang_interactions = None`.
+    let crosslang_hexads = load_crosslang_hexads(base_dir)?;
+    let crosslang_interactions = if crosslang_hexads.is_empty() {
+        None
+    } else {
+        let mut idx: RepoInteractionIndex = HashMap::new();
+        for h in crosslang_hexads {
+            let Some(cl) = h.semantic.crosslang else {
+                continue;
+            };
+            idx.entry(cl.repo_name.to_ascii_lowercase())
+                .or_default()
+                .push((cl.source_file.clone(), cl.target_file.clone()));
+        }
+        Some(idx)
+    };
+
     Ok(EvalContext {
         rows,
         repo_categories,
+        repo_category_files,
+        crosslang_interactions,
     })
+}
+
+/// Facts-backed `(crosslang :from F :to T)` check for one candidate row.
+///
+/// Pre-condition: `row.finding.category` already matches `to`. Returns
+/// `true` when a persisted `CrossLangInteraction` in the same repo has
+/// one endpoint equal to a file carrying an `F`-category finding.
+fn crosslang_facts_match(row: &FindingRow, from: &str, ctx: &EvalContext) -> bool {
+    let Some(by_repo) = ctx.crosslang_interactions.as_ref() else {
+        return false;
+    };
+    let repo_lower = row.finding.repo_name.to_ascii_lowercase();
+    let from_lower = from.to_ascii_lowercase();
+    let Some(pairs) = by_repo.get(&repo_lower) else {
+        return false;
+    };
+    let Some(from_files) = ctx.repo_category_files.get(&(repo_lower, from_lower)) else {
+        return false;
+    };
+    pairs
+        .iter()
+        .any(|(src, tgt)| from_files.contains(src) || from_files.contains(tgt))
 }
 
 fn matches(query: &Query, row: &FindingRow, ctx: &EvalContext) -> bool {
@@ -473,12 +548,22 @@ fn matches(query: &Query, row: &FindingRow, ctx: &EvalContext) -> bool {
             candidate >= since.as_str()
         }
         Query::Crosslang { from, to } => {
-            // `to`-matching finding in a repo that also has at least one
-            // `from`-category finding. The current finding must be the
-            // `to` side (so callers can wrap with `and`/`or`).
+            // The current finding must be the `to` side (so callers can
+            // wrap with `and`/`or`).
             if !row.finding.category.eq_ignore_ascii_case(to) {
                 return false;
             }
+            // Mode 1 — facts-backed: `<dir>/hexads/crosslang/` has hexads.
+            // Match when there is a persisted `CrossLangInteraction` in
+            // the same repo whose source or target file is the location of
+            // an `F`-category finding. This is true FFI reachability.
+            if ctx.crosslang_interactions.is_some() {
+                return crosslang_facts_match(row, from, ctx);
+            }
+            // Mode 2 — co-occurrence proxy fallback (no crosslang hexads
+            // on disk yet): same-repo co-occurrence of categories.
+            // Preserves S3b semantics for users who haven't enabled
+            // `PANIC_ATTACK_STORE_CROSSLANG_HEXADS`.
             let from_lower = from.to_ascii_lowercase();
             ctx.repo_categories
                 .get(&row.finding.repo_name.to_ascii_lowercase())
@@ -888,6 +973,117 @@ mod tests {
         // (crosslang :from PanicPath :to UnsafeCode) finds nothing.
         let q = parse("(crosslang :from PanicPath :to UnsafeCode)").unwrap();
         assert!(run(&q, dir.path()).unwrap().is_empty());
+    }
+
+    // ----- Issue #33 kanren-crosslang: facts-backed crosslang tests ---
+
+    /// Write a synthetic crosslang hexad into
+    /// `<dir>/hexads/crosslang/`. Tests use this to simulate persisted
+    /// `CrossLangInteraction` facts without driving the full kanren
+    /// pipeline.
+    fn write_synthetic_crosslang_hexad(
+        dir: &std::path::Path,
+        idx: usize,
+        repo: &str,
+        source_file: &str,
+        target_file: &str,
+    ) {
+        use crate::storage::{CrosslangSemantic, HexadProvenance, HexadSemantic, PanicAttackHexad};
+        let h = PanicAttackHexad {
+            schema: "verisimdb.hexad.v1".to_string(),
+            id: format!("pa-crosslang-test-{}", idx),
+            created_at: "2026-05-26T00:00:00Z".to_string(),
+            provenance: HexadProvenance {
+                tool: "panic-attack".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                program_path: format!("/tmp/{}", repo),
+                language: "Rust".to_string(),
+                attestation_hash: None,
+            },
+            semantic: HexadSemantic {
+                total_weak_points: 0,
+                critical_count: 0,
+                high_count: 0,
+                total_crashes: 0,
+                robustness_score: 0.85,
+                categories: Vec::new(),
+                migration: None,
+                finding: None,
+                campaign: None,
+                crosslang: Some(CrosslangSemantic {
+                    interaction_id: format!(
+                        "crosslang:{}:{}:Rust:{}:Unknown:CFfi",
+                        repo, source_file, target_file
+                    ),
+                    source_lang: "Rust".to_string(),
+                    target_lang: "Unknown".to_string(),
+                    mechanism: "CFfi".to_string(),
+                    source_file: source_file.to_string(),
+                    source_line: None,
+                    target_file: target_file.to_string(),
+                    target_line: None,
+                    repo_name: repo.to_string(),
+                }),
+            },
+            document: serde_json::Value::Null,
+        };
+        let cl_dir = dir.join("hexads").join("crosslang");
+        std::fs::create_dir_all(&cl_dir).unwrap();
+        std::fs::write(
+            cl_dir.join(format!("h-{}.json", idx)),
+            serde_json::to_string_pretty(&h).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn run_crosslang_facts_backed_matches() {
+        let dir = tempdir().unwrap();
+        write_test_findings(dir.path());
+        // alpha has UnsafeCode finding at src/a.rs:1 and CryptoMisuse at
+        // src/a.rs:7. Plant a crosslang interaction in alpha with one
+        // endpoint at src/a.rs (the UnsafeCode-finding's file). The
+        // CryptoMisuse finding must now match
+        // `(crosslang :from UnsafeCode :to CryptoMisuse)` via the
+        // facts-backed path.
+        write_synthetic_crosslang_hexad(dir.path(), 0, "alpha", "src/a.rs", "foreign");
+        let q = parse("(crosslang :from UnsafeCode :to CryptoMisuse)").unwrap();
+        let hits = run(&q, dir.path()).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].repo_name, "alpha");
+        assert_eq!(hits[0].category, "CryptoMisuse");
+    }
+
+    #[test]
+    fn run_crosslang_falls_back_to_co_occurrence_when_no_facts() {
+        // No crosslang hexads written → evaluator must take the legacy
+        // co-occurrence proxy path. alpha has both UnsafeCode and
+        // CryptoMisuse findings so the CryptoMisuse finding matches.
+        let dir = tempdir().unwrap();
+        write_test_findings(dir.path());
+        let q = parse("(crosslang :from UnsafeCode :to CryptoMisuse)").unwrap();
+        let hits = run(&q, dir.path()).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].repo_name, "alpha");
+    }
+
+    #[test]
+    fn run_crosslang_facts_backed_no_match_when_endpoint_misses() {
+        // Mixed setup: crosslang hexads ARE present (so we're on the
+        // facts-backed path), but no interaction in alpha touches the
+        // file that carries the UnsafeCode finding. The CryptoMisuse
+        // finding must NOT match — facts-backed mode strictly requires
+        // an FFI endpoint at an `from`-finding's file. This is the
+        // pruning the co-occurrence proxy can't do.
+        let dir = tempdir().unwrap();
+        write_test_findings(dir.path());
+        write_synthetic_crosslang_hexad(dir.path(), 0, "alpha", "src/unrelated.rs", "foreign");
+        let q = parse("(crosslang :from UnsafeCode :to CryptoMisuse)").unwrap();
+        let hits = run(&q, dir.path()).unwrap();
+        assert!(
+            hits.is_empty(),
+            "facts-backed mode must reject co-occurrences without a real FFI endpoint"
+        );
     }
 
     #[test]
