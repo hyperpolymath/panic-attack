@@ -407,6 +407,7 @@ mod tests {
                 migration: None,
                 finding: Some(finding),
                 campaign: None,
+                crosslang: None,
             },
             document: serde_json::Value::Null,
         };
@@ -439,6 +440,7 @@ mod tests {
                 migration: None,
                 finding: None,
                 campaign: Some(semantic),
+                crosslang: None,
             },
             document: serde_json::Value::Null,
         };
