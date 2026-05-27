@@ -63,6 +63,35 @@ pub fn register_pr(finding_id: &str, pr_url: &str, base_dir: &Path) -> Result<st
     write_campaign_hexad(&hexad, base_dir)
 }
 
+/// Write an arbitrary state transition hexad.
+///
+/// Lower-level than `register_pr` / `dismiss` — callers supply the full
+/// state, optional PR url, and optional reason. Used by `poll` to
+/// promote a finding from `pr-filed` to `pr-merged` / `pr-closed`.
+#[allow(dead_code)]
+pub fn transition(
+    finding_id: &str,
+    new_state: &str,
+    pr_url: Option<&str>,
+    reason: Option<&str>,
+    base_dir: &Path,
+) -> Result<std::path::PathBuf> {
+    if finding_id.is_empty() {
+        return Err(anyhow!("finding_id must not be empty"));
+    }
+    if new_state.is_empty() {
+        return Err(anyhow!("state must not be empty"));
+    }
+    let hexad = build_campaign_hexad(CampaignSemantic {
+        finding_id: finding_id.to_string(),
+        state: new_state.to_string(),
+        pr_url: pr_url.map(str::to_string),
+        reason: reason.map(str::to_string),
+        last_polled: Some(Utc::now().to_rfc3339()),
+    });
+    write_campaign_hexad(&hexad, base_dir)
+}
+
 /// Dismiss a finding (parked, known-good, out-of-scope).
 ///
 /// Writes a `dismissed` campaign hexad. Returns the path written.
@@ -217,6 +246,205 @@ pub fn status_markdown(base_dir: &Path) -> Result<String> {
     Ok(out)
 }
 
+// ---------------------------------------------------------------------------
+// Issue #33 S2b — poll GitHub for PR state transitions
+//
+// The whole section is `#[cfg(feature = "http")]`: it depends on ureq
+// (an optional dep) and on having any networking surface compiled in.
+// ---------------------------------------------------------------------------
+
+/// Parsed GitHub PR URL components.
+#[cfg(feature = "http")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedPrUrl {
+    pub owner: String,
+    pub repo: String,
+    pub number: u64,
+}
+
+/// Parse a GitHub PR URL into `(owner, repo, number)`.
+///
+/// Accepts the canonical form `https://github.com/<owner>/<repo>/pull/<n>`
+/// (with optional trailing slash or fragment).
+#[cfg(feature = "http")]
+pub fn parse_pr_url(url: &str) -> Result<ParsedPrUrl> {
+    let trimmed = url.trim();
+    let after_scheme = trimmed
+        .strip_prefix("https://github.com/")
+        .or_else(|| trimmed.strip_prefix("http://github.com/"))
+        .ok_or_else(|| anyhow!("not a github.com URL: {}", url))?;
+    let mut parts = after_scheme
+        .trim_end_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty());
+    let owner = parts
+        .next()
+        .ok_or_else(|| anyhow!("missing owner in PR URL: {}", url))?
+        .to_string();
+    let repo = parts
+        .next()
+        .ok_or_else(|| anyhow!("missing repo in PR URL: {}", url))?
+        .to_string();
+    let kind = parts
+        .next()
+        .ok_or_else(|| anyhow!("missing 'pull' in PR URL: {}", url))?;
+    if kind != "pull" {
+        return Err(anyhow!("expected 'pull' segment, got '{}'", kind));
+    }
+    let number_str = parts
+        .next()
+        .ok_or_else(|| anyhow!("missing PR number in URL: {}", url))?;
+    let number_only = number_str.split('#').next().unwrap_or(number_str);
+    let number: u64 = number_only
+        .parse()
+        .map_err(|_| anyhow!("PR number is not a positive integer: {}", number_str))?;
+    Ok(ParsedPrUrl {
+        owner,
+        repo,
+        number,
+    })
+}
+
+/// State derived from a GitHub PR API response.
+#[cfg(feature = "http")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemotePrState {
+    /// PR is still open on GitHub.
+    Open,
+    /// PR was closed and merged.
+    Merged,
+    /// PR was closed without being merged.
+    Closed,
+}
+
+#[cfg(feature = "http")]
+impl RemotePrState {
+    /// Canonical campaign state label for this remote state.
+    pub fn campaign_state(self) -> &'static str {
+        match self {
+            RemotePrState::Open => state::PR_FILED,
+            RemotePrState::Merged => state::PR_MERGED,
+            RemotePrState::Closed => state::PR_CLOSED,
+        }
+    }
+}
+
+/// Result of a single poll iteration.
+#[cfg(feature = "http")]
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct PollOutcome {
+    pub finding_id: String,
+    pub pr_url: String,
+    pub old_state: String,
+    pub new_state: String,
+    /// True when a new campaign hexad was written.
+    pub transitioned: bool,
+}
+
+/// Decide whether a remote-fetched state warrants writing a new
+/// transition hexad. Pure — testable without network.
+#[cfg(feature = "http")]
+pub fn should_transition(current: &str, remote: RemotePrState) -> bool {
+    let target = remote.campaign_state();
+    !current.eq_ignore_ascii_case(target)
+}
+
+/// Poll GitHub for PR state and write transition hexads.
+///
+/// For each finding whose latest campaign state is `pr-filed`, fetch
+/// the PR's current state via the GitHub REST API and — if it has
+/// changed — write a new campaign hexad (`pr-merged` / `pr-closed`).
+///
+/// Auth: reads `GH_TOKEN` then `GITHUB_TOKEN` from the environment;
+/// unauthenticated calls are accepted but capped at 60/hour by GitHub.
+#[cfg(feature = "http")]
+pub fn poll(base_dir: &Path) -> Result<Vec<PollOutcome>> {
+    let rows = current_state(base_dir)?;
+    let mut outcomes = Vec::new();
+    for row in rows {
+        if row.state != state::PR_FILED {
+            continue;
+        }
+        let Some(ref url) = row.pr_url else { continue };
+        let parsed = match parse_pr_url(url) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let remote = match fetch_remote_pr_state(&parsed) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let old_state = row.state.clone();
+        let new_state_label = remote.campaign_state().to_string();
+        let transitioned = should_transition(&row.state, remote);
+        if transitioned {
+            transition(
+                &row.finding_id,
+                remote.campaign_state(),
+                Some(url),
+                None,
+                base_dir,
+            )?;
+        }
+        outcomes.push(PollOutcome {
+            finding_id: row.finding_id,
+            pr_url: url.clone(),
+            old_state,
+            new_state: new_state_label,
+            transitioned,
+        });
+    }
+    Ok(outcomes)
+}
+
+/// Issue a single GET to the GitHub PR endpoint and map the response.
+#[cfg(feature = "http")]
+fn fetch_remote_pr_state(parsed: &ParsedPrUrl) -> Result<RemotePrState> {
+    use std::io::Read;
+
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}",
+        parsed.owner, parsed.repo, parsed.number
+    );
+    let mut builder = ureq::get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "panic-attack-campaign-poll")
+        .header("X-GitHub-Api-Version", "2022-11-28");
+    if let Ok(token) = std::env::var("GH_TOKEN").or_else(|_| std::env::var("GITHUB_TOKEN")) {
+        if !token.is_empty() {
+            builder = builder.header("Authorization", format!("Bearer {}", token));
+        }
+    }
+    let mut response = builder
+        .call()
+        .map_err(|e| anyhow!("GitHub API request failed: {}", e))?;
+    let status = response.status().as_u16();
+    if !(200..300).contains(&status) {
+        return Err(anyhow!("GitHub API returned {}", status));
+    }
+    let mut body = String::new();
+    response
+        .body_mut()
+        .as_reader()
+        .take(4 * 1024 * 1024)
+        .read_to_string(&mut body)
+        .map_err(|e| anyhow!("reading GitHub PR response: {}", e))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| anyhow!("parsing GitHub PR response: {}", e))?;
+    let state_field = json.get("state").and_then(|v| v.as_str()).unwrap_or("");
+    let merged_at = json.get("merged_at").and_then(|v| v.as_str());
+    let merged = json
+        .get("merged")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(merged_at.is_some());
+    Ok(match (state_field, merged) {
+        (_, true) => RemotePrState::Merged,
+        ("closed", false) => RemotePrState::Closed,
+        _ => RemotePrState::Open,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,5 +520,99 @@ mod tests {
         assert!(md.contains("dismissed"));
         assert!(md.contains("test coverage gap"));
         assert!(md.contains("1 open, 1 dismissed"));
+    }
+
+    // ----- Issue #33 S2b: poll-related tests -------------------------------
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn parse_pr_url_canonical() {
+        let p = parse_pr_url("https://github.com/foo/bar/pull/42").unwrap();
+        assert_eq!(p.owner, "foo");
+        assert_eq!(p.repo, "bar");
+        assert_eq!(p.number, 42);
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn parse_pr_url_trailing_slash() {
+        let p = parse_pr_url("https://github.com/foo/bar/pull/42/").unwrap();
+        assert_eq!(p.number, 42);
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn parse_pr_url_with_fragment() {
+        let p = parse_pr_url("https://github.com/foo/bar/pull/42#discussion_r1").unwrap();
+        assert_eq!(p.number, 42);
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn parse_pr_url_rejects_non_github() {
+        assert!(parse_pr_url("https://gitlab.com/foo/bar/pull/42").is_err());
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn parse_pr_url_rejects_issue_url() {
+        assert!(parse_pr_url("https://github.com/foo/bar/issues/42").is_err());
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn parse_pr_url_rejects_missing_number() {
+        assert!(parse_pr_url("https://github.com/foo/bar/pull/").is_err());
+        assert!(parse_pr_url("https://github.com/foo/bar/pull/abc").is_err());
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn should_transition_open_to_filed_is_noop() {
+        assert!(!should_transition(state::PR_FILED, RemotePrState::Open));
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn should_transition_filed_to_merged() {
+        assert!(should_transition(state::PR_FILED, RemotePrState::Merged));
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn should_transition_filed_to_closed() {
+        assert!(should_transition(state::PR_FILED, RemotePrState::Closed));
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn should_transition_already_merged_is_noop() {
+        assert!(!should_transition(state::PR_MERGED, RemotePrState::Merged));
+    }
+
+    #[test]
+    fn transition_writes_new_hexad() {
+        let dir = tempdir().unwrap();
+        let finding_id = "finding:demo:src/a.rs:1:UnsafeCode";
+        register_pr(finding_id, "https://github.com/x/y/pull/1", dir.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        transition(
+            finding_id,
+            state::PR_MERGED,
+            Some("https://github.com/x/y/pull/1"),
+            None,
+            dir.path(),
+        )
+        .unwrap();
+        let rows = current_state(dir.path()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].state, state::PR_MERGED);
+    }
+
+    #[test]
+    fn transition_rejects_empty_args() {
+        let dir = tempdir().unwrap();
+        assert!(transition("", state::PR_MERGED, None, None, dir.path()).is_err());
+        assert!(transition("finding:x:y:1:Z", "", None, None, dir.path()).is_err());
     }
 }
