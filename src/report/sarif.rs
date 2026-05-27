@@ -112,7 +112,7 @@ pub struct SarifRegion {
 }
 
 /// Map WeakPointCategory to a stable rule ID
-fn rule_id(category: &WeakPointCategory) -> &'static str {
+pub(crate) fn rule_id(category: &WeakPointCategory) -> &'static str {
     match category {
         WeakPointCategory::UncheckedAllocation => "PA001",
         WeakPointCategory::UnboundedAllocation => "PA001b",
@@ -144,7 +144,7 @@ fn rule_id(category: &WeakPointCategory) -> &'static str {
 }
 
 /// Map WeakPointCategory to a human-readable name
-fn rule_name(category: &WeakPointCategory) -> &'static str {
+pub(crate) fn rule_name(category: &WeakPointCategory) -> &'static str {
     match category {
         WeakPointCategory::UncheckedAllocation => "unchecked-allocation",
         WeakPointCategory::UnboundedAllocation => "unbounded-allocation",
