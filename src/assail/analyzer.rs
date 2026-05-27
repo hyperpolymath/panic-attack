@@ -790,6 +790,11 @@ impl Analyzer {
                     ".dub",
                     "obj",
                     "runtime",
+                    // Vendored upstream snapshots — analysing these flags
+                    // findings against code the project does not own.
+                    ".yarn",
+                    "idaptik-rescript13-staging",
+                    "rescript-ecosystem",
                 ]
                 .contains(&name)
                 {
@@ -859,6 +864,9 @@ impl Analyzer {
                         "corpus",
                         "corpora",
                         "runtime",
+                        // Vendored upstream snapshots — see walk_directory.
+                        "idaptik-rescript13-staging",
+                        "rescript-ecosystem",
                     ]
                     .contains(&name_str)
                 {
@@ -7819,6 +7827,70 @@ pub fn safe_get_x() -> Option<String> {
         assert!(
             count_julia_dce(src, "src/dangerous.jl") > 0,
             "non-extension Julia files must still flag eval()"
+    // Vendored-snapshot directory skip
+    // ---------------------------------------------------------------
+
+    fn walk_collects(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
+        let mut files = Vec::new();
+        analyzer.walk_directory(root, &mut files).expect("walk");
+        files
+    }
+
+    #[test]
+    fn walk_skips_yarn_releases() {
+        let tmp = TempDir::new().expect("tempdir");
+        fs::create_dir_all(tmp.path().join(".yarn/releases")).unwrap();
+        fs::write(
+            tmp.path().join(".yarn/releases/yarn-4.12.0.cjs"),
+            "console.log(eval('1'));",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("real.rs"), "fn main() {}").unwrap();
+        let collected = walk_collects(tmp.path());
+        assert!(
+            !collected.iter().any(|p| p.to_string_lossy().contains(".yarn/")),
+            ".yarn/ subtree must be skipped"
+        );
+        assert!(
+            collected.iter().any(|p| p.ends_with("real.rs")),
+            "non-vendored files must still be walked"
+        );
+    }
+
+    #[test]
+    fn walk_skips_idaptik_rescript_staging() {
+        let tmp = TempDir::new().expect("tempdir");
+        let staging = tmp.path().join("idaptik-rescript13-staging/src");
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("v.res"), "let unsafe_thing = ()").unwrap();
+        fs::write(tmp.path().join("own.rs"), "fn main() {}").unwrap();
+        let collected = walk_collects(tmp.path());
+        assert!(
+            !collected
+                .iter()
+                .any(|p| p.to_string_lossy().contains("idaptik-rescript13-staging")),
+            "vendored idaptik staging snapshot must be skipped"
+        );
+        assert!(
+            collected.iter().any(|p| p.ends_with("own.rs")),
+            "first-party files must still be walked"
+        );
+    }
+
+    #[test]
+    fn walk_skips_rescript_ecosystem() {
+        let tmp = TempDir::new().expect("tempdir");
+        let staging = tmp.path().join("rescript-ecosystem/inner");
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("v.res"), "let unsafe_thing = ()").unwrap();
+        fs::write(tmp.path().join("own.rs"), "fn main() {}").unwrap();
+        let collected = walk_collects(tmp.path());
+        assert!(
+            !collected
+                .iter()
+                .any(|p| p.to_string_lossy().contains("rescript-ecosystem")),
+            "rescript-ecosystem vendored snapshot must be skipped"
         );
     }
 }
