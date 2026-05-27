@@ -27,6 +27,7 @@ mod kin;
 mod mass_panic;
 mod notify;
 mod panll;
+mod query;
 mod report;
 mod signatures;
 mod storage;
@@ -778,6 +779,28 @@ enum Commands {
         #[arg(long, group = "sweep_shape", default_value_t = false)]
         by_category: bool,
     },
+
+    /// Query persisted findings + campaign state with a small S-expression
+    /// language (issue #33 S3). See `panic-attack query --help` for syntax.
+    Query {
+        /// Query expression, e.g. `(and (category UnsafeCode) (pr-state nil))`.
+        #[arg(value_name = "EXPR")]
+        expr: String,
+
+        /// VeriSimDB data directory (default: `verisimdb-data`).
+        #[arg(long, value_name = "DIR", default_value = "verisimdb-data")]
+        verisimdb_dir: PathBuf,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = QueryFormatArg::Table)]
+        format: QueryFormatArg,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum QueryFormatArg {
+    Table,
+    Json,
 }
 
 #[derive(Subcommand)]
@@ -2428,6 +2451,24 @@ fn run_main() -> Result<()> {
                 return Ok(());
             }
         },
+
+        Commands::Query {
+            expr,
+            verisimdb_dir,
+            format,
+        } => {
+            let q = query::parse(&expr)?;
+            let hits = query::run(&q, &verisimdb_dir)?;
+            match format {
+                QueryFormatArg::Table => {
+                    print!("{}", query::render_table(&hits));
+                }
+                QueryFormatArg::Json => {
+                    println!("{}", serde_json::to_string_pretty(&hits)?);
+                }
+            }
+            return Ok(());
+        }
 
         Commands::Campaign { action } => {
             match action {
