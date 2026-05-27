@@ -242,6 +242,7 @@ static RE_PONY_FFI: OnceLock<Regex> = OnceLock::new();
 static RE_SHELL_UNQUOTED_VAR: OnceLock<Regex> = OnceLock::new();
 static RE_HTTP_URL: OnceLock<Regex> = OnceLock::new();
 static RE_HTTP_LOCALHOST: OnceLock<Regex> = OnceLock::new();
+static RE_HTTP_JSONLD_IDENTIFIER: OnceLock<Regex> = OnceLock::new();
 static RE_HARDCODED_SECRET: OnceLock<Regex> = OnceLock::new();
 /// Match TODO/FIXME/HACK/XXX markers only when preceded by a
 /// comment-starter on the same line. Excludes string-literal matches
@@ -4747,9 +4748,31 @@ impl Analyzer {
             Regex::new(r#"http://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])"#)
                 .expect("static regex is valid")
         });
+        // Subtract JSON-LD / JSON-Schema identifier URIs. These look like
+        // URLs but are namespace identifiers — they're not dereferenced at
+        // runtime; the HTTP scheme is a spec convention. Suppressing them
+        // here avoids a categorical FP class without requiring per-instance
+        // user-classification entries. Exempted keys:
+        //
+        //   @id, @type, @context, @vocab, @graph   (JSON-LD)
+        //   id,  type,  types                       (common shorthands)
+        //   $schema, $id, $ref                      (JSON Schema)
+        //
+        // The match window is the JSON key + `:` + optional array bracket +
+        // the opening `"http://...`, so it catches both scalar (`"@id":
+        // "http://..."`) and array (`"types": ["http://..."]`) forms.
+        let http_jsonld_re = RE_HTTP_JSONLD_IDENTIFIER.get_or_init(|| {
+            Regex::new(
+                r#""(@?(id|type|types|context|vocab|graph)|\$(schema|id|ref))"\s*:\s*\[?\s*"http://"#,
+            )
+            .expect("static regex is valid")
+        });
         let http_total = http_re.find_iter(scan_content).count();
         let http_local = http_localhost_re.find_iter(scan_content).count();
-        let http_count = http_total.saturating_sub(http_local);
+        let http_jsonld = http_jsonld_re.find_iter(scan_content).count();
+        let http_count = http_total
+            .saturating_sub(http_local)
+            .saturating_sub(http_jsonld);
         if http_count > 0 {
             weak_points.push(WeakPoint {
                 file: None,
@@ -5941,6 +5964,83 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    // ---------------------------------------------------------------
+    // 0b. JSON-LD / JSON-Schema identifier exemption (cross-lang URLs)
+    // ---------------------------------------------------------------
+
+    fn count_http_findings(content: &str) -> usize {
+        let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
+        let mut wp = Vec::new();
+        analyzer
+            .analyze_cross_language(content, &mut wp, "fixture.rs")
+            .expect("analyze_cross_language");
+        wp.iter()
+            .filter(|w| matches!(w.category, WeakPointCategory::InsecureProtocol))
+            .count()
+    }
+
+    #[test]
+    fn jsonld_at_type_uri_is_exempt() {
+        let src = r#"json!({"@type": "http://hyperpolymath.dev/X"});"#;
+        assert_eq!(count_http_findings(src), 0, "@type URI must be exempt");
+    }
+
+    #[test]
+    fn jsonld_at_id_uri_is_exempt() {
+        let src = r#"json!({"@id": "http://hyperpolymath.dev/X"});"#;
+        assert_eq!(count_http_findings(src), 0, "@id URI must be exempt");
+    }
+
+    #[test]
+    fn jsonld_at_context_uri_is_exempt() {
+        let src = r#"json!({"@context": "http://schema.org"});"#;
+        assert_eq!(count_http_findings(src), 0, "@context URI must be exempt");
+    }
+
+    #[test]
+    fn jsonld_types_array_is_exempt() {
+        // The exact self-scan repro from src/storage/mod.rs.
+        let src = r#"json!({"types": ["http://hyperpolymath.dev/panic-attack/AssailReport"]});"#;
+        assert_eq!(
+            count_http_findings(src),
+            0,
+            "types: [...] array must be exempt"
+        );
+    }
+
+    #[test]
+    fn json_schema_dollar_schema_is_exempt() {
+        let src = r#"{"$schema": "http://json-schema.org/draft-07/schema"}"#;
+        assert_eq!(count_http_findings(src), 0, "$schema URI must be exempt");
+    }
+
+    #[test]
+    fn real_endpoint_url_is_still_flagged() {
+        // A genuine non-identifier HTTP endpoint must still produce a finding.
+        // URL is composed at runtime so the source file itself contains no
+        // literal `http://[alphanum]` substring — this avoids a meta-circular
+        // self-scan finding when panic-attack scans analyzer.rs.
+        let url = format!("htt{}p://insecure.example.com/api", "");
+        let src = format!(r#"let resp = client.get("{}").send();"#, url);
+        assert!(
+            count_http_findings(&src) > 0,
+            "real http:// endpoint must still trip the detector"
+        );
+    }
+
+    #[test]
+    fn endpoint_key_named_url_is_still_flagged() {
+        // Common config field — NOT a JSON-LD identifier — must still flag.
+        // URL split at the source level (see real_endpoint_url_is_still_flagged
+        // for rationale).
+        let url = format!("htt{}p://insecure.example.com/api", "");
+        let src = format!(r#"json!({{"url": "{}"}});"#, url);
+        assert!(
+            count_http_findings(&src) > 0,
+            "\"url\" key is not in exempt set"
+        );
+    }
 
     // ---------------------------------------------------------------
     // 0a. C-family line-comment stripping (cross-lang URL/secret FPs)
