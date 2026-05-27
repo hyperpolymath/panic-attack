@@ -7794,11 +7794,6 @@ pub fn safe_get_x() -> Option<String> {
     // ---------------------------------------------------------------
 
     fn count_julia_dce(content: &str, file_path: &str) -> usize {
-    // flake.nix SupplyChain severity (downgrade to Low when fix is
-    // trivially mechanical — generate flake.lock).
-    // ---------------------------------------------------------------
-
-    fn flake_findings(content: &str, file_path: &str) -> Vec<WeakPoint> {
         let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
         let mut stats = ProgramStatistics::default();
         let mut wp = Vec::new();
@@ -7817,47 +7812,6 @@ pub fn safe_get_x() -> Option<String> {
             count_julia_dce(src, "FooExt.jl"),
             0,
             "*Ext.jl files use eval/Meta.parse idiomatically — must be exempt"
-            .analyze_config(content, &mut stats, &mut wp, file_path)
-            .expect("analyze_config");
-        wp.into_iter()
-            .filter(|w| matches!(w.category, WeakPointCategory::SupplyChain))
-            .collect()
-    }
-
-    #[test]
-    fn flake_without_lock_is_low_severity() {
-        let src = r#"{
-            inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-            outputs = { self, nixpkgs }: { };
-        }"#;
-        // Use a path that does NOT have a sibling flake.lock in the working dir.
-        let findings = flake_findings(src, "/nonexistent/dir/flake.nix");
-        assert_eq!(findings.len(), 1, "unpinned flake.nix must produce one finding");
-        assert!(
-            matches!(findings[0].severity, Severity::Low),
-            "missing flake.lock alone is mechanically fixable — must be Low severity, got {:?}",
-            findings[0].severity
-        );
-        assert!(
-            findings[0].description.contains("nix flake update"),
-            "description must point at the fix command"
-        );
-    }
-
-    #[test]
-    fn flake_with_narhash_has_no_finding() {
-        let src = r#"{
-            inputs.nixpkgs = {
-                url = "github:NixOS/nixpkgs/nixos-unstable";
-                narHash = "sha256-...";
-            };
-            outputs = { self, nixpkgs }: { };
-        }"#;
-        let findings = flake_findings(src, "/nonexistent/dir/flake.nix");
-        assert_eq!(
-            findings.len(),
-            0,
-            "flake.nix with inline narHash must NOT produce a SupplyChain finding"
         );
     }
 
@@ -7880,6 +7834,10 @@ pub fn safe_get_x() -> Option<String> {
         assert!(
             count_julia_dce(src, "src/dangerous.jl") > 0,
             "non-extension Julia files must still flag eval()"
+        );
+    }
+
+    // ---------------------------------------------------------------
     // Vendored-snapshot directory skip
     // ---------------------------------------------------------------
 
@@ -7944,6 +7902,65 @@ pub fn safe_get_x() -> Option<String> {
                 .iter()
                 .any(|p| p.to_string_lossy().contains("rescript-ecosystem")),
             "rescript-ecosystem vendored snapshot must be skipped"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // flake.nix SupplyChain severity (downgrade to Low when fix is
+    // trivially mechanical — generate flake.lock). Restored 2026-05-27
+    // after the squash-merge of #77 (refile of #72) collided with #73
+    // and silently dropped the helper + first two tests.
+    // ---------------------------------------------------------------
+
+    fn flake_findings(content: &str, file_path: &str) -> Vec<WeakPoint> {
+        let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
+        let mut stats = ProgramStatistics::default();
+        let mut wp = Vec::new();
+        analyzer
+            .analyze_config(content, &mut stats, &mut wp, file_path)
+            .expect("analyze_config");
+        wp.into_iter()
+            .filter(|w| matches!(w.category, WeakPointCategory::SupplyChain))
+            .collect()
+    }
+
+    #[test]
+    fn flake_without_lock_is_low_severity() {
+        let src = r#"{
+            inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+            outputs = { self, nixpkgs }: { };
+        }"#;
+        let findings = flake_findings(src, "/nonexistent/dir/flake.nix");
+        assert_eq!(findings.len(), 1, "unpinned flake.nix must produce one finding");
+        assert!(
+            matches!(findings[0].severity, Severity::Low),
+            "missing flake.lock alone is mechanically fixable — must be Low severity, got {:?}",
+            findings[0].severity
+        );
+        assert!(
+            findings[0].description.contains("nix flake update"),
+            "description must point at the fix command"
+        );
+    }
+
+    #[test]
+    fn flake_with_narhash_has_no_finding() {
+        let src = r#"{
+            inputs.nixpkgs = {
+                url = "github:NixOS/nixpkgs/nixos-unstable";
+                narHash = "sha256-...";
+            };
+            outputs = { self, nixpkgs }: { };
+        }"#;
+        let findings = flake_findings(src, "/nonexistent/dir/flake.nix");
+        assert_eq!(
+            findings.len(),
+            0,
+            "flake.nix with inline narHash must NOT produce a SupplyChain finding"
+        );
+    }
+
+    #[test]
     fn flake_with_rev_pins_has_no_finding() {
         let src = r#"{
             inputs.nixpkgs = {
