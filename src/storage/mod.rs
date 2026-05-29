@@ -88,6 +88,126 @@ pub struct HexadSemantic {
     /// Migration-specific semantic data (present when target is ReScript)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub migration: Option<MigrationSemantic>,
+    /// Finding-level semantic data (present when this hexad represents a
+    /// single WeakPoint emitted by `build_finding_hexads`, issue #33 S1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finding: Option<FindingSemantic>,
+    /// Campaign-state semantic data (present when this hexad is a lifecycle
+    /// update — PR registration, dismissal, poll — issue #33 S2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub campaign: Option<CampaignSemantic>,
+    /// Cross-language interaction semantic data (present when this hexad
+    /// is a single `CrossLangInteraction` emitted by
+    /// `build_crosslang_hexads`, issue #33 kanren-crosslang follow-up).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crosslang: Option<CrosslangSemantic>,
+}
+
+/// Campaign-state facet of a hexad: tracks the lifecycle of a single
+/// finding (issue #33 S2).
+///
+/// Append-only: each `register-pr` / `dismiss` / `poll` emits a fresh
+/// hexad with the same `finding_id` subject. `status` aggregates by
+/// taking the newest by `created_at`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CampaignSemantic {
+    /// Subject — must match a `FindingSemantic.finding_id` written by S1.
+    pub finding_id: String,
+    /// State label. Canonical values: "open", "pr-filed", "pr-merged",
+    /// "pr-closed", "dismissed". Free-form so future states can be added
+    /// without a schema bump (forward-compatible by design).
+    pub state: String,
+    /// PR URL when `state` is `pr-*`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_url: Option<String>,
+    /// Human-readable dismissal reason when `state == "dismissed"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// ISO 8601 of the last PR-state poll (S2 follow-up sets this; S2
+    /// initial doesn't poll).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_polled: Option<String>,
+}
+
+/// Semantic facets of a per-finding hexad (issue #33 S1).
+///
+/// A per-finding hexad represents one `WeakPoint` from an assemblyline scan
+/// of one repository. The `finding_id` is stable across runs (same
+/// repo/file/line/category → same id), so subsequent slices (S2 PR-state
+/// tracking, S3 cross-repo query) can identify a finding without comparing
+/// JSON blobs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FindingSemantic {
+    /// Stable per-finding identifier: `finding:<repo>:<file>:<line>:<category>`.
+    pub finding_id: String,
+    /// Repository name (basename of repo path).
+    pub repo_name: String,
+    /// File path, repo-relative.
+    pub file: String,
+    /// Line number from the original `WeakPoint`, if available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    /// `WeakPointCategory` Debug name (e.g. "UnsafeCode").
+    pub category: String,
+    /// Stable rule ID (e.g. "PA004"). Mirrors the SARIF rule mapping.
+    pub rule_id: String,
+    /// Human-readable rule slug (e.g. "unsafe-code"). Mirrors SARIF.
+    pub rule_name: String,
+    /// Severity label (lowercase: "critical", "high", "medium", "low").
+    pub severity: String,
+    /// Per-finding description from the `WeakPoint`.
+    pub description: String,
+    /// Run id of the *current* run (also written to `last_seen_run`).
+    ///
+    /// S1 sets `first_seen_run == last_seen_run`. A later slice (S2 or a
+    /// query-side aggregation in S3) is responsible for back-stamping
+    /// `first_seen_run` from a prior hexad with the same `finding_id`.
+    pub first_seen_run: String,
+    /// Run id of the run that emitted this hexad.
+    pub last_seen_run: String,
+    /// Framework hint, when derivable. Reserved for future enrichment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub framework: Option<String>,
+}
+
+/// Cross-language interaction facet of a hexad (issue #33 kanren-crosslang
+/// follow-up).
+///
+/// One hexad per `kanren::crosslang::CrossLangInteraction` derived from a
+/// repository's `AssailReport`. Lets the `(crosslang :from :to)` evaluator
+/// graduate from a same-repo co-occurrence proxy to true FFI/cross-language
+/// reachability against persisted kanren-derived facts.
+///
+/// `source_*` and `target_*` mirror the `caller_*` and `callee_*` fields of
+/// `CrossLangInteraction` respectively. The renaming makes the directional
+/// semantics explicit (source → target via mechanism). `interaction_id` is a
+/// stable identifier so re-runs of the same interaction produce the same
+/// subject.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrosslangSemantic {
+    /// Stable identifier:
+    /// `crosslang:<repo>:<source_file>:<source_lang>:<target_file>:<target_lang>:<mechanism>`.
+    pub interaction_id: String,
+    /// Source-side language as `Language` Debug name (e.g. "Rust").
+    pub source_lang: String,
+    /// Target-side language as `Language` Debug name. May be "Unknown"
+    /// when the analyzer only knows the source side (foreign FFI shim).
+    pub target_lang: String,
+    /// Mechanism as `InteractionMechanism` Debug name (e.g. "CFfi").
+    pub mechanism: String,
+    /// Source file path.
+    pub source_file: String,
+    /// Source-side line number, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_line: Option<u32>,
+    /// Target file path. Often "foreign" / "subprocess" /
+    /// "serialized_data" when the analyzer infers a category-only boundary.
+    pub target_file: String,
+    /// Target-side line number, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_line: Option<u32>,
+    /// Repository name (basename of repo path).
+    pub repo_name: String,
 }
 
 /// Migration-specific semantic data for VeriSimDB hexads
@@ -175,6 +295,9 @@ fn build_hexad(report: &AssaultReport) -> Result<PanicAttackHexad> {
             robustness_score: report.overall_assessment.robustness_score,
             categories,
             migration,
+            finding: None,
+            campaign: None,
+            crosslang: None,
         },
         document,
     })
@@ -296,9 +419,470 @@ fn build_assemblyline_hexad(
             robustness_score: 0.0,
             categories,
             migration: None,
+            finding: None,
+            campaign: None,
+            crosslang: None,
         },
         document,
     })
+}
+
+/// Env var that opts a run into per-finding hexad emission (issue #33 S1).
+///
+/// When set to a non-empty value AND `StorageMode::VerisimDb` is configured,
+/// `persist_assemblyline_report` writes one hexad per `WeakPoint` under
+/// `<dir>/hexads/findings/` in addition to the existing aggregate hexad.
+pub const STORE_FINDING_HEXADS_ENV: &str = "PANIC_ATTACK_STORE_FINDING_HEXADS";
+
+/// Return `true` when per-finding hexad emission is requested via env var.
+fn finding_hexads_enabled() -> bool {
+    std::env::var(STORE_FINDING_HEXADS_ENV)
+        .map(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(false)
+}
+
+/// Env var that opts a run into per-cross-language-interaction hexad
+/// emission (issue #33 kanren-crosslang follow-up).
+///
+/// When set to a non-empty value AND `StorageMode::VerisimDb` is configured,
+/// `persist_assemblyline_report` writes one hexad per
+/// `kanren::crosslang::CrossLangInteraction` derived from each repo under
+/// `<dir>/hexads/crosslang/` in addition to the aggregate and per-finding
+/// hexads. Independent of `PANIC_ATTACK_STORE_FINDING_HEXADS` so callers
+/// can opt into one without the other.
+pub const STORE_CROSSLANG_HEXADS_ENV: &str = "PANIC_ATTACK_STORE_CROSSLANG_HEXADS";
+
+/// Return `true` when per-cross-language-interaction hexad emission is
+/// requested via env var.
+fn crosslang_hexads_enabled() -> bool {
+    std::env::var(STORE_CROSSLANG_HEXADS_ENV)
+        .map(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+        .unwrap_or(false)
+}
+
+/// Build the stable finding-id for a `WeakPoint`.
+///
+/// Pattern: `finding:<repo>:<file>:<line>:<category>` — chosen so that two
+/// scans of the same repo see the same id for the same finding, which is
+/// the property S2 (`campaign register-pr`) and S3 (`query`) need.
+///
+/// File and line components fall back to literal `"unknown"` / `"0"` when
+/// the underlying `WeakPoint` lacks them, so the id is always well-formed.
+fn build_finding_id(repo_name: &str, wp: &crate::types::WeakPoint) -> String {
+    let file = wp
+        .file
+        .clone()
+        .or_else(|| wp.location.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    let line = wp
+        .line
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "0".to_string());
+    format!("finding:{}:{}:{}:{:?}", repo_name, file, line, wp.category)
+}
+
+/// Map `Severity` to a lowercase string label.
+fn severity_label(severity: &crate::types::Severity) -> &'static str {
+    match severity {
+        crate::types::Severity::Critical => "critical",
+        crate::types::Severity::High => "high",
+        crate::types::Severity::Medium => "medium",
+        crate::types::Severity::Low => "low",
+    }
+}
+
+/// Build one hexad per `WeakPoint` across all repo results in an
+/// assemblyline report (issue #33 S1).
+///
+/// Subject identity lives in `semantic.finding.finding_id`; each emitted
+/// hexad's top-level `id` remains per-run-unique so two runs of the same
+/// finding produce two distinct hexad files (the join key is the
+/// `finding_id`, not the hexad id).
+///
+/// `run_id` is shared across every finding-hexad in this run and stamped
+/// into both `first_seen_run` and `last_seen_run` (S1 has no prior-run
+/// lookup; that's a follow-up slice's job).
+pub fn build_finding_hexads(
+    report: &crate::assemblyline::AssemblylineReport,
+) -> Result<Vec<PanicAttackHexad>> {
+    let now = Utc::now();
+    let run_id = format!(
+        "pa-asmline-{}-{}",
+        now.format("%Y%m%d%H%M%S"),
+        &uuid_from_timestamp(now.timestamp_millis())
+    );
+
+    let mut hexads = Vec::new();
+    for (repo_idx, result) in report.results.iter().enumerate() {
+        let Some(assail_report) = &result.report else {
+            continue;
+        };
+        let language = format!("{:?}", assail_report.language);
+
+        for (wp_idx, wp) in assail_report.weak_points.iter().enumerate() {
+            // Skip suppressed findings — they're audit-only, not lifecycle
+            // material. Keeps the hexad store aligned with fleet/CI counts.
+            if wp.suppressed {
+                continue;
+            }
+
+            let finding_id = build_finding_id(&result.repo_name, wp);
+            let category_str = format!("{:?}", wp.category);
+            let rule_id_str = crate::report::sarif::rule_id(&wp.category).to_string();
+            let rule_name_str = crate::report::sarif::rule_name(&wp.category).to_string();
+            let severity_str = severity_label(&wp.severity).to_string();
+
+            // Per-hexad id: pa-finding-<run_ts>-<repo_idx>-<wp_idx>-<short>.
+            // Repo/wp indices keep collision-free even within a millisecond.
+            let hexad_id = format!(
+                "pa-finding-{}-{}-{}-{}",
+                now.format("%Y%m%d%H%M%S"),
+                repo_idx,
+                wp_idx,
+                &uuid_from_timestamp(now.timestamp_millis()),
+            );
+
+            let document = serde_json::json!({
+                "finding_id": finding_id,
+                "repo_name": result.repo_name,
+                "repo_path": result.repo_path.display().to_string(),
+                "weak_point": wp,
+            });
+
+            hexads.push(PanicAttackHexad {
+                schema: "verisimdb.hexad.v1".to_string(),
+                id: hexad_id,
+                created_at: now.to_rfc3339(),
+                provenance: HexadProvenance {
+                    tool: "panic-attack".to_string(),
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    program_path: result.repo_path.display().to_string(),
+                    language: language.clone(),
+                    attestation_hash: None,
+                },
+                semantic: HexadSemantic {
+                    total_weak_points: 1,
+                    critical_count: matches!(wp.severity, crate::types::Severity::Critical)
+                        as usize,
+                    high_count: matches!(wp.severity, crate::types::Severity::High) as usize,
+                    total_crashes: 0,
+                    robustness_score: 0.0,
+                    categories: vec![category_str.clone()],
+                    migration: None,
+                    finding: Some(FindingSemantic {
+                        finding_id: finding_id.clone(),
+                        repo_name: result.repo_name.clone(),
+                        file: wp
+                            .file
+                            .clone()
+                            .or_else(|| wp.location.clone())
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        line: wp.line,
+                        category: category_str,
+                        rule_id: rule_id_str,
+                        rule_name: rule_name_str,
+                        severity: severity_str,
+                        description: wp.description.clone(),
+                        first_seen_run: run_id.clone(),
+                        last_seen_run: run_id.clone(),
+                        framework: None,
+                    }),
+                    campaign: None,
+                    crosslang: None,
+                },
+                document,
+            });
+        }
+    }
+
+    Ok(hexads)
+}
+
+/// Write a slice of hexads under `<base_dir>/hexads/findings/` (one file
+/// per hexad). Returns the paths written.
+fn write_finding_hexads(hexads: &[PanicAttackHexad], base_dir: &Path) -> Result<Vec<PathBuf>> {
+    let dir = base_dir.join("hexads").join("findings");
+    fs::create_dir_all(&dir)?;
+    let mut written = Vec::with_capacity(hexads.len());
+    for hexad in hexads {
+        let path = dir.join(format!("{}.json", hexad.id));
+        fs::write(&path, serde_json::to_string_pretty(hexad)?)?;
+        written.push(path);
+    }
+    Ok(written)
+}
+
+// ---------------------------------------------------------------------------
+// Issue #33 kanren-crosslang — per-interaction hexad emission
+// ---------------------------------------------------------------------------
+
+/// Build the stable cross-language-interaction id for one
+/// `CrossLangInteraction`.
+///
+/// Pattern:
+/// `crosslang:<repo>:<source_file>:<source_lang>:<target_file>:<target_lang>:<mechanism>`.
+/// Two scans of the same repo see the same id for the same interaction,
+/// which is the property the `(crosslang :from :to)` evaluator's
+/// facts-backed path needs.
+fn build_crosslang_id(
+    repo_name: &str,
+    interaction: &crate::kanren::crosslang::CrossLangInteraction,
+) -> String {
+    format!(
+        "crosslang:{}:{}:{:?}:{}:{:?}:{:?}",
+        repo_name,
+        interaction.caller_file,
+        interaction.caller_lang,
+        interaction.callee_file,
+        interaction.callee_lang,
+        interaction.mechanism,
+    )
+}
+
+/// Derive `CrossLangInteraction`s for one repo by running the kanren
+/// pipeline (ingest report → extract crosslang facts → load rules →
+/// forward-chain → query interactions) against an isolated `FactDB`.
+fn derive_crosslang_interactions_for_report(
+    report: &crate::types::AssailReport,
+) -> Vec<crate::kanren::crosslang::CrossLangInteraction> {
+    use crate::kanren::core::LogicEngine;
+    use crate::kanren::crosslang::CrossLangAnalyzer;
+
+    let mut engine = LogicEngine::new();
+    engine.ingest_report(report);
+    CrossLangAnalyzer::extract_facts(&mut engine.db, report);
+    CrossLangAnalyzer::load_rules(&mut engine.db);
+    // Forward-chain so `ffi_risk` and friends are derivable.
+    engine.analyze();
+    CrossLangAnalyzer::query_interactions(&engine.db)
+}
+
+/// Build one hexad per kanren-derived `CrossLangInteraction` across every
+/// repo in an assemblyline report (issue #33 kanren-crosslang follow-up).
+///
+/// Subject identity lives in `semantic.crosslang.interaction_id`; the
+/// top-level hexad `id` is per-run-unique so two runs of the same
+/// interaction produce two distinct hexad files (the join key is the
+/// `interaction_id`, not the hexad id). Returns an empty `Vec` when the
+/// report has no AssailReport-bearing results or no derivable interactions.
+pub fn build_crosslang_hexads(
+    report: &crate::assemblyline::AssemblylineReport,
+) -> Result<Vec<PanicAttackHexad>> {
+    let now = Utc::now();
+    let run_ts = now.format("%Y%m%d%H%M%S").to_string();
+
+    let mut hexads = Vec::new();
+    for (repo_idx, result) in report.results.iter().enumerate() {
+        let Some(assail_report) = &result.report else {
+            continue;
+        };
+
+        let interactions = derive_crosslang_interactions_for_report(assail_report);
+        for (int_idx, interaction) in interactions.iter().enumerate() {
+            let interaction_id = build_crosslang_id(&result.repo_name, interaction);
+            let mechanism_str = format!("{:?}", interaction.mechanism);
+            let source_lang_str = format!("{:?}", interaction.caller_lang);
+            let target_lang_str = format!("{:?}", interaction.callee_lang);
+
+            // Per-hexad id collision-free even within a millisecond.
+            let hexad_id = format!(
+                "pa-crosslang-{}-{}-{}-{}",
+                run_ts,
+                repo_idx,
+                int_idx,
+                &uuid_from_timestamp(now.timestamp_millis()),
+            );
+
+            let document = serde_json::json!({
+                "interaction_id": interaction_id,
+                "repo_name": result.repo_name,
+                "repo_path": result.repo_path.display().to_string(),
+                "caller_file": interaction.caller_file,
+                "caller_lang": source_lang_str,
+                "callee_file": interaction.callee_file,
+                "callee_lang": target_lang_str,
+                "mechanism": mechanism_str,
+                "risk_score": interaction.risk_score,
+            });
+
+            hexads.push(PanicAttackHexad {
+                schema: "verisimdb.hexad.v1".to_string(),
+                id: hexad_id,
+                created_at: now.to_rfc3339(),
+                provenance: HexadProvenance {
+                    tool: "panic-attack".to_string(),
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    program_path: result.repo_path.display().to_string(),
+                    language: format!("{:?}", assail_report.language),
+                    attestation_hash: None,
+                },
+                semantic: HexadSemantic {
+                    total_weak_points: 0,
+                    critical_count: 0,
+                    high_count: 0,
+                    total_crashes: 0,
+                    robustness_score: interaction.risk_score,
+                    categories: Vec::new(),
+                    migration: None,
+                    finding: None,
+                    campaign: None,
+                    crosslang: Some(CrosslangSemantic {
+                        interaction_id,
+                        source_lang: format!("{:?}", interaction.caller_lang),
+                        target_lang: format!("{:?}", interaction.callee_lang),
+                        mechanism: mechanism_str,
+                        source_file: interaction.caller_file.clone(),
+                        source_line: None,
+                        target_file: interaction.callee_file.clone(),
+                        target_line: None,
+                        repo_name: result.repo_name.clone(),
+                    }),
+                },
+                document,
+            });
+        }
+    }
+
+    Ok(hexads)
+}
+
+/// Write a slice of crosslang hexads under `<base_dir>/hexads/crosslang/`
+/// (one file per hexad). Returns the paths written.
+fn write_crosslang_hexads(hexads: &[PanicAttackHexad], base_dir: &Path) -> Result<Vec<PathBuf>> {
+    let dir = base_dir.join("hexads").join("crosslang");
+    fs::create_dir_all(&dir)?;
+    let mut written = Vec::with_capacity(hexads.len());
+    for hexad in hexads {
+        let path = dir.join(format!("{}.json", hexad.id));
+        fs::write(&path, serde_json::to_string_pretty(hexad)?)?;
+        written.push(path);
+    }
+    Ok(written)
+}
+
+// ---------------------------------------------------------------------------
+// Issue #33 S2 — campaign-state hexad write/load helpers
+// ---------------------------------------------------------------------------
+
+/// Maximum size (in bytes) of a single hexad JSON file we'll load from
+/// disk. Hexads are small documents; anything past 16 MiB is corrupted
+/// or hostile.
+const HEXAD_FILE_READ_LIMIT: u64 = 16 * 1024 * 1024;
+
+/// Build a campaign-state hexad for one lifecycle event (issue #33 S2).
+///
+/// Append-only: each call produces a fresh hexad with a unique id. The
+/// `finding_id` is carried as the semantic subject so the newest hexad
+/// per finding is the current state.
+pub fn build_campaign_hexad(semantic: CampaignSemantic) -> PanicAttackHexad {
+    let now = Utc::now();
+    let hexad_id = format!(
+        "pa-campaign-{}-{}",
+        now.format("%Y%m%d%H%M%S"),
+        &uuid_from_timestamp(now.timestamp_millis())
+    );
+
+    PanicAttackHexad {
+        schema: "verisimdb.hexad.v1".to_string(),
+        id: hexad_id,
+        created_at: now.to_rfc3339(),
+        provenance: HexadProvenance {
+            tool: "panic-attack".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            program_path: "campaign".to_string(),
+            language: "n/a".to_string(),
+            attestation_hash: None,
+        },
+        semantic: HexadSemantic {
+            total_weak_points: 0,
+            critical_count: 0,
+            high_count: 0,
+            total_crashes: 0,
+            robustness_score: 0.0,
+            categories: Vec::new(),
+            migration: None,
+            finding: None,
+            campaign: Some(semantic),
+            crosslang: None,
+        },
+        document: serde_json::Value::Null,
+    }
+}
+
+/// Write a single campaign-state hexad under
+/// `<base_dir>/hexads/campaign/<hexad_id>.json`. Returns the path.
+pub fn write_campaign_hexad(hexad: &PanicAttackHexad, base_dir: &Path) -> Result<PathBuf> {
+    let dir = base_dir.join("hexads").join("campaign");
+    fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{}.json", hexad.id));
+    fs::write(&path, serde_json::to_string_pretty(hexad)?)?;
+    Ok(path)
+}
+
+/// Load every JSON hexad file from a directory.
+///
+/// Files that fail to parse are silently skipped — this is a "best
+/// effort" reader used by status/query subcommands, not a validation
+/// pass. Returns hexads in filesystem-order (the caller sorts as needed).
+fn load_hexad_dir(dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    use std::io::Read;
+
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut hexads = Vec::new();
+    for entry in fs::read_dir(dir)?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let mut content = String::new();
+        let Ok(file) = fs::File::open(&path) else {
+            continue;
+        };
+        if file
+            .take(HEXAD_FILE_READ_LIMIT)
+            .read_to_string(&mut content)
+            .is_err()
+        {
+            continue;
+        }
+        if let Ok(hexad) = serde_json::from_str::<PanicAttackHexad>(&content) {
+            hexads.push(hexad);
+        }
+    }
+    Ok(hexads)
+}
+
+/// Load every per-finding hexad from `<base_dir>/hexads/findings/`.
+pub fn load_finding_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    load_hexad_dir(&base_dir.join("hexads").join("findings"))
+}
+
+/// Load every campaign-state hexad from `<base_dir>/hexads/campaign/`.
+pub fn load_campaign_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    load_hexad_dir(&base_dir.join("hexads").join("campaign"))
+}
+
+/// Load every cross-language-interaction hexad from
+/// `<base_dir>/hexads/crosslang/`. Returns an empty `Vec` when the
+/// directory doesn't exist — callers (notably the `(crosslang :from :to)`
+/// query evaluator's facts-backed path) treat the empty case as "fall back
+/// to co-occurrence proxy".
+pub fn load_crosslang_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    load_hexad_dir(&base_dir.join("hexads").join("crosslang"))
+}
+
+/// Load every aggregate (per-run) hexad from `<base_dir>/hexads/`.
+///
+/// Aggregate hexads live at the top-level `hexads/` directory; per-finding
+/// and per-campaign hexads live in subdirs and are excluded here.
+///
+/// Reserved for S3 query — kept public so the upcoming `query` subcommand
+/// can compose it with the per-finding / per-campaign loaders.
+#[allow(dead_code)]
+pub fn load_aggregate_hexads(base_dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    load_hexad_dir(&base_dir.join("hexads"))
 }
 
 /// Persist an assemblyline report to storage (filesystem and/or verisimdb).
@@ -327,19 +911,16 @@ pub fn persist_assemblyline_report(
 
     if modes.contains(&StorageMode::VerisimDb) {
         let hexad = build_assemblyline_hexad(report)?;
+        let base_dir = directory
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
 
         #[cfg(feature = "http")]
         {
             if std::env::var("VERISIMDB_URL").is_ok() {
-                let base_dir = directory
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
                 let mut http_paths = push_hexad_with_fallback(&hexad, &base_dir)?;
                 stored.append(&mut http_paths);
             } else {
-                let base_dir = directory
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
                 let hexad_dir = base_dir.join("hexads");
                 fs::create_dir_all(&hexad_dir)?;
                 let path = hexad_dir.join(format!("{}.json", hexad.id));
@@ -349,14 +930,31 @@ pub fn persist_assemblyline_report(
         }
         #[cfg(not(feature = "http"))]
         {
-            let base_dir = directory
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| PathBuf::from("verisimdb-data"));
             let hexad_dir = base_dir.join("hexads");
             fs::create_dir_all(&hexad_dir)?;
             let path = hexad_dir.join(format!("{}.json", hexad.id));
             fs::write(&path, serde_json::to_string_pretty(&hexad)?)?;
             stored.push(path);
+        }
+
+        // Per-finding hexads (issue #33 S1) — additive, env-var gated, and
+        // always file-side for now. HTTP push for finding hexads is left
+        // to S3/query path so we don't add chattiness to the API mid-S1.
+        if finding_hexads_enabled() {
+            let finding_hexads = build_finding_hexads(report)?;
+            let mut paths = write_finding_hexads(&finding_hexads, &base_dir)?;
+            stored.append(&mut paths);
+        }
+
+        // Per-cross-language-interaction hexads (issue #33 kanren-crosslang
+        // follow-up). Independent env-var from the finding-hexad gate so
+        // callers can opt into one without the other. File-side only for
+        // the same reason — HTTP push deferred to keep the API quiet
+        // until the surface stabilises.
+        if crosslang_hexads_enabled() {
+            let crosslang_hexads = build_crosslang_hexads(report)?;
+            let mut paths = write_crosslang_hexads(&crosslang_hexads, &base_dir)?;
+            stored.append(&mut paths);
         }
     }
 
@@ -773,5 +1371,304 @@ mod tests {
         );
         assert_eq!("disk".parse::<StorageMode>(), Ok(StorageMode::Filesystem));
         assert_eq!("bogus".parse::<StorageMode>(), Err(()));
+    }
+
+    // ----- Issue #33 S1: per-finding hexad tests -----------------------
+
+    use crate::assemblyline::{AssemblylineReport, RepoResult};
+    use crate::types::{
+        AssailReport, Language, ProgramStatistics, Severity, WeakPoint, WeakPointCategory,
+    };
+    use std::path::PathBuf;
+
+    fn sample_weak_point(file: &str, line: u32, category: WeakPointCategory) -> WeakPoint {
+        WeakPoint {
+            category,
+            location: Some(format!("{}:{}", file, line)),
+            file: Some(file.to_string()),
+            line: Some(line),
+            severity: Severity::High,
+            description: format!("test finding at {}:{}", file, line),
+            recommended_attack: Vec::new(),
+            suppressed: false,
+        }
+    }
+
+    fn sample_assemblyline(repo: &str, wps: Vec<WeakPoint>) -> AssemblylineReport {
+        let assail = AssailReport {
+            schema_version: "2.5".to_string(),
+            program_path: PathBuf::from(format!("/tmp/{}", repo)),
+            language: Language::Rust,
+            frameworks: Vec::new(),
+            weak_points: wps,
+            statistics: ProgramStatistics::default(),
+            file_statistics: Vec::new(),
+            recommended_attacks: Vec::new(),
+            dependency_graph: Default::default(),
+            taint_matrix: Default::default(),
+            migration_metrics: None,
+            suppressed_count: 0,
+        };
+        AssemblylineReport {
+            schema_version: "2.5".to_string(),
+            created_at: "2026-05-26T00:00:00Z".to_string(),
+            directory: PathBuf::from("/tmp"),
+            repos_scanned: 1,
+            repos_with_findings: 1,
+            repos_skipped: 0,
+            total_weak_points: assail.weak_points.len(),
+            total_critical: 0,
+            results: vec![RepoResult {
+                repo_path: PathBuf::from(format!("/tmp/{}", repo)),
+                repo_name: repo.to_string(),
+                weak_point_count: assail.weak_points.len(),
+                critical_count: 0,
+                high_count: assail.weak_points.len(),
+                total_files: 1,
+                total_lines: 10,
+                error: None,
+                fingerprint: None,
+                report: Some(assail),
+            }],
+        }
+    }
+
+    #[test]
+    fn build_finding_id_stable_per_finding() {
+        let wp = sample_weak_point("src/main.rs", 42, WeakPointCategory::UnsafeCode);
+        let id_1 = build_finding_id("foo", &wp);
+        let id_2 = build_finding_id("foo", &wp);
+        assert_eq!(id_1, id_2);
+        assert_eq!(id_1, "finding:foo:src/main.rs:42:UnsafeCode");
+    }
+
+    #[test]
+    fn build_finding_id_differs_by_category() {
+        let wp1 = sample_weak_point("src/main.rs", 42, WeakPointCategory::UnsafeCode);
+        let wp2 = sample_weak_point("src/main.rs", 42, WeakPointCategory::PanicPath);
+        assert_ne!(build_finding_id("foo", &wp1), build_finding_id("foo", &wp2));
+    }
+
+    #[test]
+    fn build_finding_hexads_emits_one_per_weak_point() {
+        let report = sample_assemblyline(
+            "demo",
+            vec![
+                sample_weak_point("src/a.rs", 1, WeakPointCategory::UnsafeCode),
+                sample_weak_point("src/b.rs", 7, WeakPointCategory::PanicPath),
+                sample_weak_point("src/c.rs", 9, WeakPointCategory::CommandInjection),
+            ],
+        );
+        let hexads = build_finding_hexads(&report).expect("build ok");
+        assert_eq!(hexads.len(), 3);
+        for h in &hexads {
+            let f = h
+                .semantic
+                .finding
+                .as_ref()
+                .expect("each per-finding hexad must carry FindingSemantic");
+            assert!(f.finding_id.starts_with("finding:demo:"));
+            assert_eq!(f.repo_name, "demo");
+            assert_eq!(f.severity, "high");
+            assert!(!f.rule_id.is_empty());
+            assert_eq!(f.first_seen_run, f.last_seen_run);
+        }
+    }
+
+    #[test]
+    fn build_finding_hexads_skips_suppressed() {
+        let mut suppressed = sample_weak_point("src/a.rs", 1, WeakPointCategory::UnsafeCode);
+        suppressed.suppressed = true;
+        let report = sample_assemblyline(
+            "demo",
+            vec![
+                suppressed,
+                sample_weak_point("src/b.rs", 2, WeakPointCategory::PanicPath),
+            ],
+        );
+        let hexads = build_finding_hexads(&report).expect("build ok");
+        assert_eq!(hexads.len(), 1);
+        assert_eq!(
+            hexads[0].semantic.finding.as_ref().unwrap().category,
+            "PanicPath"
+        );
+    }
+
+    #[test]
+    fn build_finding_hexads_uses_canonical_rule_ids() {
+        let report = sample_assemblyline(
+            "demo",
+            vec![sample_weak_point(
+                "src/x.rs",
+                3,
+                WeakPointCategory::UnsafeCode,
+            )],
+        );
+        let hexads = build_finding_hexads(&report).expect("build ok");
+        let f = hexads[0].semantic.finding.as_ref().unwrap();
+        assert_eq!(f.rule_id, "PA004");
+        assert_eq!(f.rule_name, "unsafe-code");
+    }
+
+    #[test]
+    fn write_finding_hexads_writes_one_file_per_hexad() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let report = sample_assemblyline(
+            "demo",
+            vec![
+                sample_weak_point("src/a.rs", 1, WeakPointCategory::UnsafeCode),
+                sample_weak_point("src/b.rs", 2, WeakPointCategory::PanicPath),
+            ],
+        );
+        let hexads = build_finding_hexads(&report).expect("build ok");
+        let paths = write_finding_hexads(&hexads, dir.path()).expect("write ok");
+        assert_eq!(paths.len(), 2);
+        for p in &paths {
+            assert!(p.exists());
+            // sanity: parses back as a hexad
+            let content = std::fs::read_to_string(p).unwrap();
+            let parsed: PanicAttackHexad = serde_json::from_str(&content).unwrap();
+            assert!(parsed.semantic.finding.is_some());
+        }
+    }
+
+    #[test]
+    fn finding_hexads_disabled_by_default() {
+        // Snapshot+restore so we don't trample on parallel-test global state.
+        let original = std::env::var(STORE_FINDING_HEXADS_ENV).ok();
+        std::env::remove_var(STORE_FINDING_HEXADS_ENV);
+        assert!(!finding_hexads_enabled());
+        if let Some(v) = original {
+            std::env::set_var(STORE_FINDING_HEXADS_ENV, v);
+        }
+    }
+
+    // ----- Issue #33 kanren-crosslang: per-interaction hexad tests -----
+
+    fn ffi_weak_point(file: &str, line: u32) -> WeakPoint {
+        WeakPoint {
+            category: WeakPointCategory::UnsafeFFI,
+            location: Some(format!("{}:{}", file, line)),
+            file: Some(file.to_string()),
+            line: Some(line),
+            severity: Severity::High,
+            description: "ffi boundary".to_string(),
+            recommended_attack: Vec::new(),
+            suppressed: false,
+        }
+    }
+
+    fn assemblyline_with_ffi(repo: &str) -> AssemblylineReport {
+        let assail = AssailReport {
+            schema_version: "2.5".to_string(),
+            program_path: PathBuf::from(format!("/tmp/{}", repo)),
+            language: Language::Rust,
+            frameworks: Vec::new(),
+            weak_points: vec![ffi_weak_point("src/bridge.rs", 42)],
+            statistics: ProgramStatistics::default(),
+            file_statistics: Vec::new(),
+            recommended_attacks: Vec::new(),
+            dependency_graph: Default::default(),
+            taint_matrix: Default::default(),
+            migration_metrics: None,
+            suppressed_count: 0,
+        };
+        AssemblylineReport {
+            schema_version: "2.5".to_string(),
+            created_at: "2026-05-26T00:00:00Z".to_string(),
+            directory: PathBuf::from("/tmp"),
+            repos_scanned: 1,
+            repos_with_findings: 1,
+            repos_skipped: 0,
+            total_weak_points: assail.weak_points.len(),
+            total_critical: 0,
+            results: vec![RepoResult {
+                repo_path: PathBuf::from(format!("/tmp/{}", repo)),
+                repo_name: repo.to_string(),
+                weak_point_count: assail.weak_points.len(),
+                critical_count: 0,
+                high_count: assail.weak_points.len(),
+                total_files: 1,
+                total_lines: 10,
+                error: None,
+                fingerprint: None,
+                report: Some(assail),
+            }],
+        }
+    }
+
+    #[test]
+    fn build_crosslang_hexads_empty_when_no_reports() {
+        let empty = AssemblylineReport {
+            schema_version: "2.5".to_string(),
+            created_at: "2026-05-26T00:00:00Z".to_string(),
+            directory: PathBuf::from("/tmp"),
+            repos_scanned: 0,
+            repos_with_findings: 0,
+            repos_skipped: 0,
+            total_weak_points: 0,
+            total_critical: 0,
+            results: Vec::new(),
+        };
+        let hexads = build_crosslang_hexads(&empty).expect("build ok");
+        assert!(hexads.is_empty());
+    }
+
+    #[test]
+    fn build_crosslang_hexads_emits_from_ffi_weak_point() {
+        let report = assemblyline_with_ffi("demo");
+        let hexads = build_crosslang_hexads(&report).expect("build ok");
+        assert!(
+            !hexads.is_empty(),
+            "UnsafeFFI weak point must produce ≥1 crosslang interaction hexad"
+        );
+        for h in &hexads {
+            let cl = h
+                .semantic
+                .crosslang
+                .as_ref()
+                .expect("each crosslang hexad must carry CrosslangSemantic");
+            assert_eq!(cl.repo_name, "demo");
+            assert!(cl.interaction_id.starts_with("crosslang:demo:"));
+            assert!(!cl.mechanism.is_empty());
+            // finding/campaign facets stay empty on a crosslang hexad.
+            assert!(h.semantic.finding.is_none());
+            assert!(h.semantic.campaign.is_none());
+        }
+    }
+
+    #[test]
+    fn write_then_load_crosslang_hexads_roundtrips() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let report = assemblyline_with_ffi("demo");
+        let hexads = build_crosslang_hexads(&report).expect("build ok");
+        assert!(!hexads.is_empty());
+        let written = write_crosslang_hexads(&hexads, dir.path()).expect("write ok");
+        assert_eq!(written.len(), hexads.len());
+
+        let loaded = load_crosslang_hexads(dir.path()).expect("load ok");
+        assert_eq!(loaded.len(), hexads.len());
+        for h in &loaded {
+            assert!(h.semantic.crosslang.is_some());
+        }
+        // Missing dir → empty Vec, never error.
+        let other = tempfile::tempdir().expect("tempdir2");
+        let empty = load_crosslang_hexads(other.path()).expect("load ok");
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn crosslang_hexads_disabled_by_default() {
+        // Mirrors `finding_hexads_disabled_by_default`. Snapshot+restore so we
+        // play nicely with parallel-test global env-var state.
+        let original = std::env::var(STORE_CROSSLANG_HEXADS_ENV).ok();
+        std::env::remove_var(STORE_CROSSLANG_HEXADS_ENV);
+        assert!(!crosslang_hexads_enabled());
+        std::env::set_var(STORE_CROSSLANG_HEXADS_ENV, "1");
+        assert!(crosslang_hexads_enabled());
+        std::env::remove_var(STORE_CROSSLANG_HEXADS_ENV);
+        if let Some(v) = original {
+            std::env::set_var(STORE_CROSSLANG_HEXADS_ENV, v);
+        }
     }
 }

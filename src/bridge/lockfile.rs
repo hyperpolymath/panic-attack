@@ -473,6 +473,134 @@ fn normalise_crate_name(s: &str) -> String {
 }
 
 // ============================================================================
+// Parent-dependency identification (Cargo.lock)
+// ============================================================================
+
+/// For each transitive crate in `Cargo.lock`, identify the direct dependency
+/// (from `direct_deps`) whose closure pulls it in. Best-effort.
+///
+/// Walks the resolution tree starting from each direct dep, marking every
+/// reachable crate with that direct dep as its parent. First match wins
+/// (BFS order), so a crate appearing under multiple direct deps gets
+/// attributed to whichever one's BFS reaches it first — a heuristic, but
+/// fine for "what to bump" recommendations on the common case (~26 of 29
+/// Track E issues).
+///
+/// Returns a map keyed by normalised crate name (lowercase, hyphens) → name
+/// of the direct dep (also normalised). Direct deps themselves are NOT
+/// included in the map; they're the start of the walk, not transitives.
+///
+/// If `Cargo.lock` is missing or unparseable, returns an empty map. Callers
+/// that need parent info should fall back to the generic "an upstream
+/// parent dependency" phrasing in [`crate::bridge::classify`].
+pub fn collect_cargo_parents(
+    project_dir: &Path,
+    direct_deps: &std::collections::HashSet<String>,
+) -> std::collections::HashMap<String, String> {
+    let lock_path = project_dir.join("Cargo.lock");
+    let Ok(content) = std::fs::read_to_string(&lock_path) else {
+        return std::collections::HashMap::new();
+    };
+
+    // First pass: build child-list per package from `[[package]]` blocks.
+    // Each block has `name = "..."` and optionally `dependencies = [ ... ]`.
+    // We collect names in their CARGO form (lockfile spelling), then
+    // normalise when storing in the map so lookups match the rest of the
+    // codebase. Dependency lines inside the array look like:
+    //   "serde",
+    //   "serde 1.0.200",
+    //   "serde 1.0.200 (registry+https://...)",
+    let mut children: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+
+    let mut current_name: Option<String> = None;
+    let mut in_dep_block = false;
+    let mut current_deps: Vec<String> = Vec::new();
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim_end();
+        let trimmed = line.trim();
+
+        if trimmed == "[[package]]" {
+            // Flush previous package's deps before starting a new one.
+            if let Some(name) = current_name.take() {
+                children
+                    .entry(normalise_crate_name(&name))
+                    .or_default()
+                    .extend(current_deps.drain(..).map(|d| normalise_crate_name(&d)));
+            }
+            in_dep_block = false;
+            current_deps.clear();
+            continue;
+        }
+
+        if in_dep_block {
+            if trimmed == "]" {
+                in_dep_block = false;
+                continue;
+            }
+            // Lines look like `"serde",` or `"serde 1.0.200",` — strip
+            // the quote, then take the first whitespace-separated token
+            // as the crate name. Version + source suffix are discarded.
+            let stripped = trimmed.trim_end_matches(',').trim().trim_matches('"');
+            if stripped.is_empty() {
+                continue;
+            }
+            if let Some(name_token) = stripped.split_whitespace().next() {
+                current_deps.push(name_token.to_string());
+            }
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("name = ") {
+            current_name = Some(unquote(rest));
+        } else if trimmed == "dependencies = [" {
+            in_dep_block = true;
+        }
+    }
+    // Final package flush.
+    if let Some(name) = current_name {
+        children
+            .entry(normalise_crate_name(&name))
+            .or_default()
+            .extend(current_deps.into_iter().map(|d| normalise_crate_name(&d)));
+    }
+
+    // Second pass: BFS from each direct dep, attributing every reachable
+    // transitive crate to that direct dep. First-write-wins keeps the BFS
+    // order stable and avoids re-attribution flapping.
+    let mut parent: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for direct in direct_deps {
+        let direct_norm = normalise_crate_name(direct);
+        let mut queue: std::collections::VecDeque<String> =
+            std::collections::VecDeque::from([direct_norm.clone()]);
+        // Each direct dep gets its own visited set so two direct deps
+        // sharing a transitive both have a chance to attribute it (the
+        // first BFS to reach the crate wins, which is what we want).
+        while let Some(node) = queue.pop_front() {
+            if !visited.insert(node.clone()) {
+                continue;
+            }
+            if let Some(deps) = children.get(&node) {
+                for child in deps {
+                    // Don't overwrite a direct dep with its own attribution,
+                    // and don't claim another direct dep as a transitive.
+                    if direct_deps.contains(child) {
+                        continue;
+                    }
+                    parent.entry(child.clone()).or_insert_with(|| direct_norm.clone());
+                    queue.push_back(child.clone());
+                }
+            }
+        }
+    }
+
+    parent
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -782,5 +910,114 @@ serde = "1.0"  # inline comment is fine
         // No Cargo.toml written
         let direct = collect_direct_cargo_dependencies(dir.path());
         assert!(direct.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // Parent-dependency identification (Track E)
+    // ------------------------------------------------------------------
+
+    fn write_cargo_lock(dir: &Path, body: &str) {
+        let mut f = std::fs::File::create(dir.join("Cargo.lock")).unwrap();
+        write!(f, "{body}").unwrap();
+    }
+
+    #[test]
+    fn parent_map_identifies_direct_to_transitive_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_lock(
+            dir.path(),
+            r#"version = 4
+
+[[package]]
+name = "my-app"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+]
+
+[[package]]
+name = "reqwest"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "rustls",
+ "tokio",
+]
+
+[[package]]
+name = "rustls"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "ring",
+]
+
+[[package]]
+name = "ring"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "tokio"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"#,
+        );
+
+        let mut direct = std::collections::HashSet::new();
+        direct.insert("reqwest".to_string());
+
+        let parents = collect_cargo_parents(dir.path(), &direct);
+        assert_eq!(parents.get("rustls").map(String::as_str), Some("reqwest"));
+        assert_eq!(parents.get("ring").map(String::as_str), Some("reqwest"));
+        assert_eq!(parents.get("tokio").map(String::as_str), Some("reqwest"));
+        // Direct deps themselves must NOT appear in the parent map.
+        assert!(!parents.contains_key("reqwest"));
+    }
+
+    #[test]
+    fn parent_map_returns_empty_when_no_lockfile() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut direct = std::collections::HashSet::new();
+        direct.insert("reqwest".to_string());
+        let parents = collect_cargo_parents(dir.path(), &direct);
+        assert!(parents.is_empty());
+    }
+
+    #[test]
+    fn parent_map_normalises_underscore_to_hyphen() {
+        let dir = tempfile::TempDir::new().unwrap();
+        write_cargo_lock(
+            dir.path(),
+            r#"version = 4
+
+[[package]]
+name = "my-app"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "serde"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"#,
+        );
+
+        let mut direct = std::collections::HashSet::new();
+        direct.insert("serde".to_string());
+
+        let parents = collect_cargo_parents(dir.path(), &direct);
+        // Both spellings must hit the same normalised entry.
+        assert_eq!(parents.get("serde-derive").map(String::as_str), Some("serde"));
     }
 }
