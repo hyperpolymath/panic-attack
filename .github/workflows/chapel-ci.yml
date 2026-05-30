@@ -62,8 +62,6 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install just
-        run: sudo apt-get update -qq && sudo apt-get install -y just
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
@@ -71,7 +69,11 @@ jobs:
           sudo apt-get install -y /tmp/chapel.deb
           chpl --version
       - name: Parse every Chapel module
-        run: just chapel-parse-check
+        working-directory: chapel
+        run: |
+          set -euo pipefail
+          chpl --parse-only src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl
+          chpl --parse-only smoke/two_repo_smoke.chpl src/Protocol.chpl src/Imaging.chpl
 
   chapel-build:
     name: chapel-build
@@ -79,8 +81,6 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install just
-        run: sudo apt-get update -qq && sudo apt-get install -y just
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
@@ -88,7 +88,11 @@ jobs:
           sudo apt-get install -y /tmp/chapel.deb
           chpl --version
       - name: Build mass-panic + smoke (no toolbox)
-        run: just chapel-build-ci
+        working-directory: chapel
+        run: |
+          set -euo pipefail
+          chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o mass-panic
+          chpl smoke/two_repo_smoke.chpl src/Protocol.chpl src/Imaging.chpl -o smoke/two_repo_smoke
       - name: Upload Chapel artefacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -125,10 +129,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Install just + Chapel ${{ env.CHAPEL_VERSION }}
+      - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
-          sudo apt-get update -qq && sudo apt-get install -y just
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
           sudo apt-get install -y /tmp/chapel.deb
       - name: Download Chapel artefacts
@@ -139,7 +142,19 @@ jobs:
       - name: Restore exec bits
         run: chmod +x chapel/mass-panic
       - name: End-to-end -nl 1 exercise
-        run: just chapel-e2e
+        run: |
+          set -euo pipefail
+          WORK=$(mktemp -d /tmp/chapel-e2e-XXXXXX)
+          trap 'rm -rf "$WORK"' EXIT
+          mkdir -p "$WORK/corpus/repo-alpha/src" "$WORK/corpus/repo-beta/src"
+          echo 'pub unsafe fn a() {}' > "$WORK/corpus/repo-alpha/src/lib.rs"
+          echo 'pub unsafe fn b() {}' > "$WORK/corpus/repo-beta/src/lib.rs"
+          for d in repo-alpha repo-beta; do
+            (cd "$WORK/corpus/$d" && git init -q && git add -A && git -c user.email=ci@example.com -c user.name=ci commit -q -m init)
+          done
+          ./chapel/mass-panic --repoDirectory="$WORK/corpus" --numLocales=1 --quiet --outputDir="$WORK/out"
+          ls "$WORK/out"/system-image-*.json >/dev/null
+          echo "chapel-e2e: PASS"
 
   chapel-cli-contract:
     name: chapel-cli-contract
