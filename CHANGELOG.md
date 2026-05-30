@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — 2026-05-30
+
+### Added
+- **Query parser: `(diff :since :category ...)` head + inline `:keyword
+  VALUE` kwargs on every unary head** (`src/query/mod.rs`, issue #33). The
+  issue body's three literal example expressions now parse verbatim:
+  - `(crosslang :from FFI :to ProofDrift)` — already worked.
+  - `(category PA001 :severity Critical :pr-state nil)` — now parses as
+    `(and (rule-id PA001) (severity Critical) (pr-state nil))`, with
+    PA-prefixed values on `category` auto-routed to `rule-id` so the
+    query actually matches findings.
+  - `(diff :since 2026-04-12 :category PA022)` — new `diff` head is
+    keyword-only sugar for an `(and ...)` over its kwarg pairs.
+  Inline kwargs are accepted on `category`, `rule-id`, `severity`, `repo`,
+  `file`, `pr-state`, and `since` — adding a `:keyword VALUE` after the
+  positional value desugars to `(and (head positional) (kw value) ...)`.
+  Behaviour unchanged for existing query expressions; 12 new unit tests.
+
 ## [Unreleased] — 2026-04-18
 
 ### Added
