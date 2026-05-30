@@ -258,13 +258,9 @@ mod tests {
         let mut declared = HashSet::new();
         declared.insert("octocrab".to_string());
 
-        let evidence = check_reachability_with_manifest(
-            tmp.path(),
-            "octocrab",
-            &declared,
-            &HashMap::new(),
-        )
-        .unwrap();
+        let evidence =
+            check_reachability_with_manifest(tmp.path(), "octocrab", &declared, &HashMap::new())
+                .unwrap();
 
         assert!(!evidence.is_imported);
         assert_eq!(evidence.status, ReachabilityStatus::PhantomDeclared);
@@ -289,13 +285,8 @@ mod tests {
         let mut parents = HashMap::new();
         parents.insert("rustls".to_string(), "reqwest".to_string());
 
-        let evidence = check_reachability_with_manifest(
-            tmp.path(),
-            "rustls",
-            &declared,
-            &parents,
-        )
-        .unwrap();
+        let evidence =
+            check_reachability_with_manifest(tmp.path(), "rustls", &declared, &parents).unwrap();
 
         assert!(!evidence.is_imported);
         assert_eq!(evidence.status, ReachabilityStatus::PhantomTransitive);
@@ -312,13 +303,9 @@ mod tests {
         let mut declared = HashSet::new();
         declared.insert("serde".to_string());
 
-        let evidence = check_reachability_with_manifest(
-            tmp.path(),
-            "serde",
-            &declared,
-            &HashMap::new(),
-        )
-        .unwrap();
+        let evidence =
+            check_reachability_with_manifest(tmp.path(), "serde", &declared, &HashMap::new())
+                .unwrap();
 
         assert!(evidence.is_imported);
         assert_eq!(evidence.status, ReachabilityStatus::Reachable);
@@ -382,13 +369,9 @@ octocrab = "0.32"
             "workspace-member declared dep must be in the direct-deps set"
         );
 
-        let evidence = check_reachability_with_manifest(
-            tmp.path(),
-            "octocrab",
-            &declared,
-            &HashMap::new(),
-        )
-        .unwrap();
+        let evidence =
+            check_reachability_with_manifest(tmp.path(), "octocrab", &declared, &HashMap::new())
+                .unwrap();
         assert_eq!(evidence.status, ReachabilityStatus::PhantomDeclared);
     }
 
@@ -404,13 +387,9 @@ octocrab = "0.32"
         let mut declared = HashSet::new();
         declared.insert("serde-json".to_string());
 
-        let evidence = check_reachability_with_manifest(
-            tmp.path(),
-            "serde_json",
-            &declared,
-            &HashMap::new(),
-        )
-        .unwrap();
+        let evidence =
+            check_reachability_with_manifest(tmp.path(), "serde_json", &declared, &HashMap::new())
+                .unwrap();
 
         assert_eq!(evidence.status, ReachabilityStatus::PhantomDeclared);
     }

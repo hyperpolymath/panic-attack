@@ -7860,7 +7860,9 @@ pub fn safe_get_x() -> Option<String> {
         fs::write(tmp.path().join("real.rs"), "fn main() {}").unwrap();
         let collected = walk_collects(tmp.path());
         assert!(
-            !collected.iter().any(|p| p.to_string_lossy().contains(".yarn/")),
+            !collected
+                .iter()
+                .any(|p| p.to_string_lossy().contains(".yarn/")),
             ".yarn/ subtree must be skipped"
         );
         assert!(
@@ -7931,7 +7933,11 @@ pub fn safe_get_x() -> Option<String> {
             outputs = { self, nixpkgs }: { };
         }"#;
         let findings = flake_findings(src, "/nonexistent/dir/flake.nix");
-        assert_eq!(findings.len(), 1, "unpinned flake.nix must produce one finding");
+        assert_eq!(
+            findings.len(),
+            1,
+            "unpinned flake.nix must produce one finding"
+        );
         assert!(
             matches!(findings[0].severity, Severity::Low),
             "missing flake.lock alone is mechanically fixable — must be Low severity, got {:?}",
