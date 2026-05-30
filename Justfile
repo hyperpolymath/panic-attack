@@ -144,12 +144,58 @@ chapel-build:
 chapel-build-toolbox:
     toolbox run --container chapel-dev bash -c "cd $(pwd)/chapel && chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o mass-panic"
 
+# CI build path — explicitly toolbox-free. Used by .github/workflows/chapel-ci.yml
+# on stock ubuntu-latest runners after installing the Chapel 2.8.0 .deb. Builds
+# mass-panic and the smoke binary in one shot.
+chapel-build-ci:
+    cd chapel && chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o mass-panic
+    cd chapel && chpl smoke/two_repo_smoke.chpl src/Protocol.chpl src/Imaging.chpl -o smoke/two_repo_smoke
+
+# Chapel-side data-flow smoke test (<5s, single-locale, no Rust binary needed)
+chapel-smoke: chapel-build-ci
+    ./chapel/smoke/two_repo_smoke
+
+# Verify the Rust↔Chapel CLI contract surface. Requires
+# `cargo build --release` to have produced ./target/release/panic-attack.
+chapel-contract-check:
+    ./chapel/tests/contract_check.sh
+
+# Aggregate-parity check: rayon assemblyline vs Chapel single-locale on a
+# synthetic 2-repo corpus. Requires both binaries built.
+chapel-rust-diff:
+    ./chapel/tests/rayon_vs_chapel_diff.sh
+
+# End-to-end single-locale exercise against a synthetic 2-repo manifest.
+#
+# True multi-locale (-nl 2 over real cluster nodes) requires Chapel built with
+# CHPL_COMM=gasnet — the stock ubuntu .deb ships CHPL_COMM=none and rejects
+# -nl >1. The v0 gate verifies the full mass-panic flow (discover → spawn
+# panic-attack → write SystemImage JSON) on -nl 1; the cross-locale code path
+# is staged for Wave 2 once the .deb story for multilocale Chapel is solved.
+# Tracker: see chapel/README.md "Wave 2 follow-up".
+chapel-e2e:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WORK=$(mktemp -d /tmp/chapel-e2e-XXXXXX)
+    trap 'rm -rf "$WORK"' EXIT
+    mkdir -p "$WORK/corpus/repo-alpha/src" "$WORK/corpus/repo-beta/src"
+    echo 'pub unsafe fn a() {}' > "$WORK/corpus/repo-alpha/src/lib.rs"
+    echo 'pub unsafe fn b() {}' > "$WORK/corpus/repo-beta/src/lib.rs"
+    for d in repo-alpha repo-beta; do (cd "$WORK/corpus/$d" && git init -q && git add -A && git -c user.email=ci@example.com -c user.name=ci commit -q -m init); done
+    ./chapel/mass-panic --repoDirectory="$WORK/corpus" --numLocales=1 --quiet --outputDir="$WORK/out"
+    ls "$WORK/out"/system-image-*.json >/dev/null && echo "chapel-e2e: PASS (-nl 1 produced system-image JSON)"
+
+# Parse-check every Chapel module (cheap canary; runs before chapel-build-ci)
+chapel-parse-check:
+    cd chapel && chpl --parse-only src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl
+    cd chapel && chpl --parse-only smoke/two_repo_smoke.chpl src/Protocol.chpl src/Imaging.chpl
+
 # Clean Chapel build artefacts
 chapel-clean:
-    rm -f chapel/mass-panic
+    rm -f chapel/mass-panic chapel/smoke/two_repo_smoke
 
 # Scan local repo tree with mass-panic (Chapel single-locale)
-chapel-scan dir=env("HOME") + "/Documents/hyperpolymath-repos":
+chapel-scan dir=(env("HOME") + "/Documents/hyperpolymath-repos"):
     ./chapel/mass-panic --repoDirectory={{dir}}
 
 # Diff the two most recent mass-panic temporal snapshots

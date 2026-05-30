@@ -1,0 +1,191 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# chapel-ci — strict CI gates for the OPTIONAL Chapel mass-panic harness.
+#
+# The Rust binary stands alone (USB-stick-portable, single-machine). chapel/ is
+# a detachable multi-machine harness on top. This workflow exercises the harness
+# and the Rust↔Chapel contract surface. Path triggers are scoped so a pure-Rust
+# PR that doesn't touch chapel/ or src/main.rs leaves these jobs unrun, and
+# removing chapel/ entirely leaves the Rust CI path (rust-ci.yml) green.
+#
+# Six strict jobs (no continue-on-error):
+#   1. chapel-parse-check   — chpl --parse-only on every module
+#   2. chapel-build         — just chapel-build-ci (no toolbox)
+#   3. chapel-smoke         — chapel/smoke/two_repo_smoke (Chapel data flow)
+#   4. chapel-e2e          — mass-panic end-to-end (-nl 1) on a synthetic
+#                            2-repo manifest. True -nl 2 requires CHPL_COMM=gasnet
+#                            which the stock .deb doesn't ship; tracked for Wave 2.
+#   5. chapel-cli-contract  — assert panic-attack describe-contract matches fixture
+#   6. chapel-rust-diff     — rayon assemblyline vs Chapel single-locale aggregates
+#
+# Wave 2 hardening tracker: SHA-pin the Chapel 2.8.0 .deb download. Today the
+# workflow trusts the HTTPS endpoint at chapel-lang/chapel releases. Acceptable
+# for the harness scaffold; harden before promoting Chapel to a production gate.
+
+name: chapel-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'chapel/**'
+      - 'Justfile'
+      - '.github/workflows/chapel-ci.yml'
+      - 'src/main.rs'
+      - 'src/types.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    paths:
+      - 'chapel/**'
+      - 'Justfile'
+      - '.github/workflows/chapel-ci.yml'
+      - 'src/main.rs'
+      - 'src/types.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chapel-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHAPEL_VERSION: "2.8.0"
+  CHAPEL_DEB_URL: "https://github.com/chapel-lang/chapel/releases/download/2.8.0/chapel-2.8.0-1.ubuntu22.amd64.deb"
+
+jobs:
+  chapel-parse-check:
+    name: chapel-parse-check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install just
+        run: sudo apt-get update -qq && sudo apt-get install -y just
+      - name: Install Chapel ${{ env.CHAPEL_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
+          sudo apt-get install -y /tmp/chapel.deb
+          chpl --version
+      - name: Parse every Chapel module
+        run: just chapel-parse-check
+
+  chapel-build:
+    name: chapel-build
+    needs: chapel-parse-check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install just
+        run: sudo apt-get update -qq && sudo apt-get install -y just
+      - name: Install Chapel ${{ env.CHAPEL_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
+          sudo apt-get install -y /tmp/chapel.deb
+          chpl --version
+      - name: Build mass-panic + smoke (no toolbox)
+        run: just chapel-build-ci
+      - name: Upload Chapel artefacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chapel-binaries
+          path: |
+            chapel/mass-panic
+            chapel/smoke/two_repo_smoke
+          retention-days: 1
+
+  chapel-smoke:
+    name: chapel-smoke
+    needs: chapel-build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install Chapel ${{ env.CHAPEL_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
+          sudo apt-get install -y /tmp/chapel.deb
+      - name: Download Chapel artefacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: chapel-binaries
+          path: chapel/
+      - name: Restore exec bits
+        run: chmod +x chapel/mass-panic chapel/smoke/two_repo_smoke
+      - name: Run two_repo_smoke
+        run: ./chapel/smoke/two_repo_smoke
+
+  chapel-e2e:
+    name: chapel-e2e
+    needs: chapel-build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install just + Chapel ${{ env.CHAPEL_VERSION }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y just
+          curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
+          sudo apt-get install -y /tmp/chapel.deb
+      - name: Download Chapel artefacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: chapel-binaries
+          path: chapel/
+      - name: Restore exec bits
+        run: chmod +x chapel/mass-panic
+      - name: End-to-end -nl 1 exercise
+        run: just chapel-e2e
+
+  chapel-cli-contract:
+    name: chapel-cli-contract
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-chapel-cli-contract-${{ hashFiles('Cargo.lock') }}
+      - name: Build panic-attack
+        run: cargo build --release --locked
+      - name: Run contract gate
+        run: ./chapel/tests/contract_check.sh
+
+  chapel-rust-diff:
+    name: chapel-rust-diff
+    needs: chapel-build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-chapel-rust-diff-${{ hashFiles('Cargo.lock') }}
+      - name: Install Chapel ${{ env.CHAPEL_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
+          sudo apt-get install -y /tmp/chapel.deb
+      - name: Download Chapel artefacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: chapel-binaries
+          path: chapel/
+      - name: Restore exec bits
+        run: chmod +x chapel/mass-panic
+      - name: Build panic-attack
+        run: cargo build --release --locked
+      - name: rayon vs Chapel single-locale aggregate parity
+        run: ./chapel/tests/rayon_vs_chapel_diff.sh

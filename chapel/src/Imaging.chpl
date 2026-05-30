@@ -324,20 +324,49 @@ module Imaging {
         writer.writeln("}");
     }
 
+    // Minimal JSON string escape — handles the characters most likely to
+    // appear in repo paths and panic-attack error messages. Other control
+    // characters are passed through; downstream readers must tolerate them.
+    // (Mirrors MassPanic.chpl::journalEscape, extended for the four ImageNode
+    // fields previously dropped silently by writeNodeJson.)
+    proc jsonEscape(s: string): string {
+        var buf: string;
+        for c in s {
+            if c == "\\" then buf += "\\\\";
+            else if c == "\"" then buf += "\\\"";
+            else if c == "\n" then buf += "\\n";
+            else if c == "\r" then buf += "\\r";
+            else if c == "\t" then buf += "\\t";
+            else buf += c;
+        }
+        return buf;
+    }
+
     proc writeNodeJson(writer, node: ImageNode) throws {
         writer.write("    {");
-        writer.write("\"id\": \"", node.id, "\", ");
-        writer.write("\"name\": \"", node.name, "\", ");
+        writer.write("\"id\": \"", jsonEscape(node.id), "\", ");
+        writer.write("\"path\": \"", jsonEscape(node.path), "\", ");
+        writer.write("\"name\": \"", jsonEscape(node.name), "\", ");
         writer.write("\"level\": \"", node.level, "\", ");
         writer.write("\"health_score\": ", node.healthScore, ", ");
         writer.write("\"risk_intensity\": ", node.riskIntensity, ", ");
         writer.write("\"weak_point_density\": ", node.weakPointDensity, ", ");
         writer.write("\"weak_point_count\": ", node.weakPointCount, ", ");
         writer.write("\"critical_count\": ", node.criticalCount, ", ");
+        writer.write("\"high_count\": ", node.highCount, ", ");
         writer.write("\"total_files\": ", node.totalFiles, ", ");
         writer.write("\"total_lines\": ", node.totalLines, ", ");
         writer.write("\"fingerprint\": \"", node.fingerprint, "\", ");
-        writer.write("\"skipped\": ", if node.skipped then "true" else "false");
+        writer.write("\"skipped\": ", if node.skipped then "true" else "false", ", ");
+        writer.write("\"error\": \"", jsonEscape(node.error), "\", ");
+        writer.write("\"category_breakdown\": [");
+        for (cat, idx) in zip(node.categoryBreakdown, 0..) {
+            if idx > 0 then writer.write(", ");
+            writer.write("{\"name\": \"", jsonEscape(cat.name), "\", ");
+            writer.write("\"count\": ", cat.count, ", ");
+            writer.write("\"severity\": \"", jsonEscape(cat.severity), "\"}");
+        }
+        writer.write("]");
         writer.write("}");
     }
 

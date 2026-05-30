@@ -1,0 +1,20 @@
+{
+  "_comment": "Fixture for the chapel-cli-contract CI gate. Lists the subset of the panic-attack CLI contract that the Chapel mass-panic harness depends on. The CI job runs `panic-attack describe-contract` and asserts every entry here is present in the live output. Adding a flag/mode to Chapel's argv builder requires adding it here; removing one from Rust without updating here is a drift the gate will catch.",
+  "report_schema_version": "2.5",
+  "required_modes": [
+    "assail",
+    "assault",
+    "ambush",
+    "attack",
+    "adjudicate"
+  ],
+  "required_global_flags": [
+    "quiet",
+    "output_format"
+  ],
+  "required_flags_per_mode": {
+    "assault": ["duration", "intensity"],
+    "ambush": ["duration", "intensity"],
+    "attack": ["duration"]
+  }
+}
