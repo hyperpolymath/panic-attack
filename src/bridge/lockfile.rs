@@ -590,7 +590,9 @@ pub fn collect_cargo_parents(
                     if direct_deps.contains(child) {
                         continue;
                     }
-                    parent.entry(child.clone()).or_insert_with(|| direct_norm.clone());
+                    parent
+                        .entry(child.clone())
+                        .or_insert_with(|| direct_norm.clone());
                     queue.push_back(child.clone());
                 }
             }
@@ -1018,6 +1020,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
         let parents = collect_cargo_parents(dir.path(), &direct);
         // Both spellings must hit the same normalised entry.
-        assert_eq!(parents.get("serde-derive").map(String::as_str), Some("serde"));
+        assert_eq!(
+            parents.get("serde-derive").map(String::as_str),
+            Some("serde")
+        );
     }
 }

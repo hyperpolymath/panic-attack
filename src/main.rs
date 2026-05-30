@@ -2513,10 +2513,7 @@ fn run_main() -> Result<()> {
                     })
                     .collect();
                 positional.sort();
-                let description = sub
-                    .get_about()
-                    .map(|s| s.to_string())
-                    .unwrap_or_default();
+                let description = sub.get_about().map(|s| s.to_string()).unwrap_or_default();
                 modes.insert(
                     name,
                     serde_json::json!({

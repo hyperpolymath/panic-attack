@@ -355,7 +355,8 @@ mod tests {
     fn test_phantom_declared_recommends_machete_strip() {
         // file-soup#50 shape: crate declared in Cargo.toml, no `use` site —
         // strip the manifest entry.
-        let (cls, rationale, action) = classify(&mock_vuln(false, false), &phantom_declared_evidence());
+        let (cls, rationale, action) =
+            classify(&mock_vuln(false, false), &phantom_declared_evidence());
         assert_eq!(cls, Classification::Informational);
         assert!(
             action.contains("cargo machete --fix") || action.contains("Strip from Cargo.toml"),
@@ -403,10 +404,8 @@ mod tests {
     fn test_phantom_transitive_unknown_parent_falls_back_gracefully() {
         // Best-effort parent identification: if Cargo.lock didn't reveal one,
         // we still produce useful output.
-        let (cls, rationale, action) = classify(
-            &mock_vuln(false, false),
-            &phantom_transitive_evidence(None),
-        );
+        let (cls, rationale, action) =
+            classify(&mock_vuln(false, false), &phantom_transitive_evidence(None));
         assert_eq!(cls, Classification::Informational);
         assert!(
             action.contains("an upstream parent dependency"),
@@ -439,7 +438,8 @@ mod tests {
     fn test_phantom_variants_both_classify_informational() {
         // Three-way classifier output is unchanged from #47.
         let (cls_decl, _, _) = classify(&mock_vuln(false, false), &phantom_declared_evidence());
-        let (cls_trans, _, _) = classify(&mock_vuln(false, false), &phantom_transitive_evidence(None));
+        let (cls_trans, _, _) =
+            classify(&mock_vuln(false, false), &phantom_transitive_evidence(None));
         assert_eq!(cls_decl, Classification::Informational);
         assert_eq!(cls_trans, Classification::Informational);
     }
@@ -458,7 +458,11 @@ mod tests {
         // a naive strip breaks the build.
         for name in ["pkg-config", "cc", "bindgen", "cmake", "autocfg", "vcpkg"] {
             let (cls, _, action) = classify(&vuln_named(name), &phantom_declared_evidence());
-            assert_eq!(cls, Classification::Informational, "`{name}` must classify Informational");
+            assert_eq!(
+                cls,
+                Classification::Informational,
+                "`{name}` must classify Informational"
+            );
             assert!(
                 action.contains("DO NOT STRIP"),
                 "`{name}` must NOT recommend strip, got: {action}"
@@ -516,7 +520,16 @@ mod tests {
     #[test]
     fn test_phantom_transitive_gtk_family_via_dioxus_parent() {
         // Same family check but parent is dioxus-desktop directly.
-        for name in ["atk", "atk-sys", "gdk", "gdk-sys", "glib", "gtk3-macros", "paste", "fxhash"] {
+        for name in [
+            "atk",
+            "atk-sys",
+            "gdk",
+            "gdk-sys",
+            "glib",
+            "gtk3-macros",
+            "paste",
+            "fxhash",
+        ] {
             let (_, rationale, _) = classify(
                 &vuln_named(name),
                 &phantom_transitive_evidence(Some("dioxus-desktop")),
