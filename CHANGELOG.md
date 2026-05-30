@@ -1,11 +1,25 @@
 # Changelog
 
-## [Unreleased] — 2026-05-30
+## [Unreleased]
 
-### Added
+### Added (2026-05-30) — issue #33 closure
+- **VeriSimDB hexad persistence complete (issue #33 S1–S3)** — per-finding
+  hexads, campaign state lifecycle, and S-expression query DSL all shipped:
+  - **S1**: per-finding hexad emission gated by
+    `PANIC_ATTACK_STORE_FINDING_HEXADS=1` (`src/storage/mod.rs ::
+    build_finding_hexads`, subject format
+    `finding:<repo>:<file>:<line>:<category>`).
+  - **S2**: `panic-attack campaign` subcommand (`register-pr`, `dismiss`,
+    `status`, `poll`) drives finding lifecycle with state transitions
+    persisted as campaign hexads. `poll` performs GitHub PR state
+    transitions (open → pr-filed → pr-merged / pr-closed).
+  - **S3**: `panic-attack query <expr>` evaluates a small S-expression
+    language over the persisted hexads. Heads: `category`, `rule-id`,
+    `severity`, `repo`, `file`, `pr-state`, `since`, `crosslang`, `diff`,
+    `and`, `or`, `not`.
 - **Query parser: `(diff :since :category ...)` head + inline `:keyword
-  VALUE` kwargs on every unary head** (`src/query/mod.rs`, issue #33). The
-  issue body's three literal example expressions now parse verbatim:
+  VALUE` kwargs on every unary head** (`src/query/mod.rs`). The issue
+  body's three literal example expressions now parse verbatim:
   - `(crosslang :from FFI :to ProofDrift)` — already worked.
   - `(category PA001 :severity Critical :pr-state nil)` — now parses as
     `(and (rule-id PA001) (severity Critical) (pr-state nil))`, with
@@ -18,9 +32,7 @@
   positional value desugars to `(and (head positional) (kw value) ...)`.
   Behaviour unchanged for existing query expressions; 12 new unit tests.
 
-## [Unreleased] — 2026-04-18
-
-### Added
+### Added (2026-04-18)
 - **User-classification registry** (`assail::UserClassification`,
   `load_user_classifications`, `apply_user_classifications`): panic-attack
   now reads an optional project-local classification file at every assail
