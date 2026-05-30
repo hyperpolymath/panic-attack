@@ -11,6 +11,7 @@
 //!
 //! ```text
 //! (category UnsafeCode)
+//! (category PA004)                 ; auto-routes to (rule-id PA004)
 //! (rule-id PA004)
 //! (severity Critical)
 //! (repo <name-substring>)
@@ -22,6 +23,22 @@
 //! (and <expr> <expr> ...)
 //! (or  <expr> <expr> ...)
 //! (not <expr>)
+//! (diff :since DATE :category C ...)   ; sugar for (and (since DATE) (category C) ...)
+//! ```
+//!
+//! ### Inline keyword args on unary heads
+//!
+//! Any unary head (`category`, `rule-id`, `severity`, `repo`, `file`,
+//! `pr-state`, `since`) accepts trailing `:keyword VALUE` pairs that are
+//! desugared into an `(and ...)` conjunction with the positional clause.
+//! This makes the issue #33 examples parse verbatim:
+//!
+//! ```text
+//! (category PA001 :severity Critical :pr-state nil)
+//!   ≡ (and (rule-id PA001) (severity Critical) (pr-state nil))
+//!
+//! (diff :since 2026-04-12 :category PA022)
+//!   ≡ (and (since 2026-04-12) (rule-id PA022))
 //! ```
 //!
 //! ## Semantic notes
@@ -236,38 +253,27 @@ fn parse_form(tokens: &[Token], cursor: &mut usize) -> Result<Query> {
     match head_lower.as_str() {
         "category" => {
             let v = parse_value(tokens, cursor)?;
-            close_paren(tokens, cursor)?;
-            Ok(Query::Category(v))
+            finish_unary_with_kwargs(category_or_rule_id(v), tokens, cursor)
         }
         "rule-id" | "ruleid" => {
             let v = parse_value(tokens, cursor)?;
-            close_paren(tokens, cursor)?;
-            Ok(Query::RuleId(v))
+            finish_unary_with_kwargs(Query::RuleId(v), tokens, cursor)
         }
         "severity" => {
             let v = parse_value(tokens, cursor)?;
-            close_paren(tokens, cursor)?;
-            Ok(Query::Severity(v))
+            finish_unary_with_kwargs(Query::Severity(v), tokens, cursor)
         }
         "repo" => {
             let v = parse_value(tokens, cursor)?;
-            close_paren(tokens, cursor)?;
-            Ok(Query::Repo(v))
+            finish_unary_with_kwargs(Query::Repo(v), tokens, cursor)
         }
         "file" => {
             let v = parse_value(tokens, cursor)?;
-            close_paren(tokens, cursor)?;
-            Ok(Query::File(v))
+            finish_unary_with_kwargs(Query::File(v), tokens, cursor)
         }
         "pr-state" | "prstate" => {
             let v = parse_value(tokens, cursor)?;
-            close_paren(tokens, cursor)?;
-            let val = if v.eq_ignore_ascii_case("nil") || v.eq_ignore_ascii_case("none") {
-                None
-            } else {
-                Some(v)
-            };
-            Ok(Query::PrState(val))
+            finish_unary_with_kwargs(Query::PrState(pr_state_value(v)), tokens, cursor)
         }
         "and" => {
             let children = parse_children(tokens, cursor)?;
@@ -290,8 +296,21 @@ fn parse_form(tokens: &[Token], cursor: &mut usize) -> Result<Query> {
         }
         "since" => {
             let v = parse_value(tokens, cursor)?;
-            close_paren(tokens, cursor)?;
-            Ok(Query::Since(v))
+            finish_unary_with_kwargs(Query::Since(v), tokens, cursor)
+        }
+        "diff" => {
+            // `(diff :kw VALUE ...)` — sugar for `(and (kw VALUE) ...)`.
+            // Keyword-only; no positional. Matches the issue #33 example
+            // `(diff :since 2026-04-12 :category PA022)` verbatim.
+            let kwargs = parse_trailing_kwargs(tokens, cursor)?;
+            if kwargs.is_empty() {
+                bail!("(diff ...) requires at least one ':keyword VALUE' pair");
+            }
+            if kwargs.len() == 1 {
+                Ok(kwargs.into_iter().next().unwrap())
+            } else {
+                Ok(Query::And(kwargs))
+            }
         }
         "crosslang" => {
             // Two accepted shapes:
@@ -385,6 +404,95 @@ fn close_paren(tokens: &[Token], cursor: &mut usize) -> Result<()> {
         }
         Some(other) => Err(anyhow!("expected ')', got {:?}", other)),
         None => Err(anyhow!("missing ')'")),
+    }
+}
+
+/// `(category PA001)` should mean "rule-id PA001", since `category` matches
+/// the `WeakPointCategory` Debug name and the PA-prefixed strings are rule
+/// IDs (`PA001`..`PA025`). Issue #33's literal example
+/// `(category PA001 :severity Critical :pr-state nil)` relies on this
+/// routing — without it the head matches zero findings.
+fn category_or_rule_id(v: String) -> Query {
+    let bytes = v.as_bytes();
+    let looks_like_rule_id = bytes.len() > 2
+        && bytes[0].eq_ignore_ascii_case(&b'P')
+        && bytes[1].eq_ignore_ascii_case(&b'A')
+        && bytes[2..].iter().all(|b| b.is_ascii_digit());
+    if looks_like_rule_id {
+        Query::RuleId(v)
+    } else {
+        Query::Category(v)
+    }
+}
+
+/// Translate the surface `pr-state` value into the `Option<String>` used
+/// by `Query::PrState`. `nil` / `none` (case-insensitive) → `None`.
+fn pr_state_value(v: String) -> Option<String> {
+    if v.eq_ignore_ascii_case("nil") || v.eq_ignore_ascii_case("none") {
+        None
+    } else {
+        Some(v)
+    }
+}
+
+/// Dispatch a `:keyword VALUE` pair to the corresponding atomic Query.
+///
+/// Used by both `parse_trailing_kwargs` (after a positional head value) and
+/// `diff` (keyword-only). Keeps the inline-kwargs surface in lock-step with
+/// the corresponding unary heads — adding a new unary head requires a row
+/// here so it can also be used as an inline-kwarg or `diff` keyword.
+fn query_for_keyword(kw: &str, v: String) -> Result<Query> {
+    match kw {
+        "category" => Ok(category_or_rule_id(v)),
+        "rule-id" | "ruleid" => Ok(Query::RuleId(v)),
+        "severity" => Ok(Query::Severity(v)),
+        "repo" => Ok(Query::Repo(v)),
+        "file" => Ok(Query::File(v)),
+        "pr-state" | "prstate" => Ok(Query::PrState(pr_state_value(v))),
+        "since" => Ok(Query::Since(v)),
+        other => Err(anyhow!("unknown query keyword: :{}", other)),
+    }
+}
+
+/// Consume an optional sequence of `:keyword VALUE` pairs followed by the
+/// closing `)`. Returns each pair as a sub-`Query`.
+fn parse_trailing_kwargs(tokens: &[Token], cursor: &mut usize) -> Result<Vec<Query>> {
+    let mut out = Vec::new();
+    loop {
+        match tokens.get(*cursor) {
+            Some(Token::RParen) => {
+                *cursor += 1;
+                return Ok(out);
+            }
+            Some(Token::Atom(a)) if a.starts_with(':') => {
+                let kw = a[1..].to_ascii_lowercase();
+                *cursor += 1;
+                let v = parse_value(tokens, cursor)?;
+                out.push(query_for_keyword(&kw, v)?);
+            }
+            Some(other) => bail!("expected ':keyword VALUE' or ')', got {:?}", other),
+            None => bail!("missing ')'"),
+        }
+    }
+}
+
+/// After a unary head's positional value has been parsed, attach any
+/// trailing `:keyword VALUE` pairs by wrapping the positional clause and
+/// the keyword clauses into an `(and ...)`. If there are no kwargs, the
+/// positional clause is returned as-is.
+fn finish_unary_with_kwargs(
+    positional: Query,
+    tokens: &[Token],
+    cursor: &mut usize,
+) -> Result<Query> {
+    let extras = parse_trailing_kwargs(tokens, cursor)?;
+    if extras.is_empty() {
+        Ok(positional)
+    } else {
+        let mut all = Vec::with_capacity(1 + extras.len());
+        all.push(positional);
+        all.extend(extras);
+        Ok(Query::And(all))
     }
 }
 
@@ -1110,5 +1218,140 @@ mod tests {
         assert!(s.contains("PA004"));
         assert!(s.contains("demo"));
         assert!(s.contains("pr-filed"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #33 literal examples — verbatim from the issue body.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_category_pa_id_auto_routes_to_rule_id() {
+        // `(category PA001)` should mean "rule-id PA001" so the issue's
+        // literal example matches findings.
+        let q = parse("(category PA001)").unwrap();
+        assert_eq!(q, Query::RuleId("PA001".to_string()));
+    }
+
+    #[test]
+    fn parse_category_word_does_not_auto_route() {
+        let q = parse("(category UnsafeCode)").unwrap();
+        assert_eq!(q, Query::Category("UnsafeCode".to_string()));
+    }
+
+    #[test]
+    fn parse_issue_example_category_with_inline_kwargs() {
+        // Issue #33 example: `(category PA001 :severity Critical :pr-state nil)`
+        let q = parse("(category PA001 :severity Critical :pr-state nil)").unwrap();
+        assert_eq!(
+            q,
+            Query::And(vec![
+                Query::RuleId("PA001".to_string()),
+                Query::Severity("Critical".to_string()),
+                Query::PrState(None),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_issue_example_diff_form() {
+        // Issue #33 example: `(diff :since 2026-04-12 :category PA022)`
+        let q = parse("(diff :since 2026-04-12 :category PA022)").unwrap();
+        assert_eq!(
+            q,
+            Query::And(vec![
+                Query::Since("2026-04-12".to_string()),
+                Query::RuleId("PA022".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_diff_with_single_kwarg_unwraps() {
+        // `(diff :since X)` is just `(since X)` — no point wrapping a single
+        // clause in `(and ...)`.
+        let q = parse("(diff :since 2026-04-12)").unwrap();
+        assert_eq!(q, Query::Since("2026-04-12".to_string()));
+    }
+
+    #[test]
+    fn parse_diff_empty_errors() {
+        let err = parse("(diff)").unwrap_err().to_string();
+        assert!(
+            err.contains("(diff ...) requires at least one"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn parse_diff_rejects_unknown_keyword() {
+        let err = parse("(diff :nonsense X)").unwrap_err().to_string();
+        assert!(
+            err.contains("unknown query keyword: :nonsense"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn parse_diff_rejects_positional_arg() {
+        // `(diff X)` — bare positional before any kwarg should fail.
+        let err = parse("(diff X)").unwrap_err().to_string();
+        assert!(err.contains("expected ':keyword VALUE'"), "got: {}", err);
+    }
+
+    #[test]
+    fn parse_inline_kwargs_on_severity_head() {
+        let q = parse("(severity Critical :pr-state nil)").unwrap();
+        assert_eq!(
+            q,
+            Query::And(vec![
+                Query::Severity("Critical".to_string()),
+                Query::PrState(None),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_inline_kwargs_on_since_head() {
+        let q = parse("(since 2026-04-12 :category PA022)").unwrap();
+        assert_eq!(
+            q,
+            Query::And(vec![
+                Query::Since("2026-04-12".to_string()),
+                Query::RuleId("PA022".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn run_issue_example_category_with_kwargs_matches() {
+        // End-to-end: write findings then run the verbatim issue example.
+        let dir = tempdir().unwrap();
+        write_test_findings(dir.path());
+        // None of the synthetic findings are PA001 (UnsafeCode → PA004),
+        // so the verbatim issue expression yields zero matches without
+        // erroring — proves the parser path is wired in.
+        let q = parse("(category PA001 :severity Critical :pr-state nil)").unwrap();
+        let hits = run(&q, dir.path()).unwrap();
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn run_diff_form_matches_recent_findings() {
+        let dir = tempdir().unwrap();
+        write_test_findings(dir.path());
+        // The synthetic findings carry `first_seen_run = "test-run"` which
+        // is NOT a valid timestamp, so `(since ...)` falls back to the
+        // hexad's `created_at`. We use a date well before the test run so
+        // every finding qualifies; then category PA004 selects the
+        // UnsafeCode finding from `alpha`.
+        let q = parse("(diff :since 2020-01-01 :category PA004)").unwrap();
+        let hits = run(&q, dir.path()).unwrap();
+        assert!(
+            !hits.is_empty(),
+            "diff form should find UnsafeCode/PA004 findings"
+        );
+        assert!(hits.iter().all(|h| h.rule_id == "PA004"));
     }
 }
