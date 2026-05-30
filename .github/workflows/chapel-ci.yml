@@ -4,46 +4,39 @@
 #
 # The Rust binary stands alone (USB-stick-portable, single-machine). chapel/ is
 # a detachable multi-machine harness on top. This workflow exercises the harness
-# and the Rust↔Chapel contract surface. Path triggers are scoped so a pure-Rust
-# PR that doesn't touch chapel/ or src/main.rs leaves these jobs unrun, and
-# removing chapel/ entirely leaves the Rust CI path (rust-ci.yml) green.
+# and the Rust↔Chapel contract surface.
 #
-# Six strict jobs (no continue-on-error):
+# **Why an aggregator gate?** The 6 gate jobs are path-filtered (they only do
+# real work when chapel/** or the Rust contract files change). But path-filtered
+# workflows that don't trigger leave required status checks "expected but not
+# reported" — which blocks unrelated PRs from merging when the gates are in
+# the Base ruleset. Solution: a single `chapel-ci-gate` job that ALWAYS runs
+# and aggregates. The ruleset requires only the gate. The gate reports:
+#   - SUCCESS immediately if no chapel-relevant paths changed.
+#   - SUCCESS if all 6 underlying jobs succeeded on a relevant change.
+#   - FAILURE if any underlying job failed.
+#
+# Six strict jobs (no continue-on-error anywhere):
 #   1. chapel-parse-check   — chpl --parse-only on every module
-#   2. chapel-build         — just chapel-build-ci (no toolbox)
+#   2. chapel-build         — chpl build of mass-panic + smoke (no toolbox)
 #   3. chapel-smoke         — chapel/smoke/two_repo_smoke (Chapel data flow)
-#   4. chapel-e2e          — mass-panic end-to-end (-nl 1) on a synthetic
-#                            2-repo manifest. True -nl 2 requires CHPL_COMM=gasnet
-#                            which the stock .deb doesn't ship; tracked for Wave 2.
-#   5. chapel-cli-contract  — assert panic-attack describe-contract matches fixture
-#   6. chapel-rust-diff     — rayon assemblyline vs Chapel single-locale aggregates
+#   4. chapel-e2e           — mass-panic -nl 1 on a synthetic 2-repo manifest
+#                            True -nl 2 requires CHPL_COMM=gasnet which the
+#                            stock .deb doesn't ship; tracked for Wave 2.
+#   5. chapel-cli-contract  — panic-attack describe-contract vs expected fixture
+#   6. chapel-rust-diff     — rayon assemblyline vs Chapel single-locale parity
+#
+# Plus the always-on aggregator: `chapel-ci-gate`.
 #
 # Wave 2 hardening tracker: SHA-pin the Chapel 2.8.0 .deb download. Today the
-# workflow trusts the HTTPS endpoint at chapel-lang/chapel releases. Acceptable
-# for the harness scaffold; harden before promoting Chapel to a production gate.
+# workflow trusts the HTTPS endpoint at chapel-lang/chapel releases.
 
 name: chapel-ci
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'chapel/**'
-      - 'Justfile'
-      - '.github/workflows/chapel-ci.yml'
-      - 'src/main.rs'
-      - 'src/types.rs'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
   pull_request:
-    paths:
-      - 'chapel/**'
-      - 'Justfile'
-      - '.github/workflows/chapel-ci.yml'
-      - 'src/main.rs'
-      - 'src/types.rs'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
 
 permissions:
   contents: read
@@ -57,16 +50,48 @@ env:
   CHAPEL_DEB_URL: "https://github.com/chapel-lang/chapel/releases/download/2.8.0/chapel-2.8.0-1.ubuntu22.amd64.deb"
 
 jobs:
+  detect-relevant-changes:
+    name: detect-relevant-changes
+    runs-on: ubuntu-22.04
+    outputs:
+      relevant: ${{ steps.f.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 2
+      - id: f
+        name: Detect chapel-relevant paths
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [[ -z "$BASE" || "$BASE" == "0000000000000000000000000000000000000000" ]]; then
+            # First push or detached state — be safe and run the full gate.
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "detect: BASE missing/zero — treating as relevant"
+            exit 0
+          fi
+          git fetch origin "$BASE" --depth=1 2>/dev/null || true
+          CHANGED=$(git diff --name-only "$BASE" HEAD || true)
+          echo "Changed files:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(chapel/|Justfile$|\.github/workflows/chapel-ci\.yml$|src/main\.rs$|src/types\.rs$|Cargo\.toml$|Cargo\.lock$)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            echo "detect: chapel-relevant paths changed — running gates"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+            echo "detect: no chapel-relevant paths — gates skipped via if-guard"
+          fi
+
   chapel-parse-check:
     name: chapel-parse-check
+    needs: detect-relevant-changes
+    if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
-          # Chapel .deb's apt dep: libunwind-dev. Install first so dpkg
-          # doesn't bail out on unmet dependencies.
           sudo apt-get update -qq
           sudo apt-get install -y libunwind-dev
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
@@ -81,15 +106,14 @@ jobs:
 
   chapel-build:
     name: chapel-build
-    needs: chapel-parse-check
+    needs: [detect-relevant-changes, chapel-parse-check]
+    if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
-          # Chapel .deb's apt dep: libunwind-dev. Install first so dpkg
-          # doesn't bail out on unmet dependencies.
           sudo apt-get update -qq
           sudo apt-get install -y libunwind-dev
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
@@ -112,15 +136,14 @@ jobs:
 
   chapel-smoke:
     name: chapel-smoke
-    needs: chapel-build
+    needs: [detect-relevant-changes, chapel-build]
+    if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
-          # Chapel .deb's apt dep: libunwind-dev. Install first so dpkg
-          # doesn't bail out on unmet dependencies.
           sudo apt-get update -qq
           sudo apt-get install -y libunwind-dev
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
@@ -137,15 +160,14 @@ jobs:
 
   chapel-e2e:
     name: chapel-e2e
-    needs: chapel-build
+    needs: [detect-relevant-changes, chapel-build]
+    if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
-          # Chapel .deb's apt dep: libunwind-dev. Install first so dpkg
-          # doesn't bail out on unmet dependencies.
           sudo apt-get update -qq
           sudo apt-get install -y libunwind-dev
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
@@ -174,6 +196,8 @@ jobs:
 
   chapel-cli-contract:
     name: chapel-cli-contract
+    needs: detect-relevant-changes
+    if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -192,7 +216,8 @@ jobs:
 
   chapel-rust-diff:
     name: chapel-rust-diff
-    needs: chapel-build
+    needs: [detect-relevant-changes, chapel-build]
+    if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -207,8 +232,6 @@ jobs:
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
-          # Chapel .deb's apt dep: libunwind-dev. Install first so dpkg
-          # doesn't bail out on unmet dependencies.
           sudo apt-get update -qq
           sudo apt-get install -y libunwind-dev
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
@@ -224,3 +247,58 @@ jobs:
         run: cargo build --release --locked
       - name: rayon vs Chapel single-locale aggregate parity
         run: ./chapel/tests/rayon_vs_chapel_diff.sh
+
+  # Always-on aggregator. This is the ONLY job listed in the Base ruleset's
+  # required_status_checks rule. If detect-relevant-changes determined nothing
+  # in this PR touches Chapel-relevant paths, the gate passes immediately
+  # (the six per-task jobs above skip via their `if:` guard). If a relevant
+  # change is present, the gate inspects each job's result and only passes
+  # when ALL six succeeded.
+  chapel-ci-gate:
+    name: chapel-ci-gate
+    needs:
+      - detect-relevant-changes
+      - chapel-parse-check
+      - chapel-build
+      - chapel-smoke
+      - chapel-e2e
+      - chapel-cli-contract
+      - chapel-rust-diff
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Aggregate chapel-ci results
+        env:
+          RELEVANT: ${{ needs.detect-relevant-changes.outputs.relevant }}
+          R_PARSE: ${{ needs.chapel-parse-check.result }}
+          R_BUILD: ${{ needs.chapel-build.result }}
+          R_SMOKE: ${{ needs.chapel-smoke.result }}
+          R_E2E: ${{ needs.chapel-e2e.result }}
+          R_CLI: ${{ needs.chapel-cli-contract.result }}
+          R_DIFF: ${{ needs.chapel-rust-diff.result }}
+        run: |
+          set -euo pipefail
+          echo "detect-relevant-changes.outputs.relevant=$RELEVANT"
+          printf 'parse-check=%s\nbuild=%s\nsmoke=%s\ne2e=%s\ncli-contract=%s\nrust-diff=%s\n' \
+            "$R_PARSE" "$R_BUILD" "$R_SMOKE" "$R_E2E" "$R_CLI" "$R_DIFF"
+          if [[ "$RELEVANT" != "true" ]]; then
+            echo "chapel-ci-gate: SKIP (no chapel-relevant paths changed) → PASS"
+            exit 0
+          fi
+          # If detect itself failed, we never confirmed relevance — fail safe.
+          if [[ "${{ needs.detect-relevant-changes.result }}" != "success" ]]; then
+            echo "chapel-ci-gate: detect-relevant-changes did not succeed → FAIL"
+            exit 1
+          fi
+          fail=0
+          for r in "$R_PARSE" "$R_BUILD" "$R_SMOKE" "$R_E2E" "$R_CLI" "$R_DIFF"; do
+            case "$r" in
+              success) ;;
+              *) fail=$((fail + 1)) ;;
+            esac
+          done
+          if [[ $fail -gt 0 ]]; then
+            echo "chapel-ci-gate: $fail dependent job(s) did not succeed → FAIL"
+            exit 1
+          fi
+          echo "chapel-ci-gate: all six gates green → PASS"
