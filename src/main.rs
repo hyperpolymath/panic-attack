@@ -795,6 +795,16 @@ enum Commands {
         #[arg(long, value_enum, default_value_t = QueryFormatArg::Table)]
         format: QueryFormatArg,
     },
+
+    /// Emit a machine-readable description of the panic-attack CLI contract
+    /// (accepted flags per subcommand, report `schema_version`, CLI version)
+    /// for external orchestrators.
+    ///
+    /// This is a generic capability — useful to Chapel mass-panic, Nextflow,
+    /// Airflow, Slurm, or any shell script that needs to discover the
+    /// panic-attack interface at runtime without coupling to its source.
+    /// The output schema is stable across patch releases.
+    DescribeContract,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -2479,6 +2489,67 @@ fn run_main() -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&hits)?);
                 }
             }
+            return Ok(());
+        }
+
+        Commands::DescribeContract => {
+            let cmd = Cli::command();
+            let mut modes = serde_json::Map::new();
+            for sub in cmd.get_subcommands() {
+                let name = sub.get_name().to_string();
+                let mut flags: Vec<String> = sub
+                    .get_arguments()
+                    .filter(|a| !a.is_positional())
+                    .map(|a| a.get_id().to_string())
+                    .collect();
+                flags.sort();
+                let mut positional: Vec<String> = sub
+                    .get_arguments()
+                    .filter(|a| a.is_positional())
+                    .map(|a| {
+                        a.get_value_names()
+                            .and_then(|v| v.first().map(|s| s.to_string()))
+                            .unwrap_or_else(|| a.get_id().to_string())
+                    })
+                    .collect();
+                positional.sort();
+                let description = sub
+                    .get_about()
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                modes.insert(
+                    name,
+                    serde_json::json!({
+                        "description": description,
+                        "positional": positional,
+                        "flags": flags,
+                    }),
+                );
+            }
+            let mut global_flags: Vec<String> = cmd
+                .get_arguments()
+                .filter(|a| a.is_global_set())
+                .map(|a| a.get_id().to_string())
+                .collect();
+            global_flags.sort();
+            // Report-schema version mirrors types.rs::assail_schema_version
+            // and types.rs::assault_schema_version (both "2.5" in v2.5.0).
+            // The chapel-cli-contract CI gate catches drift between this
+            // string and the serialiser defaults.
+            let contract = serde_json::json!({
+                "schema_version": "1",
+                "tool": "panic-attack",
+                "cli_version": env!("CARGO_PKG_VERSION"),
+                "report_schema_version": "2.5",
+                "detachability": {
+                    "standalone": true,
+                    "orchestrator_agnostic": true,
+                    "chapel_optional": true,
+                },
+                "global_flags": global_flags,
+                "modes": modes,
+            });
+            println!("{}", serde_json::to_string_pretty(&contract)?);
             return Ok(());
         }
 

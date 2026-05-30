@@ -106,6 +106,7 @@ htmlcov/
 # asdf version manager
 .tool-versions
 chapel/mass-panic
+chapel/smoke/two_repo_smoke
 target/
 node_modules/
 _build/

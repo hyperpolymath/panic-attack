@@ -247,8 +247,10 @@ module MassPanic {
                         "(~5-15% slower).");
             }
             if resume {
-                writeln("mass-panic: WARNING: --resume ignored — ",
-                        "requires --scheduler=queue");
+                writeln("mass-panic: ERROR: --resume requires --scheduler=queue ",
+                        "(static mode has no journal). Re-run with ",
+                        "--scheduler=queue --resume.");
+                return false;
             }
             return true;
         } else if scheduler == "queue" {
@@ -460,13 +462,13 @@ module MassPanic {
     // output — control chars are rare enough that a round-trip is
     // still readable if they appear; the loader uses a liberal parser).
     proc journalEscape(s: string): string {
-        var out: string;
+        var buf: string;
         for ch in s {
-            if ch == "\\" then out += "\\\\";
-            else if ch == "\"" then out += "\\\"";
-            else out += ch;
+            if ch == "\\" then buf += "\\\\";
+            else if ch == "\"" then buf += "\\\"";
+            else buf += ch;
         }
-        return out;
+        return buf;
     }
 
     // Write a {"state":"claim",…} journal entry on a single JSONL line.
@@ -946,13 +948,18 @@ module MassPanic {
                 args.pushBack("--intensity=" + intensity);
             }
             when "adjudicate" {
-                // Logic-based verdict (needs prior reports)
+                // Logic-based verdict (needs prior reports).
+                // --quiet matches assail/assault/ambush so stdout is pure JSON.
+                args.pushBack("--quiet");
                 args.pushBack("assail");
                 args.pushBack(repoPath);
                 args.pushBack("--output-format=json");
             }
             when "full" {
-                // Start with assail, then follow up with attack + adjudicate
+                // Start with assail (--quiet for pure JSON on stdout), then
+                // follow up with attack + adjudicate via runAttackPass and
+                // runAdjudicatePass.
+                args.pushBack("--quiet");
                 args.pushBack("assail");
                 args.pushBack(repoPath);
                 args.pushBack("--output-format=json");

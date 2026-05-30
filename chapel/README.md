@@ -21,7 +21,7 @@ Locale 0 (coordinator)          Locale 1..N (workers)
 
 ## Prerequisites
 
-- [Chapel](https://chapel-lang.org/) 2.3.0+
+- [Chapel](https://chapel-lang.org/) 2.8.0+ (matches `chapel/Mason.toml`)
 - `panic-attack` binary on PATH (or specify via `--panicAttackBin`)
 
 ## Build
@@ -70,7 +70,7 @@ chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o 
 | `--panicAttackBin` | `panic-attack` | Path to panic-attack binary |
 | `--mode` | `assail` | Operation mode (see above) |
 | `--scheduler` | `static` | `static` (fast, not resumable) or `queue` (resumable, ~5–15% slower) |
-| `--resume` | `false` | Only with `--scheduler=queue`: skip repos already marked "done" in the journal |
+| `--resume` | `false` | Requires `--scheduler=queue`; combining with `--scheduler=static` exits with an error (static mode has no journal). Skips repos already marked "done" in the journal |
 | `--journalDir` | `<outputDir>/journal` | Directory for queue-scheduler JSONL shards |
 | `--incremental` | `true` | Skip unchanged repos via BLAKE3 |
 | `--cacheFile` | | Fingerprint cache file path |
@@ -128,10 +128,12 @@ previously-completed repos and the freshly-scanned ones.
   invocation with `--resume` reuses everything completed so far.
   A locale crash during a multi-day sweep loses only the
   currently-in-flight repo on that locale.
-- **~5–15% slower** on clean runs. The dispatch overhead per task
-  (atomic fetch-add + one journal write) is per-repo instead of
-  being amortised across a `coforall` range. On a clean 10k-repo
-  sweep, expect queue mode to finish in ~1.10× the time of static.
+- **~5–15% slower** on clean runs (estimate, not yet measured against a
+  full BoJ-estate corpus). The dispatch overhead per task (atomic
+  fetch-add + one journal write) is per-repo instead of being amortised
+  across a `coforall` range. On a clean 10k-repo sweep, expect queue
+  mode to finish in roughly ~1.10× the time of static. A defensible
+  empirical measurement is tracked as Wave 2 follow-up work.
 - **Right for:** long interactive sweeps (GitHub-account scale or
   larger), sweeps where at least one locale is on spot/preemptible
   infrastructure, or any run where you expect to want to pause
@@ -193,7 +195,8 @@ The banner is suppressed under `--quiet`.
 
 ## Relationship to Rust assemblyline
 
-The Chapel layer is **optional**. For single-machine scanning, use:
+The Chapel layer is **optional** — a detachable harness on top of the
+standalone Rust binary. For single-machine scanning, use:
 
 ```bash
 panic-attack assemblyline /path/to/repos    # rayon parallel
@@ -202,4 +205,32 @@ panic-attack image /path/to/repos           # + imaging + temporal
 
 Chapel adds multi-machine distribution for scanning at GitHub-account or
 datacenter scale, where hundreds of machines each scan their partition of
-repositories simultaneously.
+repositories simultaneously. Removing `chapel/` entirely leaves the Rust
+build green and the single-machine USB-stick experience intact.
+
+The Chapel↔Rust contract is exposed via `panic-attack describe-contract`
+(introduced for the chapel-cli-contract CI gate). Any external orchestrator
+— Chapel mass-panic, Nextflow, Airflow, Slurm, a hand-rolled shell script —
+can call it to discover accepted flags per mode and the report
+`schema_version` without coupling itself to panic-attack source.
+
+## Neuroscience analogy: fNIRS-inspired imaging
+
+panic-attack applies functional Near-Infrared Spectroscopy (fNIRS) concepts
+to codebase health mapping. The canonical mapping lives in
+[`src/Imaging.chpl`](src/Imaging.chpl) header (lines 4-27) and is mirrored
+here so the metaphor doesn't drift:
+
+| fNIRS term            | panic-attack equivalent                              |
+|-----------------------|-------------------------------------------------------|
+| Cortical region       | Repository / directory / file                         |
+| Blood oxygenation     | Health score (inverse of risk)                        |
+| Neural activation     | Weak point density (findings per KLOC)                |
+| Hemodynamic response  | Change velocity (how fast risk is changing)           |
+| Optode placement      | Scanner coverage (which files were analysed)          |
+| Channel               | Dependency / taint flow edge                          |
+| Functional map        | `SystemImage`                                         |
+| Time series           | Temporal snapshot sequence in VeriSimDB               |
+
+When a new health metric is added, update both `Imaging.chpl` and this
+table; CI does not enforce the mapping but reviewers should.
