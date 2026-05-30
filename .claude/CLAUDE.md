@@ -164,16 +164,21 @@ Three self-contained modes — none requires the others:
 2. **Panicbot** (gitbot-fleet/CI): Automated JSON scanning, PA001–PA025 codes, bot directives
 3. **Mass-panic** (assemblyline + verisimdb + Chapel): Org-scale batch scanning with incremental BLAKE3, hexad persistence, delta reporting, notifications. Chapel (planned) for distributed multi-machine orchestration.
 
-## Shipped Features (v2.5.0)
+## Shipped Features (v2.5.0+)
 
 - **Shell completions**: bash, zsh, fish, nushell, powershell — `completions subcommand` + generated files in `completions/`
 - **Delta reporting**: `diff` subcommand — only reports changes since last scan (`src/report/diff.rs`)
+- **Interactive TUI mode**: `ReportTui::run()` / `run_headless()` in `src/report/tui.rs` (crossterm-backed)
+- **VeriSimDB hexad persistence (issue #33 S1–S3)**:
+  - Per-finding hexads gated by `PANIC_ATTACK_STORE_FINDING_HEXADS=1` (`src/storage/mod.rs :: build_finding_hexads`)
+  - `panic-attack campaign` subcommand: `register-pr` / `dismiss` / `status` / `poll` lifecycle (`src/campaign/mod.rs`)
+  - `panic-attack query <expr>` S-expression DSL: heads `category`, `rule-id`, `severity`, `repo`, `file`, `pr-state`, `since`, `crosslang`, `diff`, `and`, `or`, `not` (`src/query/mod.rs`)
+- **Chapel CI infrastructure**: MassPanic wiring + cross-rust contract checks + always-on aggregator gate (`.github/workflows/chapel-ci.yml`)
 
 ## Planned Features (Next Priorities)
 
 1. **verisimdb HTTP API integration**: Push hexads via REST (awaiting API stabilisation)
-2. **Interactive TUI mode**: Review findings in terminal (v2.3.0)
-3. **Chapel metalayer**: Distributed `coforall` scanning across compute clusters (v3.0.0)
+2. **Chapel metalayer**: Distributed `coforall` scanning across compute clusters (v3.0.0)
 
 ## v2.5.0 Detection Categories (COMPLETE — 25 categories total)
 
