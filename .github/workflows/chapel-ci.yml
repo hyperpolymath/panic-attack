@@ -308,6 +308,9 @@ jobs:
           export CHPL_COMM_SUBSTRATE=smp
           export CHPL_LAUNCHER=smp
           export CHPL_TARGET_COMPILER=gnu
+          # setchplenv.bash references ${MANPATH} unconditionally; GH runners
+          # don't export MANPATH by default, so seed it before sourcing.
+          export MANPATH="${MANPATH:-}"
           source util/setchplenv.bash
           # Build chpl + runtime + GASNet+smp substrate
           make -j"$(nproc)"
@@ -319,6 +322,7 @@ jobs:
         run: |
           set -euo pipefail
           export CHPL_HOME="${{ env.CHAPEL_MULTILOCALE_HOME }}"
+          export MANPATH="${MANPATH:-}"
           source "$CHPL_HOME/util/setchplenv.bash"
           # Persist env to subsequent steps via GITHUB_ENV
           {
