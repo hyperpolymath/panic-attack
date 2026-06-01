@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added (2026-06-01) — Chapel Wave 2: single-host multilocale gate
+- **`chapel-multilocale` CI gate** (#99, closes #87 option A): adds a 7th
+  strict chapel-ci job that builds Chapel 2.8.0 from source with
+  `CHPL_COMM=gasnet` + `CHPL_COMM_SUBSTRATE=smp` + `CHPL_LAUNCHER=smp`,
+  caches `$CHPL_HOME` (`actions/cache@v4`, stable key with manual
+  `CHAPEL_MULTILOCALE_CACHE_GEN` invalidation counter; cold build
+  ~30-40 min, warm restore ~30s for 7 days), runs
+  `mass-panic --numLocales=2` against a synthetic 2-repo corpus, and
+  greps the emitted `system-image-*.json` for both repo names to prove
+  cross-locale aggregation actually executed. The Wave 1 binary `.deb`
+  install path is single-locale only; this gate closes the gap.
+- Aggregator `chapel-ci-gate` updated to wait on the 7th job and to
+  surface it as `multilocale=<result>` in the gate summary.
+- Wave 3 (`gasnet/ofi` over a real NIC across cluster nodes) and the
+  ~50-repo "~5-15% slower" benchmark from `chapel/README.md` remain
+  parked — both need a beefier or self-hosted runner to be meaningful.
+
 ### Fixed (2026-06-01) — baseline-red corrective maintenance
 - **Dogfood Gate A2ML validation** restored (#94, #97): bumped
   `hyperpolymath/a2ml-validate-action` from `59145c7d` to `6bff6ec` to
