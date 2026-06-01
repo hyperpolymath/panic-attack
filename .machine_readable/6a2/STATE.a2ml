@@ -3,13 +3,13 @@
 # Converted from STATE.scm on 2026-03-15
 
 [metadata]
-project = "panic-attacker"
+project = "panic-attack"
 version = "2.5.0"
-last-updated = "2026-04-12"
+last-updated = "2026-06-01"
 status = "active"
 
 [project-context]
-name = "panic-attacker"
+name = "panic-attack"
 completion-percentage = 99
 phase = "CRG C (Beta) — v2.5.0 complete: 25 detection categories + shell completions (bash/zsh/fish/nushell/powershell) + delta reporting"
 
@@ -65,7 +65,17 @@ clade-registry = "3 canonical pattern files contributed to panic-free-tests-and-
 commits = "39b4353 (3 remaining test files); 9fe8507, 2053fd9 (prior test files); 5ea9b74 (production fixes)"
 tests-passing = "200 pass / 0 fail / 3 ignored across all test binaries"
 
+[session-2026-06-01]
+description = "Baseline-red corrective maintenance + rsr-template gap fills + dependency bumps"
+prs-merged = "#93 (rust-minor dependabot: log 0.4.29→0.4.30 + eframe), #94 (3 baseline-red fixes), #96 (rsr-template scaffolding gaps), #97 (rust-ci-reusable SHA bump past standards#334)"
+baseline-red-resolved = "Dogfood Gate A2ML (file relocated to .machine_readable/campaigns/ + validator SHA bumped to 6bff6ec); Governance Trusted-base (analyzer.rs whole-file exemption — file IS the scanner); Secret Scanner rust-secrets (concat! split of password keyword)"
+upstream-fixes-landed = "standards#334 (rust-ci-reusable.yml bare-if wrap), standards#336 (elixir-ci-reusable.yml same pattern), a2ml-validate-action#26 (s-expression form support, SHA 6bff6ec)"
+estate-sweep-spawned = "a2ml-validate-action SHA bump fanout across 215 estate repos (excluding panic-attack, no forks); throttled 7min/PR; logs at /tmp/a2ml-sha-sweep/progress.tsv"
+commits = "b323f6f (baseline-red fixes), 5e02b82 (a2ml relocation), 11e54a9 (action SHA bump on #94)"
+blocker = "none"
+
 [next-priorities]
-verisimdb-http = "Push hexads via REST (awaiting API stabilization)"
-interactive-tui = "Review findings in terminal (v2.3.0)"
-chapel-metalayer = "Distributed coforall scanning across compute clusters (future)"
+hexad-patch-bridge = "Migrate Patch Bridge mitigation registry from JSON to hexad persistence (ROADMAP v2.2.0 / v2.4.0)"
+multi-lockfile = "Extend Patch Bridge beyond Cargo.lock to package-lock.json, mix.lock, etc. (ROADMAP v2.4.0)"
+trend-queries-vcl = "Historical trend queries via VCL (ROADMAP v2.2.0)"
+chapel-wave-2 = "Real multi-locale cluster validation on non-trivial corpus (issue #87 — owner-gated on toolchain choice)"

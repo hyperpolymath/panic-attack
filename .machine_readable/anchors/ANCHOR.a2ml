@@ -1,7 +1,7 @@
-# ⚓ ANCHOR: panic-attacker
-# This is the canonical authority for the panic-attacker repository.
+# ⚓ ANCHOR: panic-attack
+# This is the canonical authority for the panic-attack repository.
 
-id: "org.hyperpolymath.panic-attacker"
+id: "org.hyperpolymath.panic-attack"
 version: "1.0.0"
 clade: "unknown"
 status: "active"
