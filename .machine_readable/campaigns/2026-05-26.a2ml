@@ -8,6 +8,9 @@
 ;; Tracker: hyperpolymath/panic-attack#32
 
 (campaign-report
+  (name "campaign-2026-05-26")
+  (project "panic-attack")
+  (version "1.0.0")
   (metadata
     (schema-version "1.0.0")
     (campaign-id "campaign-2026-05-26")

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Path-fragment substring exemptions for check-trusted-base.sh
+# (estate-wide governance reusable; standards/docs/TRUSTED-BASE-REDUCTION-POLICY.adoc §`.trusted-base-ignore`).
+#
+# Each non-comment line is a path-fragment substring match against the
+# repo-relative file path. Narrow fragments to avoid hiding adjacent findings.
+
+# Assail analyzer detector patterns: src/assail/analyzer.rs uses literal
+# strings ("unsafePerformIO", "unsafeCoerce", etc.) as scanner patterns
+# to detect unsafe usage in *foreign* source under audit. These are
+# detector data, not soundness-relevant escape hatches — the file IS
+# the scanner. Per-site TRUSTED: annotation would be noise on every
+# detector entry; whole-file exemption is the correct shape here.
+src/assail/analyzer.rs
