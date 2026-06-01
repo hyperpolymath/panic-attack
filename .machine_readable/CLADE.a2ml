@@ -6,8 +6,8 @@
 uuid = "7f831e69-87a5-50b5-a814-a652c38b4df2"
 primary-forge = "github"
 primary-owner = "hyperpolymath"
-canonical-name = "panic-attacker"
-prefixed-name = "sc-panic-attacker"
+canonical-name = "panic-attack"
+prefixed-name = "sc-panic-attack"
 
 [clade]
 primary = "sc"
@@ -16,9 +16,9 @@ assigned = "2026-03-16"
 rationale = ""
 
 [forges]
-github = "hyperpolymath/panic-attacker"
-gitlab = "hyperpolymath/panic-attacker"
-bitbucket = "hyperpolymath/panic-attacker"
+github = "hyperpolymath/panic-attack"
+gitlab = "hyperpolymath/panic-attack"
+bitbucket = "hyperpolymath/panic-attack"
 
 [lineage]
 type = "standalone"

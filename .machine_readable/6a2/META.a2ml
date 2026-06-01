@@ -3,7 +3,7 @@
 # Converted from META.scm on 2026-03-15
 
 [metadata]
-project = "panic-attacker"
+project = "panic-attack"
 author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
 license = "MPL-2.0"
 standard = "RSR 2026"
