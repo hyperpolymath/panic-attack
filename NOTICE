@@ -2,21 +2,11 @@ Licensing Notice
 ================
 
 This project is authored by Jonathan D.A. Jewell (hyperpolymath) and
-is licensed under the Palimpsest License (MPL-2.0).
+is licensed under the Mozilla Public License 2.0 (MPL-2.0).
 
-The MPL-2.0 is a philosophical extension of the Mozilla Public
-License 2.0, adding provisions for cryptographic provenance, emotional
-lineage preservation, and quantum-safe signatures. The full PMPL text is
-available in LICENSES/MPL-2.0.txt.
+Per the estate license policy, this is a sole-owner repository and
+uses MPL-2.0 throughout — LICENSE file, package metadata, and all
+SPDX-License-Identifier source-file headers.
 
-For compatibility with automated license detection tools and platforms
-that require OSI-approved licenses, the root LICENSE file contains the
-standard Mozilla Public License 2.0 text. This ensures that package
-registries, CI systems, and other tooling correctly identify the license.
-
-The legally binding terms are:
-  - Source files: governed by MPL-2.0 (per SPDX headers)
-  - Combined works: compatible with MPL-2.0 (per PMPL Section 6)
-
-For more information about the Palimpsest License:
-  https://github.com/hyperpolymath/palimpsest-license
+For the MPL-2.0 license:
+  https://www.mozilla.org/en-US/MPL/2.0/
