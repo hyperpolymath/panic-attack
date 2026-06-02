@@ -29,6 +29,7 @@ pub mod bridge;
 pub mod campaign;
 pub mod comment_marker;
 pub mod i18n;
+pub mod jit_context;
 pub mod kanren;
 pub mod mass_panic;
 pub mod notify;
