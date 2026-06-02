@@ -2357,6 +2357,20 @@ fn run_main() -> Result<()> {
                     offline,
                     register,
                 } => {
+                    // Reject path traversal sequences BEFORE any disk I/O.
+                    // The prior `canonicalize().unwrap_or_else(|_| dir.clone())`
+                    // pattern silently fell back to the un-canonicalized path
+                    // on failure, which let `../`-laden inputs slip past.
+                    // safe_path::has_traversal is a pure-Rust port of
+                    // proven::SafePath::containsTraversal (issue #115).
+                    if let Some(dir_str) = dir.to_str() {
+                        if panic_attack::safe_path::has_traversal(dir_str) {
+                            anyhow::bail!(
+                                "rejected: directory contains '..' traversal sequence: {}",
+                                dir.display()
+                            );
+                        }
+                    }
                     let project_dir = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
 
                     qprintln!(cli.quiet, "Patch Bridge triage: {}", project_dir.display());
@@ -2420,6 +2434,15 @@ fn run_main() -> Result<()> {
                 }
 
                 BridgeAction::Status { dir } => {
+                    // Same safe_path::has_traversal guard as the triage arm.
+                    if let Some(dir_str) = dir.to_str() {
+                        if panic_attack::safe_path::has_traversal(dir_str) {
+                            anyhow::bail!(
+                                "rejected: directory contains '..' traversal sequence: {}",
+                                dir.display()
+                            );
+                        }
+                    }
                     let project_dir = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
 
                     let registry = bridge::registry::MitigationRegistry::load(&project_dir)?;
