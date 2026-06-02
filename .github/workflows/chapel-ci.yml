@@ -319,11 +319,11 @@ jobs:
           source util/setchplenv.bash
           # Build chpl + runtime + GASNet+smp substrate
           make -j"$(nproc)"
-          # Sanity: Chapel's runtime layout names a directory per (comm, launcher,
-          # tasks, ...) variant. The presence of a `comm-gasnet` runtime lib
-          # confirms the build picked up our CHPL_COMM=gasnet without depending
-          # on `chpl --about` (gone in 2.8.0) or `printchplenv` output format.
-          ls "$CHPL_HOME/lib"/*/gnu/*/loc-flat/comm-gasnet/smp/*/launch-smp 1>/dev/null
+          # Sanity: Chapel's runtime layout creates `comm-gasnet` directories
+          # somewhere under $CHPL_HOME/lib for each (comm, launcher, tasks, ...)
+          # variant. find -print -quit is format-independent and survives
+          # path-component renames between Chapel minor versions.
+          find "$CHPL_HOME/lib" -type d -name comm-gasnet -print -quit | grep -q comm-gasnet
 
       - name: Activate multilocale Chapel
         id: activate
@@ -343,7 +343,7 @@ jobs:
             echo "PATH=$CHPL_HOME/bin/$(uname -s)-$(uname -m):$PATH"
           } >> "$GITHUB_ENV"
           chpl --version
-          ls "$CHPL_HOME/lib"/*/gnu/*/loc-flat/comm-gasnet/smp/*/launch-smp 1>/dev/null
+          find "$CHPL_HOME/lib" -type d -name comm-gasnet -print -quit | grep -q comm-gasnet
 
       - name: Build mass-panic against multilocale Chapel
         working-directory: chapel
