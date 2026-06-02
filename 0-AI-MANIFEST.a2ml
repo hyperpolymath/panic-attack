@@ -20,10 +20,29 @@
       (roadmap "ROADMAP.adoc")
       (design "DESIGN.md")
       (vision "VISION.md")
-      (explainme "EXPLAINME.adoc"))
+      (explainme "EXPLAINME.adoc")
+      (proof-needs "PROOF-NEEDS.md")
+      (proof-programme "PROOF-PROGRAMME.md")
+      (test-needs "TEST-NEEDS.md"))
     (source "src/")
     (tests "tests/")
-    (examples "examples/"))
+    (examples "examples/")
+    (v255-modules
+      (test-context "src/test_context.rs"
+        "Cross-language test-path classification (Rust / Python / Go / JS-TS / Julia / Zig / Elixir / docs-examples)")
+      (comment-marker "src/comment_marker.rs"
+        "Inline // panic-attack: accepted [- reason] suppression marker (cross-language comment leaders)")
+      (ffi-kind "src/ffi_kind.rs"
+        "UnsafeFFI (PA013) subtyping: BuildSystem / RuntimeAbi / TestMock / Unknown")
+      (jit-context "src/jit_context.rs"
+        "JIT-framework classifier: Cranelift / Llvm / Wasm / Javascript / None"))
+    (proof-modules
+      (pa1 "src/abi/PatternCompleteness.idr"
+        "Pattern detection completeness — every Lang / WPCategory has a detector")
+      (pa2 "src/abi/ClassificationSoundness.idr"
+        "Classification soundness — Severity total order + maxSeverity commutativity")
+      (layer-1-0 "src/abi/Stripping.idr"
+        "PROOF-PROGRAMME Layer 1.0 partial — line-comment-strip foundation lemmas")))
 
   (critical-invariants
     (rule "SCM files MUST be in .machine_readable/ directory ONLY"

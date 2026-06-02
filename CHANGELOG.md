@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added (2026-06-02 PM) — v2.5.5 context-awareness cohort + v3.0.0 Chapel→VeriSimDB push + PROOF-PROGRAMME
+
+Eight PRs landed in one cohort closing the v2.5.5 ROADMAP section, a v3.0.0 item, and opening the first proof slice of the new PROOF-PROGRAMME.
+
+**v2.5.5 — Attack Surface Widening (false-positive reduction)**
+
+- **`test_context` foundation** (#102): new `src/test_context.rs` module with cross-language test-path classification (Rust / Python / Go / JavaScript / Julia / Zig / Elixir / docs-examples). New `WeakPoint.test_context: Option<TestContext>` field (Production / TestOnly / Doc) plumbed through 137 construction sites. Content-based promotion via `use ExUnit.Case` / `unittest.TestCase` / `pytest.fixture` / `@testset` markers.
+- **`comment_marker` inline suppression** (#105): new `src/comment_marker.rs` module recognising `// panic-attack: accepted [- reason]` on the same or preceding line. Cross-language comment leaders: `//` mid-line for C-family; `#` / `--` / `;` / `%` / `///` / `//!` start-of-line for Python/Haskell/Lisp/Erlang/Rust-doc/Rust-inner-doc. String-literal aware. Shebang `#!` excluded.
+- **`ffi_kind` subtyping** (#106): new `src/ffi_kind.rs` module subtyping `WeakPointCategory::UnsafeFFI` (PA013) into BuildSystem / RuntimeAbi / TestMock / Unknown. `classify_by_path` distinguishes `build.zig` / `build.rs` (BuildSystem, audit-accepted by default) from `bindings/` / `ffi/` / `sys/` / `cdef.zig` (RuntimeAbi, audit-significant) from `tests/mocks/` / `tests/stubs/` (TestMock, also audit-accepted). New `is_audited_boundary(audit_text, file_path)` parses `audits/audit-ffi-unsafe.md` `## Approved boundaries` markdown.
+- **`jit_context` classifier** (#107): new `src/jit_context.rs` module classifying JIT frameworks — Cranelift / Llvm / Wasm / Javascript / None. Factors existing inline Cranelift detection at `analyzer.rs:1117..1129` into reusable surface. `transmute_targets_fn_ptr` made tolerant of `= unsafe { ... transmute(..) }` wrappers.
+- **Phase 2 analyzer wire-up** (#110): new `apply_v255_context_suppression(&mut report)` runs after the kanren-based rule pass and (a) marker-flips `WeakPoint.suppressed = true` when `panic-attack: accepted` is on or above the line, (b) auto-suppresses `PanicPath` in TestOnly/Doc context, (c) auto-suppresses `UnsafeFFI` in BuildSystem/TestMock context. Sets `test_context` metadata on every finding with a known file path.
+
+**v3.0.0 — Distributed Scanning (HTTP push from Chapel)**
+
+- **`panic-attack verisim-push <hexad>` subcommand** (#108): new `Commands::VerisimPush` gated on the `http` Cargo feature. Reads a JSON hexad (typically what Chapel `takeSnapshot` just wrote), POSTs to `$VERISIMDB_URL` (default `http://localhost:8080`) via the existing `storage::push_hexad_http_with_retry`. `--fallback-dir` writes a JSON copy on HTTP failure for offline replay.
+- **Chapel `takeSnapshot` overload** (#108): new 6-arg form accepting `verisimPushUrl` + `panicAttackBin` parameters. Spawns `panic-attack verisim-push --url <url> --retry <hexad>` after local hexad write. Local writes remain authoritative; push is additive. Closes the `[ ]` ROADMAP item.
+
+**PROOF-PROGRAMME — first-principles soundness**
+
+- **`PROOF-PROGRAMME.md`** (#104): 3-layer landscape (Surface / Engine / Persistence) covering all 25 PA-code soundness proofs + miniKanren correctness + bridge reachability + attestation chain unforgeability. 9-phase sequencing (~16 weeks). Identifies `proven` cross-fit candidates: only `SafePath` + `SafeUrl` qualify as port-to-Rust (perf-neutral, semantic-equivalent); `SafeJson` / `SafeRegex` / `SafeDateTime` / `SafeCommand` / `SafeEnv` / `SafeUUID` marked skip (already total / semantic mismatch).
+- **Layer 1.0 partial** (#111): new `src/abi/Stripping.idr` Qed-closing the foundation lemmas for line-comment stripping — `stripBodyProducesStrippedShape` (every body output satisfies `IsStrippedBody`) + base cases of `stripLineCommentsIdempotent` (empty + non-slash-headed input). Open: the slash-slash inductive closure `stripIsIdentityOnStrippedBody` (recorded as the next Layer-1.0 slice in `PROOF-NEEDS.md`).
+
 ### Changed (2026-06-02) — truthfulness audit (humans + machines)
 - **README badge + Status block** corrected: 402 → **782 runnable tests**
   (per `cargo test --release -- --list`; the underlying 539 `#[test]`
