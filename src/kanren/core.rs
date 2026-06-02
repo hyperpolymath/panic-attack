@@ -1369,6 +1369,7 @@ mod tests {
             description: description.to_string(),
             recommended_attack: vec![],
             suppressed: false,
+                test_context: None,
         }
     }
 

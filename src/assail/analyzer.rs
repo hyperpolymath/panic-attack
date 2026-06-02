@@ -1050,6 +1050,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
         stats.allocation_sites += content.matches("Vec::new()").count();
@@ -1070,6 +1071,7 @@ impl Analyzer {
                 description: format!("{} unsafe blocks in {}", stats.unsafe_blocks, file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1086,6 +1088,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1149,6 +1152,7 @@ impl Analyzer {
                 description,
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1165,6 +1169,7 @@ impl Analyzer {
                 description: format!("mem::forget usage (resource leak) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1179,6 +1184,7 @@ impl Analyzer {
                 description: format!("Raw pointer cast in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1203,6 +1209,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1661,6 +1668,7 @@ impl Analyzer {
                 description: format!("Unchecked malloc in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1675,6 +1683,7 @@ impl Analyzer {
                 description: format!("gets() usage (unbounded buffer write) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1689,6 +1698,7 @@ impl Analyzer {
                 description: format!("system() call (command injection risk) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1703,6 +1713,7 @@ impl Analyzer {
                 description: format!("sprintf() usage (buffer overflow risk) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1720,6 +1731,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1753,6 +1765,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
+                test_context: None,
                     });
                     break;
                 }
@@ -1775,6 +1788,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
+                test_context: None,
                     });
                     break;
                 }
@@ -1800,6 +1814,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![AttackAxis::Network, AttackAxis::Time],
                     suppressed: false,
+                test_context: None,
                 });
                 break;
             }
@@ -1827,6 +1842,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                     suppressed: false,
+                test_context: None,
                 });
                 break;
             }
@@ -1851,6 +1867,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                     suppressed: false,
+                test_context: None,
                 });
                 break;
             }
@@ -1881,6 +1898,7 @@ impl Analyzer {
                 description: format!("{} goroutines spawned in {}", go_count, file_path),
                 recommended_attack: vec![AttackAxis::Concurrency, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1895,6 +1913,7 @@ impl Analyzer {
                 description: format!("unsafe.Pointer usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1912,6 +1931,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -1931,6 +1951,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
+                test_context: None,
                     });
                     break;
                 }
@@ -1952,6 +1973,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
+                test_context: None,
                     });
                     break;
                 }
@@ -1976,6 +1998,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2002,6 +2025,7 @@ impl Analyzer {
                 description: format!("Unbounded while True loop in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Time],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2015,6 +2039,7 @@ impl Analyzer {
                 description: format!("Dynamic code execution (eval/exec) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2032,6 +2057,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2049,6 +2075,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2067,6 +2094,7 @@ impl Analyzer {
                 description: format!("subprocess with shell=True in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2086,6 +2114,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
+                test_context: None,
                     });
                     break;
                 }
@@ -2111,6 +2140,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
+                test_context: None,
                     });
                     break;
                 }
@@ -2134,6 +2164,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![AttackAxis::Network, AttackAxis::Time],
                     suppressed: false,
+                test_context: None,
                 });
                 break;
             }
@@ -2159,6 +2190,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2176,6 +2208,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2206,6 +2239,7 @@ impl Analyzer {
                 description: format!("eval() usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2223,6 +2257,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2237,6 +2272,7 @@ impl Analyzer {
                 description: format!("dangerouslySetInnerHTML (XSS risk) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2251,6 +2287,7 @@ impl Analyzer {
                 description: format!("Deno -A (all permissions) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Network, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2266,6 +2303,7 @@ impl Analyzer {
                 description: format!("{} JSON.parseExn calls in {}", parse_exn_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2283,6 +2321,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2299,6 +2338,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2323,6 +2363,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2349,6 +2390,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2368,6 +2410,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2395,6 +2438,7 @@ impl Analyzer {
                 description: format!("Dynamic code execution in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2424,6 +2468,7 @@ impl Analyzer {
                 description: format!("Runtime.exec() in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2470,6 +2515,7 @@ impl Analyzer {
                 description: format!("Code.eval_string/eval_quoted in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2488,6 +2534,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2502,6 +2549,7 @@ impl Analyzer {
                 description: format!("System command execution in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2518,6 +2566,7 @@ impl Analyzer {
                 description: format!("Dynamic apply/3 in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2536,6 +2585,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2553,6 +2603,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2579,6 +2630,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2616,6 +2668,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2630,6 +2683,7 @@ impl Analyzer {
                 description: format!("os:cmd call in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2660,6 +2714,7 @@ impl Analyzer {
                 description: format!("{} @external FFI calls in {}", external_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2700,6 +2755,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2721,6 +2777,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -2739,6 +2796,7 @@ impl Analyzer {
                 description: format!("{} unsafe get calls in {}", unsafe_gets, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3000,6 +3058,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
+                test_context: None,
                 });
             } else {
                 weak_points.push(WeakPoint {
@@ -3011,6 +3070,7 @@ impl Analyzer {
                     description: format!("Obj.magic (unsafe type coercion) in {}", file_path),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
+                test_context: None,
                 });
             }
         }
@@ -3025,6 +3085,7 @@ impl Analyzer {
                 description: format!("Obj.repr (unsafe representation access) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3039,6 +3100,7 @@ impl Analyzer {
                 description: format!("Unsafe Marshal deserialization in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3053,6 +3115,7 @@ impl Analyzer {
                 description: format!("Unix.system/execvp command execution in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3088,6 +3151,7 @@ impl Analyzer {
                 description: format!("{} unsafe operations in {}", unsafe_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3120,6 +3184,7 @@ impl Analyzer {
                 description: format!("eval usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3134,6 +3199,7 @@ impl Analyzer {
                 description: format!("System/process call in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3156,6 +3222,7 @@ impl Analyzer {
                 description: format!("{} call/cc usage in {}", callcc_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3188,6 +3255,7 @@ impl Analyzer {
                 description: format!("{} unsafePerformIO in {}", unsafe_io, file_path),
                 recommended_attack: vec![AttackAxis::Concurrency, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3201,6 +3269,7 @@ impl Analyzer {
                 description: format!("{} unsafeCoerce in {}", unsafe_coerce, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3224,6 +3293,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3243,6 +3313,7 @@ impl Analyzer {
                 description: format!("{} error/undefined in {}", error_count, file_path),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3276,6 +3347,7 @@ impl Analyzer {
                 description: format!("{} foreign imports in {}", ffi_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3290,6 +3362,7 @@ impl Analyzer {
                 description: format!("Unsafe coercion in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3352,6 +3425,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3371,6 +3445,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3390,6 +3465,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3404,6 +3480,7 @@ impl Analyzer {
                 description: format!("unsafePerformIO in {}", file_path),
                 recommended_attack: vec![AttackAxis::Concurrency],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3441,6 +3518,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3461,6 +3539,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Concurrency],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3475,6 +3554,7 @@ impl Analyzer {
                 description: format!("native_decide in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3489,6 +3569,7 @@ impl Analyzer {
                 description: format!("unsafeCast/implementedBy in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3530,6 +3611,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3550,6 +3632,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3569,6 +3652,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3613,6 +3697,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3632,6 +3717,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3650,6 +3736,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3681,6 +3768,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3702,6 +3790,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3724,6 +3813,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3742,6 +3832,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3781,6 +3872,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Concurrency],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3795,6 +3887,7 @@ impl Analyzer {
                 description: format!("Shell/process_create in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3891,6 +3984,7 @@ impl Analyzer {
                 description: format!("{} unsafe pointer casts in {}", ptr_ops, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -3909,6 +4003,7 @@ impl Analyzer {
                 description: format!("{} C interop imports in {}", c_import, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4050,6 +4145,7 @@ impl Analyzer {
                 description: format!("{} Unchecked_* operations in {}", unchecked, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4064,6 +4160,7 @@ impl Analyzer {
                 description: format!("pragma Suppress (runtime checks disabled) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4117,6 +4214,7 @@ impl Analyzer {
                     description: format!("{} rawptr usage in {}", rawptr_count, file_path),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
+                test_context: None,
                 });
             }
         }
@@ -4142,6 +4240,7 @@ impl Analyzer {
                 description: format!("emit pragma (raw code injection) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4158,6 +4257,7 @@ impl Analyzer {
                 description: format!("{} cast[] (unsafe coercion) in {}", cast_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4199,6 +4299,7 @@ impl Analyzer {
                 description: format!("{} FFI calls in {}", ffi_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4234,6 +4335,7 @@ impl Analyzer {
                 description: format!("{} @system functions in {}", system_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4313,6 +4415,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![],
                         suppressed: false,
+                test_context: None,
                     });
                 }
             }
@@ -4328,6 +4431,7 @@ impl Analyzer {
                     description: format!("builtins.exec (command execution) in {}", file_path),
                     recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                     suppressed: false,
+                test_context: None,
                 });
             }
 
@@ -4376,6 +4480,7 @@ impl Analyzer {
                 description: format!("eval usage in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4413,6 +4518,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4427,6 +4533,7 @@ impl Analyzer {
                 description: format!("World-writable permissions in {}", file_path),
                 recommended_attack: vec![AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4441,6 +4548,7 @@ impl Analyzer {
                 description: format!("Deno -A (all permissions) in {}", file_path),
                 recommended_attack: vec![AttackAxis::Network, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4455,6 +4563,7 @@ impl Analyzer {
                 description: format!("Hardcoded /tmp/ path without mktemp in {}", file_path),
                 recommended_attack: vec![AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4493,6 +4602,7 @@ impl Analyzer {
                 description: format!("eval/Meta.parse in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4517,6 +4627,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4546,6 +4657,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4571,6 +4683,7 @@ impl Analyzer {
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4609,6 +4722,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![AttackAxis::Cpu],
                     suppressed: false,
+                test_context: None,
                 });
             }
         }
@@ -4627,6 +4741,7 @@ impl Analyzer {
                 description: format!("{} ccall/FFI calls in {}", ccall_count, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4670,6 +4785,7 @@ impl Analyzer {
                 description: format!("loadstring/dofile in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4684,6 +4800,7 @@ impl Analyzer {
                 description: format!("os.execute/io.popen in {}", file_path),
                 recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4726,6 +4843,7 @@ impl Analyzer {
                 description: format!("{} FFI/external bindings in {}", ffi_patterns, file_path),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4808,6 +4926,7 @@ impl Analyzer {
                 description: format!("{} HTTP (non-HTTPS) URLs in {}", http_count, file_path),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4835,6 +4954,7 @@ impl Analyzer {
                 description: format!("Possible hardcoded secret in {}", file_path),
                 recommended_attack: vec![AttackAxis::Network],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4857,6 +4977,7 @@ impl Analyzer {
                 description: format!("{} TODO/FIXME/HACK markers in {}", todo_count, file_path),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             });
         }
 
@@ -4905,6 +5026,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![],
                     suppressed: false,
+                test_context: None,
                 });
             }
 
@@ -4923,6 +5045,7 @@ impl Analyzer {
                         .to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
+                test_context: None,
                 });
             }
         }
@@ -4948,6 +5071,7 @@ impl Analyzer {
                         .to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
+                test_context: None,
                 });
             }
         }
@@ -4981,6 +5105,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![],
                     suppressed: false,
+                test_context: None,
                 });
             }
         }
@@ -5036,6 +5161,7 @@ impl Analyzer {
                             .to_string(),
                         recommended_attack: vec![],
                         suppressed: false,
+                test_context: None,
                     });
                 }
             }

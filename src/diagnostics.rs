@@ -213,6 +213,7 @@ fn check_panicbot_readiness() -> Diagnostic {
             description: "test".to_string(),
             recommended_attack: vec![],
             suppressed: false,
+                test_context: None,
         }],
         statistics: crate::types::ProgramStatistics::default(),
         file_statistics: vec![],

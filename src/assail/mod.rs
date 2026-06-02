@@ -605,6 +605,7 @@ mod classifications_tests {
                     description: "8 unsafe blocks".to_string(),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
+                test_context: None,
                 },
                 WeakPoint {
                     file: None,
@@ -615,6 +616,7 @@ mod classifications_tests {
                     description: "unsafe block".to_string(),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
+                test_context: None,
                 },
             ],
             statistics: ProgramStatistics {

@@ -37,4 +37,5 @@ pub mod report;
 pub mod signatures;
 pub mod storage;
 pub mod sweep_tracker;
+pub mod test_context;
 pub mod types;

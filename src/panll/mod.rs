@@ -684,6 +684,7 @@ mod tests {
                     description: "unwrap on None".to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
+                test_context: None,
                 },
                 WeakPoint {
                     category: WeakPointCategory::UnsafeCode,
@@ -694,6 +695,7 @@ mod tests {
                     description: "unsafe block".to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
+                test_context: None,
                 },
             ],
             vec![],
@@ -729,6 +731,7 @@ mod tests {
                 description: "shell exec from user input".to_string(),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
+                test_context: None,
             }],
             // One failed attack -> generates constraint
             vec![AttackResult {

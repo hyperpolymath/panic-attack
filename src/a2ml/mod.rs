@@ -842,6 +842,7 @@ mod tests {
                 description: "unchecked result".to_string(),
                 recommended_attack: vec![AttackAxis::Concurrency],
                 suppressed: false,
+                test_context: None,
             }],
             statistics: ProgramStatistics {
                 total_lines: 42,
