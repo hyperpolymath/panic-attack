@@ -69,7 +69,7 @@ chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o 
 | `--repoDirectory` | | Directory to scan for .git repos |
 | `--panicAttackBin` | `panic-attack` | Path to panic-attack binary |
 | `--mode` | `assail` | Operation mode (see above) |
-| `--scheduler` | `static` | `static` (fast, not resumable) or `queue` (resumable, ~5–15% slower) |
+| `--scheduler` | `static` | `static` (fast, not resumable) or `queue` (resumable, ~5–15% slower — unmeasured estimate, see panic-attack#87 Wave-3 benchmark followup) |
 | `--resume` | `false` | Requires `--scheduler=queue`; combining with `--scheduler=static` exits with an error (static mode has no journal). Skips repos already marked "done" in the journal |
 | `--journalDir` | `<outputDir>/journal` | Directory for queue-scheduler JSONL shards |
 | `--incremental` | `true` | Skip unchanged repos via BLAKE3 |
@@ -128,12 +128,15 @@ previously-completed repos and the freshly-scanned ones.
   invocation with `--resume` reuses everything completed so far.
   A locale crash during a multi-day sweep loses only the
   currently-in-flight repo on that locale.
-- **~5–15% slower** on clean runs (estimate, not yet measured against a
-  full BoJ-estate corpus). The dispatch overhead per task (atomic
-  fetch-add + one journal write) is per-repo instead of being amortised
-  across a `coforall` range. On a clean 10k-repo sweep, expect queue
-  mode to finish in roughly ~1.10× the time of static. A defensible
-  empirical measurement is tracked as Wave 2 follow-up work.
+- **~5–15% slower (UNMEASURED ESTIMATE)** on clean runs. Not yet
+  benchmarked against any real corpus — this is a *back-of-envelope*
+  number from the per-task dispatch overhead (atomic fetch-add + one
+  journal write per repo, vs amortised across a `coforall` range).
+  On a clean 10k-repo sweep, expect queue mode to finish in
+  *roughly* ~1.10× the time of static. A defensible empirical
+  measurement is tracked as **panic-attack#87 Wave-3 followup**
+  (needs a beefier/self-hosted runner — default GH runners are too
+  noisy for stable scheduler-overhead measurement).
 - **Right for:** long interactive sweeps (GitHub-account scale or
   larger), sweeps where at least one locale is on spot/preemptible
   infrastructure, or any run where you expect to want to pause
@@ -160,8 +163,8 @@ in the journal directory and merges prior results with fresh ones.
 The atomic work counter lives on the coordinator (Locale 0); every
 claim is one remote fetchAdd (microseconds) against a scan cost of
 100ms–60s, so the dispatch overhead is well under 1% on any real
-workload. The ~5–15% figure above accounts for the per-repo journal
-write + flush, not the atomic itself.
+workload. The ~5–15% figure above (still unmeasured) accounts for the
+per-repo journal write + flush, not the atomic itself.
 
 ### Startup banner
 
@@ -172,7 +175,7 @@ repo discovery:
 mass-panic: scheduler=static (default)
             fastest on clean runs; no --resume support.
             A crash or Ctrl+C loses all progress.
-            Use --scheduler=queue for resumable runs (~5-15% slower).
+            Use --scheduler=queue for resumable runs (~5-15% slower, unmeasured).
 ```
 
 Or for queue mode:
@@ -180,7 +183,7 @@ Or for queue mode:
 ```
 mass-panic: scheduler=queue
            resumable via --resume; per-locale JSONL shards at mass-panic-results/journal
-           ~5-15% slower than static on clean runs (one atomic + one journal write per repo).
+           ~5-15% slower than static on clean runs (unmeasured; one atomic + one journal write per repo).
            A crash or Ctrl+C loses only the in-flight repo per locale — everything already
            marked "done" is skipped on the next invocation with --resume.
 ```

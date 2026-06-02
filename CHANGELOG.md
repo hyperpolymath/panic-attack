@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Changed (2026-06-02) — truthfulness audit (humans + machines)
+- **README badge + Status block** corrected: 402 → 539 `#[test]` annotations
+  (the badge had not tracked the actual count for several releases). Same
+  count now also reflected in the Wiki Home page (was `282+`).
+- **ROADMAP v2.2.0**: downgraded "Per-project VeriSimDB instance:
+  `deploy/panic-attack/fly.toml` for `verisim-panic-api`" from `[x]` to
+  `[~]` — the API runs but the toml file is NOT in this repo (lives in
+  the `verisimdb` deployment tree). The `[x]` checkbox previously
+  pointed at a path that didn't exist on `main`.
+- **ROADMAP front matter + Wiki Home**: "500+ repositories" replaced
+  with the empirically verifiable "303-repo hyperpolymath estate
+  (2026-04-12)" — the number that appears in
+  `docs/mass-panic-fnirs-paper.adoc` Table I.
+- **`chapel/README.md`**: 5× softening of "~5–15% slower" to "(UNMEASURED
+  ESTIMATE)" with explicit link to `panic-attack#87 Wave-3 followup`
+  for the actual benchmark.
+- **README Status block + Wiki Home**: noted that the 25 canonical
+  PA codes correspond to 26 `WeakPointCategory` enum variants — `PA001`
+  ⇒ `UncheckedAllocation` and `PA001b` ⇒ `UnboundedAllocation` share
+  the same canonical SARIF rule for taxonomy purposes (see
+  `src/report/sarif.rs`).
+
 ### Added (2026-06-01) — Chapel Wave 2: single-host multilocale gate
 - **`chapel-multilocale` CI gate** (#99, closes #87 option A): adds a 7th
   strict chapel-ci job that builds Chapel 2.8.0 from source with
