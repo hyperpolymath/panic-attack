@@ -4,14 +4,14 @@
 
 [metadata]
 project = "panic-attack"
-version = "2.5.0"
+version = "2.5.5"
 last-updated = "2026-06-02"
 status = "active"
 
 [project-context]
 name = "panic-attack"
 completion-percentage = 99
-phase = "CRG C (Beta) — v2.5.0 complete: 25 detection categories + shell completions (bash/zsh/fish/nushell/powershell) + delta reporting"
+phase = "CRG C (Beta) — v2.5.5 complete: 25 detection categories + shell completions + delta reporting + context-aware FP suppression (test_context/comment_marker/ffi_kind/jit_context) + Chapel→VeriSimDB HTTP push + PROOF-PROGRAMME Layer 1.0 partial"
 
 [testing-completion-2026-04-04]
 description = "CRG C blitz completed: unit + smoke + build + P2P + E2E + reflexive + contract + aspect + benchmarks"
