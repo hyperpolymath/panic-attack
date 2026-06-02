@@ -5,7 +5,7 @@
 [metadata]
 project = "panic-attack"
 version = "2.5.0"
-last-updated = "2026-06-01"
+last-updated = "2026-06-02"
 status = "active"
 
 [project-context]
@@ -74,8 +74,27 @@ estate-sweep-spawned = "a2ml-validate-action SHA bump fanout across 215 estate r
 commits = "b323f6f (baseline-red fixes), 5e02b82 (a2ml relocation), 11e54a9 (action SHA bump on #94)"
 blocker = "none"
 
+[session-2026-06-02-pm]
+description = "v2.5.5 context-awareness cohort + v3.0.0 Chapel→VeriSimDB HTTP push + PROOF-PROGRAMME"
+prs-merged = "#102 (test_context foundation), #104 (PROOF-PROGRAMME 3-layer), #105 (comment_marker inline suppression), #106 (ffi_kind subtyping), #107 (jit_context classifier), #108 (Chapel verisim-push), #110 (Phase 2 analyzer wire-up), #111 (Layer 1.0 strip-idempotence partial)"
+v255-test-context = "Cross-language test-path classification (Rust/Python/Go/JS-TS/Julia/Zig/Elixir/docs); WeakPoint.test_context: Option<TestContext> field through 137 sites; content-promotion via ExUnit/unittest/pytest/@testset markers"
+v255-comment-marker = "// panic-attack: accepted [- reason] inline marker; mid-line // for C-family, start-of-line for # / -- / ; / % / /// / //!; string-literal aware; shebang excluded; same-or-preceding-line scope"
+v255-ffi-kind = "PA013 subtyped: BuildSystem (build.zig/build.rs audit-accepted) / RuntimeAbi (bindings/ ffi/ sys/ cdef.zig audit-significant) / TestMock (tests/mocks tests/stubs audit-accepted) / Unknown; is_audited_boundary() parses audits/audit-ffi-unsafe.md sections"
+v255-jit-context = "Cranelift / Llvm / Wasm / Javascript / None classifier; classify_rust(content) heuristic; transmute_targets_fn_ptr tolerant of unsafe { ... } wrappers"
+v255-phase-2-wire-up = "apply_v255_context_suppression() runs after kanren rules: marker-flip suppressed=true, PanicPath-in-TestOnly/Doc auto-suppress, UnsafeFFI-in-BuildSystem/TestMock auto-suppress; per-file content cache"
+v300-chapel-verisim-push = "panic-attack verisim-push <hexad> --url --retry --fallback-dir subcommand under http Cargo feature; Chapel takeSnapshot 6-arg overload spawns subprocess after local hexad write; local-writes-authoritative + push-additive semantics"
+proof-programme = "PROOF-PROGRAMME.md (3-layer Surface/Engine/Persistence, 9-phase ~16-week sequence); src/abi/Stripping.idr (Layer 1.0 partial: IsStrippedBody shape lemma + stripBodyProducesStrippedShape + base cases of stripLineCommentsIdempotent Qed-closed; open: slash-slash inductive closure)"
+proven-cross-fit = "SafePath + SafeUrl identified as port-to-Rust candidates (perf-neutral, semantic-equivalent); SafeJson / SafeRegex / SafeDateTime / SafeCommand / SafeEnv / SafeUUID marked skip (already total / semantic mismatch); 7 gaps for first-principles proofs (miniKanren engine, hexad model, A2ML chain, bridge reachability, sweep tracker, adjudicate/axial, FFI ABI)"
+test-count = "897 passing (cargo test --release; 4 ignored; 901 runnable per --list)"
+truthfulness-fix = "tests/ WeakPoint constructions sed-updated for test_context field (was silently broken on main post-#102)"
+blocker = "none"
+
 [next-priorities]
 hexad-patch-bridge = "Migrate Patch Bridge mitigation registry from JSON to hexad persistence (ROADMAP v2.2.0 / v2.4.0)"
 multi-lockfile = "Extend Patch Bridge beyond Cargo.lock to package-lock.json, mix.lock, etc. (ROADMAP v2.4.0)"
 trend-queries-vcl = "Historical trend queries via VCL (ROADMAP v2.2.0)"
-chapel-wave-2 = "Real multi-locale cluster validation on non-trivial corpus (issue #87 — owner-gated on toolchain choice)"
+chapel-wave-3 = "Cross-node gasnet/ofi over real NIC — needs cluster runner (issue #87 Wave 3)"
+layer-1-0-closure = "stripIsIdentityOnStrippedBody — closes slash-slash inductive case of stripLineCommentsIdempotent (PROOF-PROGRAMME row 1 follow-up)"
+layer-1-0-block-strings = "Stripping_Block.idr + Stripping_Strings.idr + Stripping_Composition.idr + Stripping_PositionPreservation.idr (PROOF-PROGRAMME row 1 remaining)"
+hypatia-rule-wiring = "Hypatia ingestion of test_context / ffi_kind / jit_context metadata; ContextSuppressed bucket distinct from RuleSuppressed"
+gitbot-panicbot-wiring = "gitbot-fleet panicbot translator: surface test_context + suppression-reason in fleet-side reports"

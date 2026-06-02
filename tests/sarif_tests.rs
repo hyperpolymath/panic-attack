@@ -26,6 +26,7 @@ fn make_test_report() -> AssailReport {
                 line: None,
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
+        test_context: None,
             },
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
@@ -36,6 +37,7 @@ fn make_test_report() -> AssailReport {
                 line: None,
                 recommended_attack: vec![],
                 suppressed: false,
+        test_context: None,
             },
         ],
         statistics: ProgramStatistics::default(),

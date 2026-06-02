@@ -218,6 +218,7 @@ fn prop_weak_point_location_validity() {
         description: "test".to_string(),
         recommended_attack: vec![],
         suppressed: false,
+        test_context: None,
     };
 
     // Location can be None only if explicitly set to None
@@ -267,6 +268,7 @@ fn prop_no_duplicate_weak_points_at_same_location() {
             description: "unsafe block 1".to_string(),
             recommended_attack: vec![],
             suppressed: false,
+        test_context: None,
         },
         WeakPoint {
             category: WeakPointCategory::UnsafeCode,
@@ -277,6 +279,7 @@ fn prop_no_duplicate_weak_points_at_same_location() {
             description: "unsafe block 2".to_string(),
             recommended_attack: vec![],
             suppressed: false,
+        test_context: None,
         },
     ];
 

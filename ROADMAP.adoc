@@ -139,39 +139,39 @@ specific false positive patterns that currently inflate weak-point counts.
 Panic-attack currently flags comments that mention "unsafe" or document
 security aspects, leading to false positives in security tests.
 
-* [ ] Parse Rust/JS/Python/Julia comment syntax to exclude from unsafe detection
-* [ ] Add `// panic-attack: accepted` comment parser for explicit suppression
-* [ ] Create comment-only weak-point category for documentation review
-* [ ] Improve Zig comment parsing to reduce build.zig false positives
+* [~] Parse Rust/JS/Python/Julia comment syntax to exclude from unsafe detection — analyzer already strips comments at `src/assail/analyzer.rs:931` via `strip_proof_comments(without_strings, "//", Some(("/*", "*/")))`; PROOF-PROGRAMME Layer 1.0 mechanises the idempotence + position-preservation of this pass.
+* [x] Add `// panic-attack: accepted` comment parser for explicit suppression (#105 + #110) — `src/comment_marker.rs` recognises markers in `//` / `#` / `--` / `;` / `%` comments; `apply_v255_context_suppression` flips `WeakPoint.suppressed = true` when a marker is on the same or preceding line. String-literal aware.
+* [ ] Create comment-only weak-point category for documentation review (deferred — semantic-mismatch with the existing PA-code taxonomy; suppression-by-marker covers the immediate use case)
+* [~] Improve Zig comment parsing to reduce build.zig false positives — partially addressed via [[ffi_kind]] subtyping (build.zig → `FfiKind::BuildSystem`, audit-accepted by default); residual zig comment parsing folded into Layer 1.0 follow-up
 
 === `test_context` — Test vs production code distinction
 
 Test files should not be held to the same safety standards as production code,
 but panic-attack currently applies uniform rules.
 
-* [ ] Detect test modules (`#[cfg(test)]`, `test "..."`, `ExUnit.Case`) across languages
-* [ ] Suppress PanicPath findings in test-only code (unwrap/expect acceptable in tests)
-* [ ] Add test/production context to weak-point metadata
-* [ ] Create test-specific suppression patterns for HTTP URLs and other test data
+* [x] Detect test modules (`#[cfg(test)]`, `test "..."`, `ExUnit.Case`) across languages (#102) — `src/test_context.rs` `classify_path` covers Rust / Python / Go / JavaScript / Julia / Zig / Elixir / docs-examples paths; `content_indicates_test_scope` covers ExUnit / unittest / pytest fixture / Julia `@testset` content markers.
+* [x] Suppress PanicPath findings in test-only code (#110) — `apply_v255_context_suppression` flips `WeakPoint.suppressed = true` whenever a `PanicPath` finding's `test_context` is `TestOnly` or `Doc`.
+* [x] Add test/production context to weak-point metadata (#102 + #110) — new `WeakPoint.test_context: Option<TestContext>` field plumbed through 137 construction sites; the wire-up pass populates it for every finding with a known file path.
+* [ ] Create test-specific suppression patterns for HTTP URLs and other test data (deferred — needs a separate test-data fixture lexer; the foundation (test_context metadata) is in place to drive it)
 
 === `ffi_refinement` — Better FFI boundary detection
 
 Current FFI detection flags build system files and legitimate ABI boundaries.
 
-* [ ] Distinguish `@import("std")` from `@cImport` in Zig analyzer
-* [ ] Recognize build.zig as build-system context, not FFI usage
-* [ ] Cross-reference with `audits/audit-ffi-unsafe.md` for pre-approved boundaries
-* [ ] Add FFI category subtyping (BuildSystem, RuntimeABI, TestMock)
+* [~] Distinguish `@import("std")` from `@cImport` in Zig analyzer — analyzer's existing `@cImport`-only count at `src/assail/analyzer.rs:3993` already excludes `@import("std")`; finer-grained Zig parsing is a follow-up.
+* [x] Recognize build.zig as build-system context, not FFI usage (#106 + #110) — `FfiKind::classify_by_path` returns `BuildSystem` for `build.zig` / `build.rs`; `is_audit_accepted_by_default()` returns true; wire-up auto-suppresses.
+* [x] Cross-reference with `audits/audit-ffi-unsafe.md` for pre-approved boundaries (#106) — `is_audited_boundary(audit_text, file_path)` parses `## Approved boundaries` and `## Pre-approved boundaries` markdown sections; both `- path` and `` - `path` `` forms supported.
+* [x] Add FFI category subtyping (BuildSystem, RuntimeABI, TestMock) (#106) — `FfiKind` enum with four variants (BuildSystem / RuntimeAbi / TestMock / Unknown).
 
 === `jit_context` — JIT compilation awareness
 
 JIT compilation inherently requires unsafe code for function pointer manipulation,
 but panic-attack flags these as generic UnsafeCode findings.
 
-* [ ] Detect Cranelift/LLVM JIT compilation contexts
-* [ ] Add JIT-specific unsafe suppression for transmute patterns
-* [ ] Document JIT safety invariants in weak-point metadata
-* [ ] Create JIT category for specialized analysis
+* [x] Detect Cranelift/LLVM JIT compilation contexts (#107) — `JitContext` enum: Cranelift / Llvm / Wasm / Javascript / None; `classify_rust(content)` heuristic recognises `cranelift_jit::JITModule`, `inkwell::execution_engine`, `wasmtime::Module`, `rusty_v8::Isolate`, `boa_engine::Context`, etc.
+* [~] Add JIT-specific unsafe suppression for transmute patterns — analyzer's existing inline check at `src/assail/analyzer.rs:1117..1129` downgrades Critical → High for `mem::transmute` to function-pointer types in a Cranelift context. JitContext now provides a unified API surface; consolidation is a code-cleanup follow-up.
+* [~] Document JIT safety invariants in weak-point metadata — `JitContext::permits_fn_ptr_transmute()` exposes the structural-unsafe acceptance; explicit metadata field on `WeakPoint` is a Phase 3 follow-up.
+* [ ] Create JIT category for specialized analysis (deferred — keeping `UnsafeCode` / `UnsafeTypeCoercion` with a `JitContext` sidecar is semantically cleaner than a new top-level `WeakPointCategory`)
 
 == v3.0.0 -- Distributed Scanning
 
