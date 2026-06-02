@@ -6,7 +6,7 @@
 
 = panic-attack Roadmap
 
-_Static analysis and bug signature detection across 49 languages, used in 500+ repos._
+_Static analysis and bug signature detection across 49 languages. Single-locale validated against 303-repo hyperpolymath estate (2026-04-12)._
 
 toc::[]
 
@@ -42,7 +42,7 @@ binary, panicbot (gitbot-fleet CI integration), and mass-panic (org-scale batch 
 
 * [x] Filesystem persistence for scan results
 * [x] VeriSimDB HTTP API integration: push octads via REST (ureq v3; VERISIMDB_URL env var; http feature; filesystem fallback)
-* [x] Per-project VeriSimDB instance: `deploy/panic-attack/fly.toml` for `verisim-panic-api` (6PN internal, lhr)
+* [~] Per-project VeriSimDB instance — `verisim-panic-api` (6PN internal, lhr). API runs but `deploy/panic-attack/fly.toml` is NOT in this repo (lives in the verisimdb deployment tree). Tracking moved to `verisimdb` repo.
 * [x] Delta reporting: `diff` subcommand reports changes since last scan (`src/report/diff.rs`)
 * [ ] Hexad persistence for Patch Bridge mitigation registry (currently JSON file)
 * [ ] Historical trend queries via VCL

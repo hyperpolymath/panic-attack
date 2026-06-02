@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Changed (2026-06-02) — truthfulness audit (humans + machines)
+- **README badge + Status block** corrected: 402 → **782 runnable tests**
+  (per `cargo test --release -- --list`; the underlying 539 `#[test]`
+  annotations expand via doctests + integration tiers). The badge had
+  not tracked actual count for several releases. Wiki Home was `282+`.
+- **chapel-ci `chapel-multilocale` gate** robustified (#100 collateral):
+  pinned `CHPL_UNWIND=system` explicitly + moved `libunwind-dev` install
+  to always-run (not gated on cache-hit). On cache-hit runs without
+  libunwind-dev, chpl auto-inferred `CHPL_UNWIND=bundled` and aborted
+  with "no runtime for bundled" because the cached runtime was built
+  with `system`. Cache-gen counter bumped `v1` → `v2` to discard the
+  inconsistent cache. Fifth Chapel-2.8.0 sharp edge from #99 Wave 2.
+- **ROADMAP v2.2.0**: downgraded "Per-project VeriSimDB instance:
+  `deploy/panic-attack/fly.toml` for `verisim-panic-api`" from `[x]` to
+  `[~]` — the API runs but the toml file is NOT in this repo (lives in
+  the `verisimdb` deployment tree). The `[x]` checkbox previously
+  pointed at a path that didn't exist on `main`.
+- **ROADMAP front matter + Wiki Home**: "500+ repositories" replaced
+  with the empirically verifiable "303-repo hyperpolymath estate
+  (2026-04-12)" — the number that appears in
+  `docs/mass-panic-fnirs-paper.adoc` Table I.
+- **`chapel/README.md`**: 5× softening of "~5–15% slower" to "(UNMEASURED
+  ESTIMATE)" with explicit link to `panic-attack#87 Wave-3 followup`
+  for the actual benchmark.
+- **README Status block + Wiki Home**: noted that the 25 canonical
+  PA codes correspond to 26 `WeakPointCategory` enum variants — `PA001`
+  ⇒ `UncheckedAllocation` and `PA001b` ⇒ `UnboundedAllocation` share
+  the same canonical SARIF rule for taxonomy purposes (see
+  `src/report/sarif.rs`).
+
 ### Added (2026-06-01) — Chapel Wave 2: single-host multilocale gate
 - **`chapel-multilocale` CI gate** (#99, closes #87 option A): adds a 7th
   strict chapel-ci job that builds Chapel 2.8.0 from source with
