@@ -99,8 +99,31 @@ module Temporal {
     // Snapshot management
     // ---------------------------------------------------------------------------
 
+    // Default no-HTTP-push behaviour; overload with verisimPushUrl below
+    // pushes via `panic-attack verisim-push` after each hexad write.
     proc takeSnapshot(image: SystemImage, report: AssemblylineReport,
                       verisimdbDir: string, snapTag: string) {
+        takeSnapshot(image, report, verisimdbDir, snapTag,
+                     verisimPushUrl="", panicAttackBin="");
+    }
+
+    // Take a snapshot AND, when `verisimPushUrl` is non-empty, push the
+    // emitted hexad to the URL via `<panicAttackBin> verisim-push`.
+    // Closes the v3.0.0 ROADMAP item "VeriSimDB HTTP push from Chapel
+    // metalayer (currently file-only)".
+    //
+    // `panicAttackBin` defaults to `panic-attack` (assumed on PATH); set
+    // it explicitly when running from `chapel/` without the binary on
+    // PATH or against a non-installed build.
+    //
+    // The local filesystem write happens UNCONDITIONALLY — the push is
+    // additive, not a replacement. If the push fails (HTTP unreachable,
+    // verisim-panic-api not up, etc.), takeSnapshot's local writes
+    // remain authoritative.
+    proc takeSnapshot(image: SystemImage, report: AssemblylineReport,
+                      verisimdbDir: string, snapTag: string,
+                      verisimPushUrl: string,
+                      panicAttackBin: string = "panic-attack") {
         const indexPath = joinPath(verisimdbDir, "temporal-index.json");
 
         // Read existing state without losing prior entries
@@ -152,6 +175,34 @@ module Temporal {
 
         // Write index, preserving all existing entries
         saveTemporalIndex(indexPath, existingEntries, snapshot, seq);
+
+        // Optional HTTP push: hand off the just-written hexad file to
+        // `panic-attack verisim-push` so a running verisim-panic-api
+        // gateway picks it up. The local filesystem write above is
+        // unconditional and authoritative; the push is additive.
+        // Closes v3.0.0 ROADMAP item "VeriSimDB HTTP push from Chapel
+        // metalayer (currently file-only)".
+        if verisimPushUrl != "" && panicAttackBin != "" {
+            try {
+                use Subprocess;
+                var cmd = [
+                    panicAttackBin,
+                    "verisim-push",
+                    "--url", verisimPushUrl,
+                    "--retry",
+                    hexadPath,
+                ];
+                var sub = spawn(cmd);
+                sub.wait();
+                if sub.exitCode != 0 {
+                    writeln("temporal: verisim-push exited ", sub.exitCode,
+                            " for ", hexadPath, " (local write OK)");
+                }
+            } catch e: Error {
+                writeln("temporal: verisim-push not invoked: ", e.message(),
+                        " (local write OK)");
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------
