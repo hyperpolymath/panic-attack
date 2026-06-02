@@ -805,6 +805,48 @@ enum Commands {
     /// panic-attack interface at runtime without coupling to its source.
     /// The output schema is stable across patch releases.
     DescribeContract,
+
+    /// Push a single hexad JSON file (written by the Chapel metalayer
+    /// `takeSnapshot` or any other producer) to a running `verisim-panic-api`
+    /// instance via HTTP `POST /octads`.
+    ///
+    /// Reads the JSON hexad from `<HEXAD>`, deserialises it as a
+    /// `PanicAttackHexad`, and pushes it. Uses `$VERISIMDB_URL` if set,
+    /// otherwise defaults to `http://localhost:8080`.
+    ///
+    /// On HTTP failure, the file is left in place — re-running the command
+    /// retries. With `--fallback-dir`, also writes a filesystem copy under
+    /// `<fallback-dir>/hexads/` so an offline orchestrator can replay later.
+    ///
+    /// Requires the `http` Cargo feature to be enabled at build time.
+    /// Closes the v3.0.0 ROADMAP item "VeriSimDB HTTP push from Chapel
+    /// metalayer (currently file-only)".
+    #[cfg(feature = "http")]
+    VerisimPush {
+        /// Path to the JSON hexad file produced by the Chapel metalayer
+        /// (or any other producer that emits the canonical hexad schema).
+        #[arg(value_name = "HEXAD")]
+        hexad: PathBuf,
+
+        /// VeriSimDB gateway URL. Defaults to `$VERISIMDB_URL` if set,
+        /// otherwise `http://localhost:8080`.
+        #[arg(long, value_name = "URL")]
+        url: Option<String>,
+
+        /// Filesystem fallback directory. If specified, a copy of the
+        /// hexad is also written under `<dir>/hexads/<id>.json` so the
+        /// push survives an offline gateway. The local-only run on the
+        /// Chapel side already wrote to `verisimdb-data/hexads/`, so this
+        /// is typically left unset when the push is invoked from Chapel.
+        #[arg(long, value_name = "DIR")]
+        fallback_dir: Option<PathBuf>,
+
+        /// Retry on transient HTTP failures (network errors, 5xx). The
+        /// underlying `push_hexad_http_with_retry` exponential-backs off
+        /// up to three attempts.
+        #[arg(long, default_value_t = false)]
+        retry: bool,
+    },
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -2547,6 +2589,68 @@ fn run_main() -> Result<()> {
                 "modes": modes,
             });
             println!("{}", serde_json::to_string_pretty(&contract)?);
+            return Ok(());
+        }
+
+        #[cfg(feature = "http")]
+        Commands::VerisimPush {
+            hexad,
+            url,
+            fallback_dir,
+            retry,
+        } => {
+            use panic_attack::storage::{
+                push_hexad_http, push_hexad_http_with_retry, push_hexad_with_fallback,
+                PanicAttackHexad,
+            };
+
+            let json = std::fs::read_to_string(&hexad).with_context(|| {
+                format!("reading hexad file {}", hexad.display())
+            })?;
+            let hexad_value: PanicAttackHexad = serde_json::from_str(&json)
+                .with_context(|| format!("parsing hexad JSON at {}", hexad.display()))?;
+
+            let gateway_url = url
+                .or_else(|| std::env::var("VERISIMDB_URL").ok())
+                .unwrap_or_else(|| "http://localhost:8080".to_string());
+
+            qprintln!(
+                cli.quiet,
+                "verisim-push: POST {} ({})",
+                gateway_url,
+                hexad.display()
+            );
+
+            let push_result = if retry {
+                push_hexad_http_with_retry(&hexad_value, &gateway_url)
+            } else {
+                push_hexad_http(&hexad_value, &gateway_url)
+            };
+
+            match push_result {
+                Ok(pushed_id) => {
+                    qprintln!(cli.quiet, "verisim-push: pushed hexad id={}", pushed_id);
+                }
+                Err(http_err) => {
+                    // HTTP failed — if a fallback dir is set, write the
+                    // hexad there so an offline orchestrator can replay
+                    // later. push_hexad_with_fallback respects VERISIMDB_URL
+                    // env too, but we've already established HTTP isn't
+                    // reachable, so the fallback-to-disk is the value here.
+                    if let Some(dir) = fallback_dir.as_ref() {
+                        let written = push_hexad_with_fallback(&hexad_value, dir)?;
+                        qprintln!(
+                            cli.quiet,
+                            "verisim-push: HTTP failed ({}); fell back to {} path(s) under {}",
+                            http_err,
+                            written.len(),
+                            dir.display()
+                        );
+                    } else {
+                        return Err(http_err);
+                    }
+                }
+            }
             return Ok(());
         }
 

@@ -186,7 +186,7 @@ but panic-attack flags these as generic UnsafeCode findings.
 * [~] Multi-locale Chapel orchestration:
   ** [x] Single-host oversubscribed `gasnet+smp` (Wave 2, panic-attack#99 / #87 option A): `chapel-multilocale` CI gate exercises `mass-panic --numLocales=2` on a 2-repo synthetic corpus. Source-built Chapel cached on `$CHPL_HOME` (cold ~30-40 min, warm ~30s restore).
   ** [ ] Cross-node `gasnet/ofi` over a real NIC (Wave 3): needs cluster runner — not exercisable on default GH runners.
-* [ ] VeriSimDB HTTP push from Chapel metalayer (currently file-only)
+* [x] VeriSimDB HTTP push from Chapel metalayer: `panic-attack verisim-push <hexad>` subcommand (added under `http` Cargo feature) + `takeSnapshot(..., verisimPushUrl, panicAttackBin)` Chapel overload in `Temporal.chpl`. Local writes remain authoritative; push is additive with HTTP→fallback-to-disk semantics.
 * [x] `--scheduler=queue` — resumable dynamic work-pull scheduler for mass-panic. Atomic fetch-add work index shared across locales; per-run JSONL journal shards (`locale-<id>-<runId>.jsonl`) recording `{claim, done}` state per repo with full RepoResult payload on `done`; `--resume` replays every shard in the journal directory, reconstructs RepoResult records from prior runs, and skips those repos on the new run. ~5–15% slower than static on clean runs; a crash or Ctrl+C loses only the in-flight repo per locale. See `chapel/README.md` §Scheduling modes for the full spec.
 
 == v3.1.0 -- Ecosystem Integration
