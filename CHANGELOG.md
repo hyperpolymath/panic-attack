@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.5.5] — 2026-06-02
+
+Release of the v2.5.5 cohort that landed across 11 PRs in panic-attack + wiki + gitbot-fleet on 2026-06-02 PM. Tagged 2026-06-02 PM-evening.
+
 ### Added (2026-06-02 PM) — v2.5.5 context-awareness cohort + v3.0.0 Chapel→VeriSimDB push + PROOF-PROGRAMME
 
 Eight PRs landed in one cohort closing the v2.5.5 ROADMAP section, a v3.0.0 item, and opening the first proof slice of the new PROOF-PROGRAMME.
