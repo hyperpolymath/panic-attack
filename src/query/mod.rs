@@ -766,6 +766,7 @@ mod tests {
                 description: "test".to_string(),
                 recommended_attack: vec![],
                 suppressed: false,
+                test_context: None,
             }
         }
         fn assail(repo: &str, wps: Vec<WeakPoint>) -> AssailReport {

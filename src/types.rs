@@ -311,6 +311,50 @@ pub struct WeakPoint {
     /// in the report for audit purposes but excluded from fleet/CI counts.
     #[serde(default, skip_serializing_if = "is_false")]
     pub suppressed: bool,
+    /// Test-vs-production classification for this finding's location.
+    /// `None` = unclassified (legacy / pre-v2.5.5 emit). `Some(Production)`
+    /// = code reached at runtime in a published artefact. `Some(TestOnly)`
+    /// = code only reached under a test harness (filename match, inline
+    /// `#[cfg(test)]`, pytest fixture, ExUnit.Case, etc.). `Some(Doc)`
+    /// = code inside a documentation example.
+    ///
+    /// Detectors that find PanicPath / unwrap-style failure modes in
+    /// `Some(TestOnly)` code SHOULD set `suppressed = true` since
+    /// `unwrap` / `expect` / `assert!` are idiomatic in tests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_context: Option<TestContext>,
+}
+
+/// Test-vs-production classification for a code location.
+///
+/// Introduced in v2.5.5 (`test_context` ROADMAP slice). Detectors that
+/// emit `PanicPath` against `TestOnly` code typically set
+/// `WeakPoint.suppressed = true` because `unwrap` / `expect` / `assert!`
+/// are idiomatic inside tests and aren't reachable at runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestContext {
+    /// Code reached at runtime in a published artefact. Default for
+    /// detector output unless the analyser locates the finding inside a
+    /// recognised test scope.
+    Production,
+    /// Code only reached under a test harness. Recognised forms include:
+    ///   * Rust: `tests/`, `_tests.rs`, `_test.rs`, inline `#[cfg(test)]`,
+    ///     `#[test]` / `#[tokio::test]` annotated fn bodies.
+    ///   * Elixir: `_test.exs`, `use ExUnit.Case`.
+    ///   * Python: `tests/`, `test_*.py`, `_test.py`, `pytest` import,
+    ///     `unittest.TestCase` subclass, `@pytest.fixture`.
+    ///   * Go: `_test.go` filename suffix.
+    ///   * JavaScript/TypeScript: `.test.{js,ts}`, `.spec.{js,ts}`,
+    ///     `describe(` / `it(` / `test(` calls inside Jest/Vitest/Mocha.
+    ///   * Julia: `test/runtests.jl`, `@test` / `@testset` macros.
+    ///   * Zig: `test "..." {}` blocks.
+    TestOnly,
+    /// Code inside a documentation example (`/// # Example` block,
+    /// rustdoc fenced code, etc.). Treated similarly to `TestOnly` for
+    /// PanicPath suppression purposes — doc-test code is allowed to
+    /// `unwrap` since it isn't reachable from production paths.
+    Doc,
 }
 
 /// Helper for `skip_serializing_if` — avoids serializing default false values.
