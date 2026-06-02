@@ -37,6 +37,7 @@ pub mod notify;
 pub mod panll;
 pub mod query;
 pub mod report;
+pub mod safe_path;
 pub mod signatures;
 pub mod storage;
 pub mod sweep_tracker;
