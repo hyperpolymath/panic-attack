@@ -57,7 +57,9 @@ env:
   CHAPEL_SRC_URL: "https://github.com/chapel-lang/chapel/releases/download/2.8.0/chapel-2.8.0.tar.gz"
   # $CHPL_HOME for the multilocale build. Cache key bumps via CHAPEL_MULTILOCALE_CACHE_GEN.
   CHAPEL_MULTILOCALE_HOME: /opt/chapel-multilocale
-  CHAPEL_MULTILOCALE_CACHE_GEN: "v1"
+  # Bump v1→v2 after pinning CHPL_UNWIND=system explicitly (was auto-inferred,
+  # which caused mismatches on cache-hit runs without libunwind-dev present).
+  CHAPEL_MULTILOCALE_CACHE_GEN: "v2"
 
 jobs:
   detect-relevant-changes:
@@ -280,14 +282,25 @@ jobs:
           path: ${{ env.CHAPEL_MULTILOCALE_HOME }}
           key: ${{ runner.os }}-chapel-multilocale-${{ env.CHAPEL_VERSION }}-gasnet-smp-${{ env.CHAPEL_MULTILOCALE_CACHE_GEN }}
 
-      - name: Install Chapel build dependencies
-        if: steps.chapel-cache.outputs.cache-hit != 'true'
+      # libunwind-dev MUST be installed even on cache-hit runs: the cached
+      # $CHPL_HOME was built with CHPL_UNWIND=system inferred from libunwind
+      # presence, so subsequent chpl invocations also need to find libunwind
+      # at runtime to pick the matching runtime variant. Without it, chpl
+      # infers CHPL_UNWIND=bundled, doesn't find a matching cached runtime,
+      # and aborts with "no runtime for CHPL_UNWIND=bundled".
+      - name: Install libunwind (needed even on cache-hit for CHPL_UNWIND=system)
         run: |
           set -euo pipefail
           sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libunwind-dev
+
+      - name: Install remaining Chapel build dependencies
+        if: steps.chapel-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
           sudo apt-get install -y --no-install-recommends \
             build-essential gcc g++ make perl python3 \
-            m4 autoconf automake libtool libunwind-dev pkg-config
+            m4 autoconf automake libtool pkg-config
 
       - name: Build Chapel from source with CHPL_COMM=gasnet
         if: steps.chapel-cache.outputs.cache-hit != 'true'
@@ -313,6 +326,11 @@ jobs:
           # tries to verify LLVM headers via clang/Basic/Version.h and aborts
           # with a CHPL_LLVM "unset" make target.
           export CHPL_LLVM=none
+          # Pin CHPL_UNWIND=system explicitly. Auto-detection depends on
+          # libunwind-dev being installed at the moment chpl runs, which
+          # makes cache-hit vs cache-miss runs inconsistent. Pinning ensures
+          # the cached runtime variant always matches the env consumers see.
+          export CHPL_UNWIND=system
           # setchplenv.bash references ${MANPATH} unconditionally; GH runners
           # don't export MANPATH by default, so seed it before sourcing.
           export MANPATH="${MANPATH:-}"
@@ -331,6 +349,7 @@ jobs:
           set -euo pipefail
           export CHPL_HOME="${{ env.CHAPEL_MULTILOCALE_HOME }}"
           export CHPL_LLVM=none
+          export CHPL_UNWIND=system
           export MANPATH="${MANPATH:-}"
           source "$CHPL_HOME/util/setchplenv.bash"
           # Persist env to subsequent steps via GITHUB_ENV
@@ -340,6 +359,8 @@ jobs:
             echo "CHPL_COMM_SUBSTRATE=smp"
             echo "CHPL_LAUNCHER=smp"
             echo "CHPL_TARGET_COMPILER=gnu"
+            echo "CHPL_LLVM=none"
+            echo "CHPL_UNWIND=system"
             echo "PATH=$CHPL_HOME/bin/$(uname -s)-$(uname -m):$PATH"
           } >> "$GITHUB_ENV"
           chpl --version

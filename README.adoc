@@ -11,7 +11,7 @@ image:https://img.shields.io/badge/License-MPL--2.0-blue.svg[License: MPL-2.0,li
 image:https://api.thegreenwebfoundation.org/greencheckimage/github.com[Green Web,link="https://www.thegreenwebfoundation.org/green-web-check/?url=github.com"]
 image:https://img.shields.io/badge/status-active-green[Status]
 image:https://img.shields.io/badge/domain-security--analysis-blue[Domain]
-image:https://img.shields.io/badge/tests-539%20passing-brightgreen[Tests]
+image:https://img.shields.io/badge/tests-782%20passing-brightgreen[Tests]
 image:https://img.shields.io/badge/languages-49-blue[Languages]
 
 **panic-attack** is a multi-language security analysis and stress-testing system.
@@ -202,7 +202,7 @@ VeriSimDB remains the foundation dependency for these exports, so every snapshot
 Current state: **v2.5.0**
 
 * 32,000+ lines of Rust + Chapel
-* 539 `#[test]` annotations across unit / property / e2e / aspect / integration tiers
+* 782 runnable tests (per `cargo test --release -- --list`; 539 `#[test]` annotations plus doctest + integration expansions) across unit / property / e2e / aspect / integration tiers
 * 0 warnings
 * 25+ CLI subcommands
 * 49 supported languages (25 canonical weak-point categories PA001–PA025; `PA001b` SARIF subvariant collapses two allocation flavors under the same canonical rule)

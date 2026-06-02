@@ -3,9 +3,17 @@
 ## [Unreleased]
 
 ### Changed (2026-06-02) — truthfulness audit (humans + machines)
-- **README badge + Status block** corrected: 402 → 539 `#[test]` annotations
-  (the badge had not tracked the actual count for several releases). Same
-  count now also reflected in the Wiki Home page (was `282+`).
+- **README badge + Status block** corrected: 402 → **782 runnable tests**
+  (per `cargo test --release -- --list`; the underlying 539 `#[test]`
+  annotations expand via doctests + integration tiers). The badge had
+  not tracked actual count for several releases. Wiki Home was `282+`.
+- **chapel-ci `chapel-multilocale` gate** robustified (#100 collateral):
+  pinned `CHPL_UNWIND=system` explicitly + moved `libunwind-dev` install
+  to always-run (not gated on cache-hit). On cache-hit runs without
+  libunwind-dev, chpl auto-inferred `CHPL_UNWIND=bundled` and aborted
+  with "no runtime for bundled" because the cached runtime was built
+  with `system`. Cache-gen counter bumped `v1` → `v2` to discard the
+  inconsistent cache. Fifth Chapel-2.8.0 sharp edge from #99 Wave 2.
 - **ROADMAP v2.2.0**: downgraded "Per-project VeriSimDB instance:
   `deploy/panic-attack/fly.toml` for `verisim-panic-api`" from `[x]` to
   `[~]` — the API runs but the toml file is NOT in this repo (lives in
