@@ -28,6 +28,7 @@ pub mod axial;
 pub mod bridge;
 pub mod campaign;
 pub mod comment_marker;
+pub mod ffi_kind;
 pub mod i18n;
 pub mod jit_context;
 pub mod kanren;
