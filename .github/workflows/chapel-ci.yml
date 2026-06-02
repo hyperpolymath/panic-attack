@@ -16,20 +16,25 @@
 #   - SUCCESS if all 6 underlying jobs succeeded on a relevant change.
 #   - FAILURE if any underlying job failed.
 #
-# Six strict jobs (no continue-on-error anywhere):
+# Seven strict jobs (no continue-on-error anywhere):
 #   1. chapel-parse-check   — chpl --parse-only on every module
 #   2. chapel-build         — chpl build of mass-panic + smoke (no toolbox)
 #   3. chapel-smoke         — chapel/smoke/two_repo_smoke (Chapel data flow)
 #   4. chapel-e2e           — mass-panic -nl 1 on a synthetic 2-repo manifest
-#                            True -nl 2 requires CHPL_COMM=gasnet which the
-#                            stock .deb doesn't ship; tracked for Wave 2.
 #   5. chapel-cli-contract  — panic-attack describe-contract vs expected fixture
 #   6. chapel-rust-diff     — rayon assemblyline vs Chapel single-locale parity
+#   7. chapel-multilocale   — mass-panic -nl 2 on the same synthetic 2-repo
+#                            corpus, against a Chapel built from source with
+#                            CHPL_COMM=gasnet + CHPL_LAUNCHER=smp (single-host
+#                            oversubscription). The source build is cached on
+#                            $CHPL_HOME; cold ~30-40 min, warm ~30s restore.
+#                            Closes the gap left by Wave 1 (issue #87).
 #
 # Plus the always-on aggregator: `chapel-ci-gate`.
 #
-# Wave 2 hardening tracker: SHA-pin the Chapel 2.8.0 .deb download. Today the
-# workflow trusts the HTTPS endpoint at chapel-lang/chapel releases.
+# Wave 2 hardening tracker: SHA-pin the Chapel 2.8.0 .deb + source tarball
+# downloads. Today the workflow trusts the HTTPS endpoints at chapel-lang/chapel
+# releases.
 
 name: chapel-ci
 
@@ -48,6 +53,11 @@ concurrency:
 env:
   CHAPEL_VERSION: "2.8.0"
   CHAPEL_DEB_URL: "https://github.com/chapel-lang/chapel/releases/download/2.8.0/chapel-2.8.0-1.ubuntu22.amd64.deb"
+  # Source tarball used by chapel-multilocale to build with CHPL_COMM=gasnet.
+  CHAPEL_SRC_URL: "https://github.com/chapel-lang/chapel/releases/download/2.8.0/chapel-2.8.0.tar.gz"
+  # $CHPL_HOME for the multilocale build. Cache key bumps via CHAPEL_MULTILOCALE_CACHE_GEN.
+  CHAPEL_MULTILOCALE_HOME: /opt/chapel-multilocale
+  CHAPEL_MULTILOCALE_CACHE_GEN: "v1"
 
 jobs:
   detect-relevant-changes:
@@ -248,12 +258,131 @@ jobs:
       - name: rayon vs Chapel single-locale aggregate parity
         run: ./chapel/tests/rayon_vs_chapel_diff.sh
 
+  chapel-multilocale:
+    name: chapel-multilocale
+    needs: detect-relevant-changes
+    if: needs.detect-relevant-changes.outputs.relevant == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 75
+    env:
+      CHPL_HOME: /opt/chapel-multilocale
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Cache the entire built-from-source Chapel tree. Key is stable across
+      # PRs as long as the version, conduit, launcher and cache-gen marker
+      # don't change. Cold build is ~30-40 min on a 2-core runner; warm
+      # restore is ~30s.
+      - name: Cache multilocale Chapel ($CHPL_HOME)
+        id: chapel-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CHAPEL_MULTILOCALE_HOME }}
+          key: ${{ runner.os }}-chapel-multilocale-${{ env.CHAPEL_VERSION }}-gasnet-smp-${{ env.CHAPEL_MULTILOCALE_CACHE_GEN }}
+
+      - name: Install Chapel build dependencies
+        if: steps.chapel-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc g++ make perl python3 \
+            m4 autoconf automake libtool libunwind-dev pkg-config
+
+      - name: Build Chapel from source with CHPL_COMM=gasnet
+        if: steps.chapel-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o /tmp/chapel-src.tar.gz "${{ env.CHAPEL_SRC_URL }}"
+          sudo mkdir -p /opt
+          sudo tar -xzf /tmp/chapel-src.tar.gz -C /opt
+          sudo mv "/opt/chapel-${{ env.CHAPEL_VERSION }}" "${{ env.CHAPEL_MULTILOCALE_HOME }}"
+          sudo chown -R "$(id -u):$(id -g)" "${{ env.CHAPEL_MULTILOCALE_HOME }}"
+          cd "${{ env.CHAPEL_MULTILOCALE_HOME }}"
+          # Configure for single-host oversubscribed multilocale:
+          #   CHPL_COMM=gasnet      — multilocale communication layer
+          #   CHPL_COMM_SUBSTRATE=smp — shared-memory substrate (no NIC needed)
+          #   CHPL_LAUNCHER=smp     — spawn locales as local processes
+          export CHPL_HOME="${{ env.CHAPEL_MULTILOCALE_HOME }}"
+          export CHPL_COMM=gasnet
+          export CHPL_COMM_SUBSTRATE=smp
+          export CHPL_LAUNCHER=smp
+          export CHPL_TARGET_COMPILER=gnu
+          # CHPL_LLVM=none disables the LLVM backend (we only need the gnu C
+          # backend for the multilocale smoke test). Without this, the build
+          # tries to verify LLVM headers via clang/Basic/Version.h and aborts
+          # with a CHPL_LLVM "unset" make target.
+          export CHPL_LLVM=none
+          # setchplenv.bash references ${MANPATH} unconditionally; GH runners
+          # don't export MANPATH by default, so seed it before sourcing.
+          export MANPATH="${MANPATH:-}"
+          source util/setchplenv.bash
+          # Build chpl + runtime + GASNet+smp substrate
+          make -j"$(nproc)"
+          # Sanity: Chapel's runtime layout creates `comm-gasnet` directories
+          # somewhere under $CHPL_HOME/lib for each (comm, launcher, tasks, ...)
+          # variant. find -print -quit is format-independent and survives
+          # path-component renames between Chapel minor versions.
+          find "$CHPL_HOME/lib" -type d -name comm-gasnet -print -quit | grep -q comm-gasnet
+
+      - name: Activate multilocale Chapel
+        id: activate
+        run: |
+          set -euo pipefail
+          export CHPL_HOME="${{ env.CHAPEL_MULTILOCALE_HOME }}"
+          export CHPL_LLVM=none
+          export MANPATH="${MANPATH:-}"
+          source "$CHPL_HOME/util/setchplenv.bash"
+          # Persist env to subsequent steps via GITHUB_ENV
+          {
+            echo "CHPL_HOME=$CHPL_HOME"
+            echo "CHPL_COMM=gasnet"
+            echo "CHPL_COMM_SUBSTRATE=smp"
+            echo "CHPL_LAUNCHER=smp"
+            echo "CHPL_TARGET_COMPILER=gnu"
+            echo "PATH=$CHPL_HOME/bin/$(uname -s)-$(uname -m):$PATH"
+          } >> "$GITHUB_ENV"
+          chpl --version
+          find "$CHPL_HOME/lib" -type d -name comm-gasnet -print -quit | grep -q comm-gasnet
+
+      - name: Build mass-panic against multilocale Chapel
+        working-directory: chapel
+        run: |
+          set -euo pipefail
+          chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o mass-panic
+
+      - name: End-to-end -nl 2 exercise (oversubscribed locales on single runner)
+        run: |
+          set -euo pipefail
+          WORK=$(mktemp -d /tmp/chapel-multilocale-XXXXXX)
+          trap 'rm -rf "$WORK"' EXIT
+          mkdir -p "$WORK/corpus/repo-alpha/src" "$WORK/corpus/repo-beta/src"
+          echo 'pub unsafe fn a() {}' > "$WORK/corpus/repo-alpha/src/lib.rs"
+          echo 'pub unsafe fn b() {}' > "$WORK/corpus/repo-beta/src/lib.rs"
+          for d in repo-alpha repo-beta; do
+            (cd "$WORK/corpus/$d" && git init -q && git add -A && git -c user.email=ci@example.com -c user.name=ci commit -q -m init)
+          done
+          # The smp launcher spawns N processes on the local host. -nl 2 is
+          # the minimum non-trivial multilocale exercise; oversubscription
+          # is fine for verification (latency, not throughput, matters here).
+          ./chapel/mass-panic \
+            --repoDirectory="$WORK/corpus" \
+            --numLocales=2 \
+            --quiet \
+            --outputDir="$WORK/out"
+          # Two-locale run produced a system image
+          ls "$WORK/out"/system-image-*.json >/dev/null
+          # And that image references both repos (cross-locale aggregation)
+          grep -q 'repo-alpha' "$WORK/out"/system-image-*.json
+          grep -q 'repo-beta' "$WORK/out"/system-image-*.json
+          echo "chapel-multilocale: PASS (-nl 2, gasnet+smp)"
+
   # Always-on aggregator. This is the ONLY job listed in the Base ruleset's
   # required_status_checks rule. If detect-relevant-changes determined nothing
   # in this PR touches Chapel-relevant paths, the gate passes immediately
-  # (the six per-task jobs above skip via their `if:` guard). If a relevant
+  # (the seven per-task jobs above skip via their `if:` guard). If a relevant
   # change is present, the gate inspects each job's result and only passes
-  # when ALL six succeeded.
+  # when ALL seven succeeded.
   chapel-ci-gate:
     name: chapel-ci-gate
     needs:
@@ -264,6 +393,7 @@ jobs:
       - chapel-e2e
       - chapel-cli-contract
       - chapel-rust-diff
+      - chapel-multilocale
     if: always()
     runs-on: ubuntu-22.04
     steps:
@@ -276,11 +406,12 @@ jobs:
           R_E2E: ${{ needs.chapel-e2e.result }}
           R_CLI: ${{ needs.chapel-cli-contract.result }}
           R_DIFF: ${{ needs.chapel-rust-diff.result }}
+          R_MULTILOCALE: ${{ needs.chapel-multilocale.result }}
         run: |
           set -euo pipefail
           echo "detect-relevant-changes.outputs.relevant=$RELEVANT"
-          printf 'parse-check=%s\nbuild=%s\nsmoke=%s\ne2e=%s\ncli-contract=%s\nrust-diff=%s\n' \
-            "$R_PARSE" "$R_BUILD" "$R_SMOKE" "$R_E2E" "$R_CLI" "$R_DIFF"
+          printf 'parse-check=%s\nbuild=%s\nsmoke=%s\ne2e=%s\ncli-contract=%s\nrust-diff=%s\nmultilocale=%s\n' \
+            "$R_PARSE" "$R_BUILD" "$R_SMOKE" "$R_E2E" "$R_CLI" "$R_DIFF" "$R_MULTILOCALE"
           if [[ "$RELEVANT" != "true" ]]; then
             echo "chapel-ci-gate: SKIP (no chapel-relevant paths changed) → PASS"
             exit 0
@@ -291,7 +422,7 @@ jobs:
             exit 1
           fi
           fail=0
-          for r in "$R_PARSE" "$R_BUILD" "$R_SMOKE" "$R_E2E" "$R_CLI" "$R_DIFF"; do
+          for r in "$R_PARSE" "$R_BUILD" "$R_SMOKE" "$R_E2E" "$R_CLI" "$R_DIFF" "$R_MULTILOCALE"; do
             case "$r" in
               success) ;;
               *) fail=$((fail + 1)) ;;
@@ -301,4 +432,4 @@ jobs:
             echo "chapel-ci-gate: $fail dependent job(s) did not succeed → FAIL"
             exit 1
           fi
-          echo "chapel-ci-gate: all six gates green → PASS"
+          echo "chapel-ci-gate: all seven gates green → PASS"
