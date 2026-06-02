@@ -19,9 +19,12 @@ mod axial;
 #[cfg(feature = "http")]
 mod bridge;
 mod campaign;
+mod comment_marker;
 mod diagnostics;
+mod ffi_kind;
 mod groove;
 mod i18n;
+mod jit_context;
 mod kanren;
 mod kin;
 mod mass_panic;
@@ -32,6 +35,7 @@ mod report;
 mod signatures;
 mod storage;
 mod sweep_tracker;
+mod test_context;
 mod types;
 
 extern crate walkdir;
