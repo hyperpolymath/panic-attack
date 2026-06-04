@@ -9,9 +9,11 @@
 mod a2ml;
 mod abduct;
 mod adjudicate;
+mod aggregate;
 mod ambush;
 mod amuck;
 mod assail;
+mod assay;
 mod assemblyline;
 mod attack;
 mod attestation;
@@ -45,7 +47,9 @@ use crate::abduct::{
     AbductConfig, DependencyScope, ExecutionCommand as AbductExecutionCommand, TimeMode,
 };
 use crate::adjudicate::AdjudicateConfig;
+use crate::aggregate::{AggregateConfig, ProofInput};
 use crate::amuck::{AmuckConfig, AmuckPreset, ExecutionCommand as AmuckExecutionCommand};
+use crate::assay::{AssayConfig, AssimilateConfig};
 use crate::attack::AttackProfile;
 use crate::axial::{AxialConfig, ExecutionCommand as AxialExecutionCommand};
 use crate::i18n::Lang;
@@ -447,6 +451,92 @@ enum Commands {
 
         /// Optional report output path (JSON)
         #[arg(short, long, value_name = "OUT")]
+        output: Option<PathBuf>,
+    },
+
+    /// Assay: survey a target for proven-library substitution candidates.
+    ///
+    /// Scans the target for code that has a formally proven drop-in
+    /// equivalent in a `proven` / `proven-servers` library and reports each
+    /// swap candidate with the proof artifact that backs it. Operationalises
+    /// the "Proven cross-fit" section of PROOF-PROGRAMME.md.
+    Assay {
+        /// Target directory to survey (default: current directory)
+        #[arg(value_name = "TARGET", default_value = ".")]
+        target: PathBuf,
+
+        /// Local checkout of a proven / proven-servers library to resolve
+        /// replacement sources from (repeatable)
+        #[arg(long = "proven", value_name = "DIR", action = clap::ArgAction::Append)]
+        proven: Vec<PathBuf>,
+
+        /// Output report to file (JSON)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Assimilate: apply a proven-library substitution found by `assay`.
+    ///
+    /// Stages the proven module into the tree (backing up the original) and
+    /// records provenance — source BLAKE3 hash + proof backing — under
+    /// `.assimilated/`. Call sites that still need manual rewiring are
+    /// reported, never auto-edited.
+    Assimilate {
+        /// Target directory (default: current directory)
+        #[arg(value_name = "TARGET", default_value = ".")]
+        target: PathBuf,
+
+        /// Local proven / proven-servers checkout(s) for replacement sources
+        #[arg(long = "proven", value_name = "DIR", action = clap::ArgAction::Append)]
+        proven: Vec<PathBuf>,
+
+        /// Candidate id to apply (run `assay` to list ids); omit with --all
+        #[arg(long, value_name = "ID")]
+        candidate: Option<String>,
+
+        /// Apply every offered candidate
+        #[arg(long, default_value_t = false)]
+        all: bool,
+
+        /// Explicit replacement source file (overrides catalogue resolution;
+        /// only valid with a single --candidate)
+        #[arg(long, value_name = "FILE")]
+        from: Option<PathBuf>,
+
+        /// Preview only: compute the swap but write nothing
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Output outcome to file (JSON)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Aggregate: fold external prover output into a report (hashed, trust-tagged).
+    ///
+    /// Hashes each prover artifact (BLAKE3) for non-repudiation, classifies
+    /// its verdict (closed / holes / refuted), and reconciles it against an
+    /// existing report's findings (backed / corroborated / contradicted).
+    /// Verdicts are explicitly conditioned on the named checker's trust.
+    Aggregate {
+        /// External prover output file(s) to fold in (repeatable)
+        #[arg(long = "proof", value_name = "PATH", action = clap::ArgAction::Append, required = true)]
+        proofs: Vec<PathBuf>,
+
+        /// Friendly-name override(s): PATH=NAME (repeatable)
+        #[arg(long = "label", value_name = "PATH=NAME", action = clap::ArgAction::Append)]
+        labels: Vec<String>,
+
+        /// Coverage override(s): PATH=[claim:]kind:value (repeatable)
+        #[arg(long = "covers", value_name = "PATH=SPEC", action = clap::ArgAction::Append)]
+        covers: Vec<String>,
+
+        /// Base assail/assault report to reconcile against (optional)
+        #[arg(long = "report", value_name = "PATH")]
+        report: Option<PathBuf>,
+
+        /// Output report to file (JSON; default: reports/aggregate-<ts>.json)
+        #[arg(short, long)]
         output: Option<PathBuf>,
     },
 
@@ -1237,6 +1327,18 @@ fn default_axial_report_path() -> PathBuf {
 fn default_axial_markdown_path() -> PathBuf {
     let ts = chrono::Utc::now().format("%Y%m%d%H%M%S");
     PathBuf::from(format!("reports/axial-{}.md", ts))
+}
+
+fn default_aggregate_report_path() -> PathBuf {
+    let ts = chrono::Utc::now().format("%Y%m%d%H%M%S");
+    PathBuf::from(format!("reports/aggregate-{}.json", ts))
+}
+
+/// Parse a `KEY=VALUE` CLI spec, splitting on the first `=`.
+fn parse_kv(spec: &str) -> Result<(String, String)> {
+    spec.split_once('=')
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .ok_or_else(|| anyhow!("expected KEY=VALUE, got '{}'", spec))
 }
 
 fn main() -> Result<()> {
@@ -2856,6 +2958,172 @@ fn run_main() -> Result<()> {
             }
 
             return Ok(());
+        }
+
+        Commands::Assay {
+            target,
+            proven,
+            output,
+        } => {
+            qprintln!(
+                cli.quiet,
+                "Assaying {} for proven-library substitutions",
+                target.display()
+            );
+            let report = assay::run(AssayConfig {
+                target,
+                proven_sources: proven,
+            })?;
+            if let Some(path) = &output {
+                assay::write_report(&report, path)?;
+                qprintln!(cli.quiet, "Assay report saved to: {}", path.display());
+            } else if cli.quiet {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!(
+                    "\nAssay: {} candidate(s) across {} catalogue entries",
+                    report.candidates.len(),
+                    report.catalogue_entries
+                );
+                for c in &report.candidates {
+                    println!(
+                        "  [{}] {} — {:?} ({} hit(s), confidence {:.2})",
+                        c.id,
+                        c.proven_name,
+                        c.status,
+                        c.target_hits.len(),
+                        c.confidence
+                    );
+                    println!("        backing: {}", c.proof_backing);
+                }
+                for n in &report.notes {
+                    println!("  note: {}", n);
+                }
+            }
+        }
+
+        Commands::Assimilate {
+            target,
+            proven,
+            candidate,
+            all,
+            from,
+            dry_run,
+            output,
+        } => {
+            qprintln!(
+                cli.quiet,
+                "Assimilating proven substitution(s) into {}",
+                target.display()
+            );
+            let outcome = assay::assimilate(AssimilateConfig {
+                target,
+                proven_sources: proven,
+                candidate_id: candidate,
+                from,
+                apply_all: all,
+                dry_run,
+            })?;
+            if let Some(path) = &output {
+                let json = serde_json::to_string_pretty(&outcome)?;
+                if let Some(parent) = path.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        fs::create_dir_all(parent)?;
+                    }
+                }
+                fs::write(path, json)?;
+                qprintln!(
+                    cli.quiet,
+                    "Assimilation outcome saved to: {}",
+                    path.display()
+                );
+            } else if cli.quiet {
+                println!("{}", serde_json::to_string_pretty(&outcome)?);
+            } else {
+                println!("\nAssimilate: {} action(s)", outcome.applied.len());
+                for r in &outcome.applied {
+                    println!(
+                        "  [{}] {:?} -> {}",
+                        r.candidate_id,
+                        r.action,
+                        r.destination.display()
+                    );
+                    if !r.pending_callsite_rewires.is_empty() {
+                        println!(
+                            "      {} call site(s) still need manual rewiring:",
+                            r.pending_callsite_rewires.len()
+                        );
+                        for h in &r.pending_callsite_rewires {
+                            println!("        {}:{}", h.file.display(), h.line);
+                        }
+                    }
+                }
+                for n in &outcome.notes {
+                    println!("  note: {}", n);
+                }
+            }
+        }
+
+        Commands::Aggregate {
+            proofs,
+            labels,
+            covers,
+            report,
+            output,
+        } => {
+            let mut label_map: HashMap<String, String> = HashMap::new();
+            for kv in &labels {
+                let (p, name) = parse_kv(kv)?;
+                label_map.insert(p, name);
+            }
+            let mut covers_map: HashMap<String, Vec<aggregate::Coverage>> = HashMap::new();
+            for kv in &covers {
+                let (p, spec) = parse_kv(kv)?;
+                let cov = aggregate::parse_coverage_spec(&spec)
+                    .ok_or_else(|| anyhow!("invalid --covers spec '{}'", spec))?;
+                covers_map.entry(p).or_default().push(cov);
+            }
+            let proof_inputs: Vec<ProofInput> = proofs
+                .into_iter()
+                .map(|path| {
+                    let key = path.to_string_lossy().to_string();
+                    ProofInput {
+                        label: label_map.get(&key).cloned(),
+                        covers: covers_map.get(&key).cloned().unwrap_or_default(),
+                        path,
+                    }
+                })
+                .collect();
+            let agg = aggregate::run(AggregateConfig {
+                proofs: proof_inputs,
+                base_report: report,
+            })?;
+            let path = output.unwrap_or_else(default_aggregate_report_path);
+            aggregate::write_report(&agg, &path)?;
+            if !cli.quiet {
+                println!(
+                    "\nAggregate: {} proof artifact(s) folded in",
+                    agg.aggregated_proofs.len()
+                );
+                for p in &agg.aggregated_proofs {
+                    let short = &p.hash.hex[..p.hash.hex.len().min(16)];
+                    println!(
+                        "  {} [{:?}] {:?}  {}:{}…",
+                        p.friendly_name, p.prover, p.verdict, p.hash.algorithm, short
+                    );
+                }
+                if !agg.reconciliations.is_empty() {
+                    println!("  reconciliations:");
+                    for r in &agg.reconciliations {
+                        println!(
+                            "    {:?}: {} ({} finding(s)) — {}",
+                            r.effect, r.subject, r.affected_findings, r.detail
+                        );
+                    }
+                }
+                println!("  TRUST: {}", agg.trust_disclaimer);
+            }
+            qprintln!(cli.quiet, "Aggregate report saved to: {}", path.display());
         }
     }
 
