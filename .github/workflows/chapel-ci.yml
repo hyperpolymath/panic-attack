@@ -65,6 +65,7 @@ jobs:
   detect-relevant-changes:
     name: detect-relevant-changes
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     outputs:
       relevant: ${{ steps.f.outputs.relevant }}
     steps:
@@ -99,6 +100,7 @@ jobs:
     needs: detect-relevant-changes
     if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
@@ -121,6 +123,7 @@ jobs:
     needs: [detect-relevant-changes, chapel-parse-check]
     if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
@@ -151,6 +154,7 @@ jobs:
     needs: [detect-relevant-changes, chapel-build]
     if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
@@ -175,6 +179,7 @@ jobs:
     needs: [detect-relevant-changes, chapel-build]
     if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
@@ -211,6 +216,7 @@ jobs:
     needs: detect-relevant-changes
     if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
@@ -231,6 +237,7 @@ jobs:
     needs: [detect-relevant-changes, chapel-build]
     if: needs.detect-relevant-changes.outputs.relevant == 'true'
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
@@ -417,6 +424,7 @@ jobs:
       - chapel-multilocale
     if: always()
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - name: Aggregate chapel-ci results
         env:
