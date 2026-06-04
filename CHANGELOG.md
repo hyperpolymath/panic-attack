@@ -16,6 +16,17 @@
   (a genuine seal verifies), plus two corollaries. Typechecks under Idris2
   0.8.0. Closes #123.
 
+### Added — contractile registry (INDEX.a2ml)
+
+- **`.machine_readable/contractiles/INDEX.a2ml`**: the previously-missing
+  contractile registry, modelled on echidna's canonical INDEX. Catalogues all
+  six verbs (must / trust / intend / adjust / bust / dust) with their *actual
+  current locations* across the three pre-consolidation trees, flags the
+  duplicate `trust` Trustfile, and records the canonical trident target. The
+  physical consolidation of the three trees stays in #124 — it couples to the
+  `contractile gen-just` generator (which reads the root `contractiles/` tree)
+  and needs the standards CONTRACTILE-SPEC to do safely.
+
 ### Added — `assay` / `assimilate` / `aggregate` proof-integration subcommands
 
 Three new a-themed subcommands that wire panic-attack into the
