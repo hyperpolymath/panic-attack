@@ -1,4 +1,7 @@
-<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 <!--
   Draft comment for posting on panic-attack#33 after PR feat/chapel-ci-strict-gates merges.
   Not auto-posted; the PR author or a maintainer pastes this onto the issue.

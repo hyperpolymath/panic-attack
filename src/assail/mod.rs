@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Assail static analysis module
 //!
 //! Pre-analyzes target programs to identify weak points and recommend attacks

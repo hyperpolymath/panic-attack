@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Panic-Attacker — Universal Stress Testing & Bug Signature Detection.
 //!
 //! This crate provides the core engine for "Security Ambush" operations.

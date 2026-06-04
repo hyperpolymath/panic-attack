@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! CVE intelligence — queries vulnerability feeds for known issues.
 //!
 //! MVP: OSV API (api.osv.dev) only. Phase 2 adds NVD, GHSA, VirusTotal,

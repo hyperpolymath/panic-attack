@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! ISO 639-1 language code validation and metadata.
 //!
 //! Ported from the lol (1000Langs) project's `Iso639.res` module which

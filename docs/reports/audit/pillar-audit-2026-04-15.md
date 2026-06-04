@@ -1,3 +1,7 @@
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 # Gemini Audit Report (M2: Pillar Repo Audits)
 Date: 2026-04-15
 Repository: /var/mnt/eclipse/repos/panic-attacker

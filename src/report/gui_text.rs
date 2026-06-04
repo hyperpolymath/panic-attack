@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Headless GUI report renderer — text-only output, no display server.
 //!
 //! This is the `gui --headless` path. It is always compiled (independent of the

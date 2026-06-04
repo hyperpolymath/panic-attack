@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! SARIF 2.1.0 output for GitHub Security tab integration
 //!
 //! Converts AssailReport weak points into OASIS SARIF format.

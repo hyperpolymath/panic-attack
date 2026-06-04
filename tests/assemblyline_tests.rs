@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Tests for the assemblyline subcommand (batch repo scanning)
 
 use panic_attack::assemblyline::{self, AssemblylineConfig};

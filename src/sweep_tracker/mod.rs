@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Estate-sweep tracker — Markdown report generator (issue #33 follow-up).
 //!
 //! Produces a hierarchical issue-#32-style sweep tracker by joining the

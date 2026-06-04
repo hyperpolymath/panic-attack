@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Execution evidence accumulator.
 //!
 //! During the scan, the accumulator is wired into the file-reading loop

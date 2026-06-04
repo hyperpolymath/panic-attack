@@ -1,5 +1,7 @@
-<!-- SPDX-License-Identifier: MPL-2.0 -->
-
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 # ADR 0001 — Chapel as a detachable distributed-scanner harness
 
 * **Status:** Accepted (Wave 1 landed via PR `feat/chapel-ci-strict-gates`)

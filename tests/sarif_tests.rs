@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Tests for SARIF 2.1.0 output format.
 //!
 //! All tests are panic-free: they return `Result` and propagate errors with

@@ -1,5 +1,7 @@
-<!-- SPDX-License-Identifier: MPL-2.0 -->
-
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 # Ambush Timeline & Event-Chain Plan (DAW-style)
 
 This document captures the long-range design for a DAW-like timeline model that

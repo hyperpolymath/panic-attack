@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Temporal navigation — time-series snapshots of system health.
 //!
 //! Every mass-panic scan produces a SystemImage. This module stores those

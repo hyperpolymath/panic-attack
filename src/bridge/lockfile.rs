@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Lockfile parsers — extracts locked dependencies from Cargo.lock, mix.lock,
 //! package-lock.json, and requirements.txt for CVE feed queries.
 

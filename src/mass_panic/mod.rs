@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Mass-panic: datacenter-scale codebase imaging and temporal navigation.
 //!
 //! This module provides the Rust-side types and logic for mass-panic mode.

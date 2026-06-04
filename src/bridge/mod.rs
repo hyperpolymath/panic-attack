@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Patch Bridge — CVE mitigation lifecycle for upstream vulnerabilities.
 //!
 //! Bridges the gap between CVE disclosure and upstream fix by providing:

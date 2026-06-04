@@ -1,3 +1,7 @@
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 # Codebase Annotation Map
 
 This document annotates the panic-attack codebase at an architectural level so maintainers can

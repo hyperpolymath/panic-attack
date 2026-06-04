@@ -1,3 +1,7 @@
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 # 007 False Positive Guidance for Panic-Attack
 
 This document explains common false positives encountered when running panic-attack on the 007 repository and how to avoid them in future.

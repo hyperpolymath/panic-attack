@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Tests for language-specific detection patterns.
 //!
 //! All tests are panic-free: the file-creation helper returns `Result`,

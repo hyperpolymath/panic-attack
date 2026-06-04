@@ -1,3 +1,7 @@
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 # panic-attack: Technical Design
 
 > **Note**: This document describes the original design from 2026-02-07. The tool has since

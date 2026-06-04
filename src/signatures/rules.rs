@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Datalog-style rule definitions for bug detection
 //!
 //! Each rule has a head predicate (what it concludes) and body predicates

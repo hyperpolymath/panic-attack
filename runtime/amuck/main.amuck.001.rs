@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! panic-attack: Universal stress testing and logic-based bug signature detection
 //!
 //! A tool for stress testing programs across multiple attack axes (CPU, memory, disk, network,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Adjudicate campaign-wide findings using miniKanren-style rule inference.
 
 use crate::abduct::AbductReport;

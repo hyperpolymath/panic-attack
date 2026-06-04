@@ -1,3 +1,7 @@
+<!--
+SPDX-License-Identifier: MPL-2.0
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+-->
 # Attack Profiles
 
 Attack profiles let you pass custom arguments to target programs during assaults. Profiles are

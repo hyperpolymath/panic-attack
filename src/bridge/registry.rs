@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Mitigation registry — tracks active mitigations and their lifecycle.
 //!
 //! For MVP, the registry is a JSON file at `.machine_readable/patch-bridge/registry.json`.

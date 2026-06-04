@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Seam contract tests — pin the JSON schema fields consumed by downstream
 //! tools (panicbot, Hypatia, PanLL) so schema drift is caught in CI before
 //! it silently breaks a consumer.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 //! Minimal GUI for reviewing assault reports, system images, and temporal diffs.
 //!
 //! This module is compiled only when the `gui` feature is enabled because the

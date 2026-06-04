@@ -1,8 +1,7 @@
 <!--
 SPDX-License-Identifier: MPL-2.0
-Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 -->
-
 # Campaign 2026-05-26 — driver scripts
 
 These are the driver scripts used to run the 2026-05-26 estate sweep. They're filed alongside the human + machine campaign reports so the campaign is reproducible. See [`../2026-05-26.md`](../2026-05-26.md) for the report.
