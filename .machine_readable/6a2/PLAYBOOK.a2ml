@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# PLAYBOOK.a2ml — Operational playbook
+# Runbooks, build/test/scan procedures, deployment modes.
+
+[metadata]
+version = "1.0.0"
+last-updated = "2026-06-04"
+
+[build]
+with-patch-bridge = "cargo build --release --features http"
+without-patch-bridge = "cargo build --release"
+notes = "The http feature enables Patch Bridge (OSV API queries) and the verisim-push subcommand; it needs network at runtime, not build time. Standalone mode uses the no-feature build."
+
+[test]
+all = "cargo test --features http"
+core = "cargo test"
+readiness = "just readiness"
+readiness-summary = "just readiness-summary"
+notes = "Zero compiler warnings in release + test builds. Test harness is panic-free (Clade A): all test files return Result and use ?."
+
+[install]
+command = "cp target/release/panic-attack ~/.asdf/installs/rust/nightly/bin/"
+
+[scan]
+single-target = "panic-attack assail /path/to/repo"
+single-target-json = "panic-attack assail /path/to/repo --output report.json"
+single-target-verbose = "panic-attack assail /path/to/repo --verbose"
+json-stream = "panic-attack assail --output-format json   # panicbot invocation"
+stress-test = "panic-attack assault /path/to/target   # 6-axis stress testing"
+batch = "assemblyline batch scan across a repo directory (Mass-panic; rayon + BLAKE3 incremental)"
+delta = "panic-attack diff   # only report changes since last scan"
+query = "panic-attack query <s-expr>   # heads: category, rule-id, severity, repo, file, pr-state, since, crosslang, diff, and, or, not"
+panll-export = "panic-attack panll   # event-chain export for three-panel visualisation"
+
+[patch-bridge]
+triage = "panic-attack bridge triage /path/to/project"
+triage-json = "panic-attack bridge triage /path/to/project --output report.json"
+triage-register = "panic-attack bridge triage /path/to/project --register"
+triage-offline = "panic-attack bridge triage /path/to/project --offline"
+status = "panic-attack bridge status /path/to/project"
+requires = "--features http at build time"
+flow = "Parse Cargo.lock → query OSV API → reachability scan (.rs imports) → classify (Mitigable/Unmitigable/Informational) → JSON report"
+
+[verisim-push]
+command = "panic-attack verisim-push <hexad> --url --retry --fallback-dir"
+requires = "http Cargo feature"
+semantics = "local-writes-authoritative + push-additive; local hexad written first, push is additive"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deployment modes — three self-contained modes; none requires the others
+# ─────────────────────────────────────────────────────────────────────────────
+
+[deployment-modes.standalone]
+context = "USB / laptop / air-gapped"
+binary = "Single binary, zero runtime deps"
+usage = "assail / assault individual targets"
+build = "cargo build --release"
+
+[deployment-modes.panicbot]
+context = "gitbot-fleet / CI"
+behaviour = "Automated JSON scanning; PA001–PA025 codes; bot directives"
+invocation = "panic-attack assail --output-format json"
+directives = ".machine_readable/bot_directives/panicbot.scm"
+translator = "gitbot-fleet/bots/panicbot/src/translator.rs"
+suppression = "panicbot drops WeakPoints with suppressed = true"
+
+[deployment-modes.mass-panic]
+context = "assemblyline + verisimdb + Chapel"
+behaviour = "Org-scale batch scanning with incremental BLAKE3 fingerprinting, hexad persistence, delta reporting, notifications"
+parallelism = "rayon (per-repo); Chapel coforall planned for distributed multi-machine (v3.0.0)"
+persistence = "verisimdb hexads (document + semantic modalities); per-finding hexads gated by PANIC_ATTACK_STORE_FINDING_HEXADS=1"
+notify = "assemblyline → markdown summaries → GitHub issues (src/notify.rs)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runbooks
+# ─────────────────────────────────────────────────────────────────────────────
+
+[incident-response]
+steps = [
+  "Check .machine_readable/6a2/STATE.a2ml for current status",
+  "Review recent commits and CI results (chapel-ci.yml aggregator gate)",
+  "Re-run cargo test --features http to confirm the regression",
+  "Dogfood: run panic-attack assail on panic-attack's own source",
+  "If a false positive: record an audited classification in audits/assail-classifications.a2ml (never edit the source under scan to hide it)"
+]
+
+[release-process]
+steps = [
+  "Update version in STATE.a2ml and META.a2ml",
+  "Run cargo test --features http (all suites) and confirm zero warnings",
+  "Run just readiness-summary",
+  "Tag the release with git tag vX.X.X",
+  "Push the tag to origin"
+]
+
+[rollback-process]
+steps = [
+  "Identify the last stable tag",
+  "Revert to the stable tag with git revert",
+  "Re-run cargo test --features http to confirm green"
+]
+
+[suppression-runbook]
+when = "A reported WeakPoint is a legitimate, audited residual (e.g. genuine FFI unsafe)"
+steps = [
+  "Write the audit (e.g. audits/audit-ffi-unsafe.md §1) explaining why the residual is sound",
+  "Add a classification entry to audits/assail-classifications.a2ml naming file + category + audit reference + rationale",
+  "Re-run the scan; apply_user_classifications flips the finding to suppressed = true",
+  "Commit the registry edit as a reviewable companion change — never a single-side source edit"
+]
+reference = "hyperpolymath/007 audits/assail-classifications.a2ml"
+
+[monitoring]
+self-check = "src/diagnostics.rs — self-check for Hypatia / gitbot-fleet (env-var watcher)"
+warnings-policy = "Zero compiler warnings in release + test builds"
+ci = ".github/workflows/chapel-ci.yml (MassPanic wiring + cross-rust contract checks + always-on aggregator gate)"

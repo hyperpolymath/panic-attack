@@ -3,8 +3,47 @@
 # Converted from ECOSYSTEM.scm on 2026-03-15
 
 [metadata]
+version = "0.2.0"
+last-updated = "2026-06-04"
 project = "panic-attack"
 ecosystem = "hyperpolymath"
 
+[project]
+name = "Panic Attack"
+full-name = "Panic Attack — static analysis and bug-signature detection tool"
+purpose = """Static analysis and bug-signature detection. Scans source code for weak
+points (unwrap/expect, unsafe blocks, panic sites, error-handling gaps, command
+injection, unsafe deserialization, FFI boundaries, atom exhaustion, proof drift,
+crypto misuse, supply-chain gaps, and more) across 49 language analyzers, emitting
+25 weak-point categories (PA001–PA025). A miniKanren logic engine adds taint
+analysis and cross-language vulnerability-chain reasoning."""
+role = "diagnostic-tool"
+
 [position]
+tier = "diagnostic"
 type = "component"
+hospital-model-role = """Diagnostic tool for software health within the AmbientOps
+hospital model. Loosely affiliated; sits alongside the Operating Room as a
+software-health diagnostic, while hardware-crash-team is the hardware-health
+sibling. Independent top-level repo that feeds findings into the hospital's
+Records system via verisimdb."""
+
+[related-projects]
+projects = [
+  { name = "verisimdb", relationship = "active-integration", notes = "Scan results persisted as hexads (document + semantic modalities). File I/O works; HTTP push via Chapel verisim-push subcommand under the http feature; full REST API integration planned." },
+  { name = "hypatia", relationship = "active-consumer", notes = "Neurosymbolic rule engine consumes JSON AssailReport (Elixir rules) and processes findings. Env-var watcher in diagnostics.rs. Planned: ingestion of test_context/ffi_kind/jit_context metadata." },
+  { name = "panll", relationship = "active-integration", notes = "Event-chain export for three-panel visualisation via the panll subcommand. Two dedicated panels: panic-attack (single-repo) and Mass Panic (assemblyline batch GUI)." },
+  { name = "assemblyline", relationship = "core-subsystem", notes = "Batch scanning of repo directories with rayon parallelism and BLAKE3 fingerprinting; the engine of Mass-panic mode. Feeds the notify pipeline." },
+  { name = "gitbot-fleet (panicbot)", relationship = "active-consumer", notes = "panicbot is the gitbot-fleet verifier bot. Invokes panic-attack assail --output-format json, translates WeakPoints to Findings PA001–PA025. Directives at .machine_readable/bot_directives/panicbot.scm; translator at gitbot-fleet/bots/panicbot/src/translator.rs." },
+  { name = "echidna / echidnabot", relationship = "planned-integration", notes = "echidnabot will perform proof verification of scan claims (planned). echidna's own NEUROSYM.a2ml references panic-attack as its code-only banned-pattern scanner; the two are reciprocal — panic-attack scans echidna's Rust + Idris2 ABI." },
+  { name = "hardware-crash-team", relationship = "sibling", notes = "Sibling diagnostic tool in the hospital model: hardware diagnostics vs panic-attack's software analysis." },
+  { name = "ambientops", relationship = "parent-context", notes = "The hospital-model umbrella. See ambientops/.claude/CLAUDE.md for the overview. panic-attack is loosely affiliated, not a hard dependency." },
+]
+
+[integration-surface]
+output-formats = ["text", "json"]
+panicbot-invocation = "panic-attack assail --output-format json"
+finding-codes = "PA001–PA025"
+verisim-push = "panic-attack verisim-push <hexad> --url --retry --fallback-dir (http feature)"
+panll-export = "panic-attack panll"
+attestation = "Optional Ed25519-signed intent→evidence→seal chain wrapped in an A2ML envelope"

@@ -9,7 +9,7 @@ The README makes claims. This file backs them up.
 
 === Claim 1: "49-language static analysis across multiple families"
 
-**How it works:** The `src/assail/analyzer.rs` module implements a per-file language detector that identifies file extension and shebang, dispatching to language-specific pattern matchers in `src/assail/patterns.rs`. Each language family (C/C++, Python, JavaScript, Rust, Go, etc.) has dedicated regex-based weak point detectors (unwrap, panic, unsafe blocks, expect, eval, hardcoded secrets). The analyzer processes 47 distinct language patterns without requiring external parsers—pattern-based shallow analysis enables fast scanning across heterogeneous codebases.
+**How it works:** The `src/assail/analyzer.rs` module implements a per-file language detector that identifies file extension and shebang, dispatching to language-specific pattern matchers in `src/assail/patterns.rs`. Each language family (C/C++, Python, JavaScript, Rust, Go, etc.) has dedicated regex-based weak point detectors (unwrap, panic, unsafe blocks, expect, eval, hardcoded secrets). The analyzer processes 49 distinct language patterns without requiring external parsers—pattern-based shallow analysis enables fast scanning across heterogeneous codebases.
 
 **Caveat:** Pattern-based analysis has false negatives (e.g., dead code paths triggering unwrap won't be caught) and false positives (commented-out panic sites flagged). Full AST-based analysis would eliminate these but scale poorly. For production, pair with specialized language linters (clippy, pylint) for each language.
 
@@ -41,7 +41,7 @@ The README makes claims. This file backs them up.
 |===
 | Path | Purpose
 
-| `src/main.rs` | CLI entry: 20 subcommands (assail, assault, temporal, panll, groove, bridge, etc.)
+| `src/main.rs` | CLI entry: 38 subcommands (assail, assault, assay, assimilate, aggregate, temporal, panll, groove, bridge, etc.)
 | `src/lib.rs` | Library API exposing all analysis engines
 | `src/assail/` | Static analysis (49 languages, 25 canonical PA-codes / 26 enum variants; `PA001` ⇒ `UncheckedAllocation` + `PA001b` ⇒ `UnboundedAllocation` SARIF subvariants)
 | `src/assail/analyzer.rs` | Per-file language detection and pattern matching dispatcher

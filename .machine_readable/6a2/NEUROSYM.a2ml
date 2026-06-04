@@ -1,0 +1,214 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# NEUROSYM.a2ml — Neurosymbolic semantics for static-analysis operations
+# Formal definitions of operation semantics, proof obligations, and composition rules
+# for the panic-attack miniKanren logic engine layered over 49 language analyzers.
+
+[metadata]
+version = "0.1.0"
+last-updated = "2026-06-04"
+spec-version = "NEUROSYM-FORMAT v0.1.0"
+authority = "Jonathan D.A. Jewell (hyperpolymath)"
+conformance = "NEUROSYM-FORMAT-SPEC-compliant"
+
+# === ARCHITECTURE ===
+# Symbolic reasoning layer over the syntactic analyzers.
+
+[architecture]
+neural-substrate = "Not a learned model — the 49 per-file language analyzers (src/assail/analyzer.rs + patterns.rs) provide the syntactic 'recognition' layer that surfaces candidate WeakPoints"
+symbolic-engine = "miniKanren-inspired relational logic engine (src/kanren/, v2.0.0) reasons over candidates: Term, Substitution, unification, FactDB, forward chaining"
+downstream-reasoner = "Hypatia neurosymbolic rule engine consumes the JSON AssailReport and applies Elixir rules"
+principle = "Recognition (analyzers) is heuristic and may over-report; relational reasoning (kanren) refines, links, and suppresses; the registry records honest residuals"
+
+# === OPERATION DEFINITIONS ===
+# For every core operation: forward semantics, inverse, claim-type, entropy-contribution, pre/postconditions.
+
+[operation-definitions.analyze]
+forward-semantics = "Run per-file language detection; apply that language's attack patterns; emit candidate WeakPoints (PA001–PA025) into an AssailReport"
+inverse = "Discard the report; re-scan from clean source (always possible — analysis is pure over file contents)"
+claim-type = "candidate (raw analyzer hits before kanren refinement and suppression)"
+entropy-contribution = 15
+preconditions = [
+  "target path readable",
+  "file language detectable (Latin-1 fallback for non-UTF-8)",
+  "path not under external_corpora/ / third_party/ / corpus/ (skipped)"
+]
+postconditions = [
+  "AssailReport populated with WeakPoints carrying category, file, line, severity",
+  "each WeakPoint.suppressed = false (pending suppression passes)"
+]
+
+[operation-definitions.taint-analysis]
+forward-semantics = "TaintAnalyzer tracks data flow from sources (user input, network, deserialization) to sinks (eval, shell commands, SQL queries) via relational source→sink resolution"
+inverse = "Drop derived taint facts; the underlying candidate WeakPoints remain"
+claim-type = "derived (a taint chain is inferred, not directly observed)"
+entropy-contribution = 25
+preconditions = [
+  "FactDB seeded with source and sink facts from the analyzers",
+  "unification available over Term"
+]
+postconditions = [
+  "source→sink chains materialised as new facts",
+  "CommandInjection / UnsafeDeserialization candidates corroborated or refuted"
+]
+
+[operation-definitions.crosslang-reasoning]
+forward-semantics = "CrossLangAnalyzer detects vulnerability chains crossing FFI / NIF / Port / subprocess boundaries between language families"
+inverse = "Drop cross-language edges; per-language facts persist"
+claim-type = "derived (boundary-crossing chain inferred from both sides)"
+entropy-contribution = 30
+preconditions = [
+  "facts present on both sides of a boundary (e.g. Rust unsafe extern + C callee)",
+  "boundary kind recognised (FFI/NIF/Port/subprocess)"
+]
+postconditions = [
+  "UnsafeFFI chains linked across files/languages",
+  "crosslang flag available to the query DSL"
+]
+
+[operation-definitions.forward-chaining]
+forward-semantics = "Apply detection rules to existing facts to derive new vulnerability facts until fixpoint"
+inverse = "Retract derived facts; base facts unchanged"
+claim-type = "derived (rule consequence)"
+entropy-contribution = 20
+preconditions = ["FactDB non-empty", "rule set loaded (src/signatures/rules.rs)"]
+postconditions = ["closure of derivable facts computed", "bug signatures (use-after-free, deadlock, etc.) surfaced"]
+
+[operation-definitions.backward-query]
+forward-semantics = "Given a target vulnerability type, find which files could cause it (relational backward search)"
+inverse = "None needed — query is read-only over the FactDB"
+claim-type = "derived (existential witness search)"
+entropy-contribution = 10
+preconditions = ["FactDB populated", "goal vulnerability type well-formed"]
+postconditions = ["witness file set returned (possibly empty)"]
+
+[operation-definitions.apply-suppression]
+forward-semantics = "Run the kanren structural-suppression pass over candidate WeakPoints; flip structurally-explained findings to suppressed = true"
+inverse = "Re-run analyze from source to recover the unsuppressed candidate set"
+claim-type = "refined (structural suppression is sound w.r.t. the rule set, not absolute ground truth)"
+entropy-contribution = 15
+preconditions = ["AssailReport populated by analyze", "suppression rules available"]
+postconditions = [
+  "structurally-explained candidates marked suppressed",
+  "apply_user_classifications runs next (registry overlay)",
+  "apply_v255_context_suppression runs after (test_context / comment_marker / ffi_kind / jit_context)"
+]
+
+[operation-definitions.user-classification-overlay]
+forward-semantics = "Load audits/assail-classifications.a2ml (or .panic-attack-classifications.a2ml fallback); flip matching audited findings to suppressed = true"
+inverse = "Remove the registry overlay; suppression reverts to the kanren structural result"
+claim-type = "audited (a human audit is recorded in a file SEPARATE from the source under scan)"
+entropy-contribution = 5
+preconditions = [
+  "registry file present and parseable (A2ML S-expression)",
+  "each classification names file + category + audit reference + rationale"
+]
+postconditions = [
+  "audited residuals suppressed with a reviewable provenance",
+  "self-suppression impossible: a new unsafe block cannot hide itself without a companion registry edit"
+]
+
+# === COMPOSITION RULES ===
+
+[composition-rules.scan-pipeline]
+pattern = "analyze ; apply_suppression ; apply_user_classifications ; apply_v255_context_suppression"
+entropy-behavior = "sum (each pass contributes independently)"
+claim-propagation = "monotone-refining (each pass can only suppress, never invent, a finding)"
+example = "analyze() / analyze_verbose() full pipeline"
+semantics = "Candidate set is produced once, then narrowed by successive sound suppression passes"
+
+[composition-rules.relational-derivation]
+pattern = "taint-analysis || crosslang-reasoning || forward-chaining (over a shared FactDB)"
+entropy-behavior = "sum (independent derivations accumulate facts)"
+claim-propagation = "additive (derived facts corroborate candidates; none are removed)"
+example = "kanren engine deriving CommandInjection + UnsafeFFI + bug signatures"
+semantics = "All derivations read the same FactDB; results union into the report"
+
+[composition-rules.suppression-precedence]
+pattern = "IF user-classification matches THEN audited-suppressed ELSE IF structural/context rule fires THEN rule-suppressed ELSE reported"
+entropy-behavior = "no-cost (precedence is metadata, not execution)"
+claim-propagation = "special (suppression status follows the highest-provenance match)"
+example = "Registry audit beats structural suppression beats raw candidate"
+semantics = "Audited classifications are the strongest suppression evidence because they are reviewable companion changes"
+
+# === PROOF OBLIGATIONS ===
+
+[proof-obligations.suppression-non-gameable]
+name = "A finding may only be suppressed via a change reviewable independently of the source under scan"
+claim-type = "audited"
+verification-method = "User-classification registry lives in audits/assail-classifications.a2ml, a separate file from the scanned source"
+discharge-requirements = [
+  "registry edit is a distinct, reviewable change from the source edit",
+  "each suppression names an audit reference (e.g. audits/audit-ffi-unsafe.md §1) + rationale"
+]
+failure-action = "report-finding (no valid companion classification ⇒ the WeakPoint is surfaced)"
+
+[proof-obligations.pattern-completeness]
+name = "Every supported language × category pair has a defined, total detection arm"
+claim-type = "verified"
+verification-method = "Idris2 ABI proof src/abi/PatternCompleteness.idr (49 languages, 25 categories, all proven total)"
+discharge-requirements = ["each (language, category) handled", "no partial match arms"]
+failure-action = "abort-build (ABI type-check fails; idris2 totality not satisfied)"
+
+[proof-obligations.strip-idempotence]
+name = "Comment-stripping used in detection is idempotent (strip(strip x) = strip x)"
+claim-type = "verified (partial — Layer 1.0)"
+verification-method = "Idris2 ABI proof src/abi/Stripping.idr (IsStrippedBody shape lemma + base cases Qed-closed)"
+discharge-requirements = ["stripBodyProducesStrippedShape proven", "line-comment base cases closed"]
+failure-action = "flag-open-obligation (slash-slash inductive closure remains open; tracked in PROOF-PROGRAMME row 1)"
+
+[proof-obligations.corpus-exclusion]
+name = "Vendored corpus directories are never scanned as first-party code"
+claim-type = "verified"
+verification-method = "Directory skip in analyzer for external_corpora/ / third_party/ / corpus/"
+discharge-requirements = ["path prefix match short-circuits analysis before pattern application"]
+failure-action = "abort-operation (a corpus-skip-abuse relocation would otherwise hide real source — see AGENTIC never-override)"
+
+# === TYPE SYSTEM ===
+
+[type-system.base-types]
+WeakPoint = "{ category: Category, file: String, line: Int, severity: Severity, suppressed: Bool, test_context: TestContext option, ffi_kind: FfiKind option, jit_context: JitContext option }"
+Category = "PA001..PA025 (UnsafeCode, PanicPath, CommandInjection, UnsafeDeserialization, AtomExhaustion, UnsafeFFI, PathTraversal, HardcodedSecret, ProofDrift, CryptoMisuse, SupplyChain, InputBoundary, MutationGap, ...)"
+AssailReport = "{ target: String, weak_points: WeakPoint list, summary: Counts }"
+Term = "{ ast: LogicTerm, var-bindings: Substitution }"
+Fact = "{ predicate: String, args: Term list }"
+TaintChain = "{ source: Site, sink: Site, path: Site list }"
+UserClassification = "{ file: String, category: Category, audit: String, rationale: String }"
+TestContext = "{ Rust | Python | Go | JsTs | Julia | Zig | Elixir | Docs }"
+FfiKind = "{ BuildSystem | RuntimeAbi | TestMock | Unknown }"
+JitContext = "{ Cranelift | Llvm | Wasm | Javascript | None }"
+
+[type-system.operation-signatures]
+analyze = "Path → AssailReport (always succeeds; emits candidate set)"
+taint-analysis = "FactDB → TaintChain list (always succeeds; possibly empty)"
+crosslang-reasoning = "FactDB → CrossLangChain list (always succeeds; possibly empty)"
+backward-query = "Category × FactDB → File set (always succeeds; existential search)"
+apply-suppression = "AssailReport → AssailReport (idempotent; monotone-refining)"
+apply-user-classifications = "AssailReport × RegistryFile → AssailReport (idempotent overlay)"
+
+[type-system.operations-that-never-fail]
+operations = [
+  "analyze (Latin-1 fallback handles non-UTF-8; unreadable files reported, not fatal)",
+  "backward-query (empty witness set is a valid answer)",
+  "apply-suppression (no-op if no rule fires)"
+]
+
+# === SEARCH STRATEGY ===
+# Risk-weighted file prioritisation (src/kanren/strategy.rs).
+
+[search-strategy]
+auto-selection = "SearchStrategy auto-selects per project characteristics"
+strategies = ["RiskWeighted", "BoundaryFirst", "LanguageFamily", "BreadthFirst", "DepthFirst"]
+boundary-first-when = "FFI/NIF/Port boundaries dominate the project"
+risk-weighted-when = "general-purpose default; prioritises files by accumulated risk facts"
+
+# === HYPATIA INTEGRATION ===
+
+[hypatia-config]
+scan-enabled = true
+report-format = "JSON (AssailReport)"
+consumer = "Hypatia neurosymbolic rule engine (Elixir rules)"
+finding-codes = "PA001–PA025"
+env-watcher = "src/diagnostics.rs (self-check for Hypatia / gitbot-fleet)"
+planned = "Ingestion of test_context / ffi_kind / jit_context; ContextSuppressed bucket distinct from RuleSuppressed"

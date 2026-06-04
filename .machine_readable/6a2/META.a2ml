@@ -7,3 +7,78 @@ project = "panic-attack"
 author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"
 license = "MPL-2.0"
 standard = "RSR 2026"
+version = "2.5.5"
+last-updated = "2026-06-04"
+status = "active"
+
+[project-context]
+name = "panic-attack"
+full-name = "Panic Attack — static analysis and bug-signature detection tool"
+completion-percentage = 99
+phase = "v2.5.5 — 25 detection categories + context-aware FP suppression + Chapel→VeriSimDB HTTP push"
+notes = """
+Static analysis engine that scans source across 49 language analyzers for
+25 weak-point categories (PA001–PA025). Renamed 2026-02-08: binary
+panic-attacker→panic-attack, subcommand xray→assail, module src/xray→src/assail,
+type XRayReport→AssailReport. Three self-contained deployment modes:
+Standalone, Panicbot, Mass-panic. See .claude/CLAUDE.md for the full surface.
+"""
+
+[dependencies]
+primary = ["Rust"]
+secondary = ["Chapel", "Idris2"]
+build-features = ["http"]
+notes = "Single-binary core has zero runtime deps (Standalone mode). The http feature enables Patch Bridge (OSV API). Chapel is planned for distributed Mass-panic orchestration. Idris2 ABI proofs (PatternCompleteness.idr, Stripping.idr) back the detection surface."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Architecture decisions
+# ─────────────────────────────────────────────────────────────────────────────
+
+[architecture.per-file-language-detection]
+decision = "Each file is analyzed with its own language-specific pattern set, not a single project-wide language guess"
+rationale = "Polyglot repositories are the norm; a Rust crate with embedded Zig FFI and shell build scripts needs each file matched to the right detector"
+consequence = "49 language analyzers in src/assail/analyzer.rs; corpus directories (external_corpora/, third_party/, corpus/) are skipped to avoid scanning vendored code"
+
+[architecture.minikanren-logic-engine]
+decision = "A miniKanren-inspired relational logic engine (src/kanren/) layers over the syntactic analyzers"
+rationale = "Taint flows, cross-language vulnerability chains, and false-positive suppression are relational reasoning problems, not regex problems"
+consequence = "TaintAnalyzer (source→sink), CrossLangAnalyzer (FFI/NIF/Port/subprocess boundaries), SearchStrategy (risk-weighted prioritisation), forward chaining + backward queries over a FactDB"
+
+[architecture.non-gameable-suppression]
+decision = "Audited findings are flipped to suppressed=true only via a project-local registry file held SEPARATELY from the source under scan"
+rationale = "If a source edit could self-suppress, adding a new unsafe block would be invisible; keeping the registry in a companion file makes every suppression a reviewable change"
+consequence = "audits/assail-classifications.a2ml (preferred) or .panic-attack-classifications.a2ml (fallback); applied by analyze()/analyze_verbose() after the kanren structural pass. Reference: hyperpolymath/007"
+
+[architecture.context-aware-fp-suppression]
+decision = "v2.5.5 adds content-aware classifiers (test_context, comment_marker, ffi_kind, jit_context) that run after the kanren rules"
+rationale = "A PanicPath in a test, an unsafe block behind an audited FFI build script, or a transmute inside a JIT compiler are legitimate residuals that should not be reported as defects"
+consequence = "apply_v255_context_suppression() flips test-only/doc PanicPath and BuildSystem/TestMock UnsafeFFI; inline `// panic-attack: accepted` markers honoured string-literal-aware"
+
+[architecture.three-phase-attestation]
+decision = "Scan runs can be wrapped in a cryptographic attestation chain: intent → evidence → seal"
+rationale = "Pipeline consumers need to bind a report to the exact inputs and commitments that produced it, optionally Ed25519-signed"
+consequence = "src/attestation/ (intent.rs, evidence.rs rolling hash, seal.rs, chain.rs, envelope.rs A2ML wrapper)"
+
+[architecture.deployment-modes]
+decision = "Three self-contained deployment modes share one binary; none requires the others"
+rationale = "The same engine must run air-gapped on a USB stick, inside CI as a verifier bot, and at org scale across a repo directory"
+consequence = "Standalone (zero-dep single binary), Panicbot (JSON for gitbot-fleet), Mass-panic (assemblyline rayon batch + BLAKE3 incremental + verisimdb hexads)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Development practices
+# ─────────────────────────────────────────────────────────────────────────────
+
+[practices]
+error-handling = "anyhow::Result throughout; production .unwrap() held to ≤50 and static-regex OnceLock closures use .expect()"
+serialization = "serde derive on all public types for machine-readable JSON output"
+warnings-policy = "Zero compiler warnings in release and test builds"
+spdx = "MPL-2.0 SPDX header on every file"
+panic-free-tests = "All 11 test files return Result and use ? (Clade A panic-free); 3 canonical patterns contributed to panic-free-tests-and-benches v1.2.0"
+dogfooding = "Self-scan E2E test scans panic-attack's own source as a representative target"
+
+[readiness-tests]
+location = "tests/readiness.rs"
+grade-d = "Alpha — component runs without crashing on valid input"
+grade-c = "Beta — component produces correct output on representative input"
+grade-b = "RC — component handles edge cases and multiple input types"
+runner = "just readiness / just readiness-summary"

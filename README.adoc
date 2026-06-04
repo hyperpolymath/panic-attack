@@ -161,7 +161,7 @@ It is designed to be **trustworthy**.
 
 == CLI & Automation
 
-`panic-attack` is a Clap-powered CLI. Each subcommand inherits a shared set of knobs so the UX is consistent whether developers run `assail`, `attack`, `assault`, `temporal`, `panll`, `groove`, or another entry point.
+`panic-attack` is a Clap-powered CLI. Each subcommand inherits a shared set of knobs so the UX is consistent whether developers run `assail`, `attack`, `assault`, `assay`, `aggregate`, `temporal`, `panll`, `groove`, or another entry point.
 
 === Global options
 
@@ -205,7 +205,7 @@ Current state: **v2.5.0**
 * 897 passing tests (per `cargo test --release`, 4 ignored; 901 runnable per `cargo test -- --list`) across unit / property / e2e / aspect / integration tiers
 * v2.5.5 cohort landed 2026-06-02: context-aware FP suppression via `test_context` / `comment_marker` / `ffi_kind` / `jit_context` modules — `// panic-attack: accepted` inline markers, automatic PanicPath suppression in test-only code, build.zig/build.rs auto-accept, Cranelift/LLVM/Wasm/JS JIT detection. See `PROOF-PROGRAMME.md` for the formal soundness landscape
 * 0 warnings
-* 25+ CLI subcommands
+* 38 CLI subcommands
 * 49 supported languages (25 canonical weak-point categories PA001–PA025; `PA001b` SARIF subvariant collapses two allocation flavors under the same canonical rule)
 
 See link:ROADMAP.adoc[ROADMAP.adoc] for full capability breakdown and milestones.

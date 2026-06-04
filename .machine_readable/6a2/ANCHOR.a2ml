@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MPL-2.0
+# ⚓ ANCHOR: panic-attack
+# Canonical authority and project recalibration trigger for panic-attack.
+# Template from: https://github.com/hyperpolymath/standards
+identity: "org.hyperpolymath.panic-attack.anchor"
+
+id: "org.hyperpolymath.panic-attack"
+version: "1.0.0"
+clade: "diagnostic"
+status: "active"
+
+# SSG Configuration (Unified boj-server build)
+ssg:
+  engine: "casket"
+  output_dir: "public"
+  boj_trigger: true
+  cartridge: "ssg-mcp"
+
+# Relationships
+parents:
+  - "org.hyperpolymath.boj-server"
+  - "org.hyperpolymath.ambientops"

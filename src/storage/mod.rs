@@ -1351,6 +1351,7 @@ pub fn latest_reports(dir: &Path, count: usize) -> Result<Vec<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_uuid_from_timestamp() {
@@ -1431,6 +1432,67 @@ mod tests {
                 fingerprint: None,
                 report: Some(assail),
             }],
+        }
+    }
+
+    // PROOF-PROGRAMME §3.1 (Hexad↔Octad), faithful form.
+    //
+    // The gateway projection `hexad_to_octad_request` is intentionally
+    // *lossy* — it flattens the semantic facet into a string metadata map
+    // and drops `id` / the optional sub-facets — so it is NOT an
+    // isomorphism. The property that actually underwrites on-disk integrity
+    // is the serde round-trip exercised by `write_*_hexad` → `load_hexad_dir`:
+    // a hexad serialised to its canonical JSON and read back must be
+    // identical. This proptest establishes that round-trip is the identity
+    // on the hexad's JSON representation (compared as `serde_json::Value`,
+    // so it is independent of key ordering). Equality is checked on the
+    // Value rather than the struct because `PanicAttackHexad` deliberately
+    // does not derive `PartialEq`.
+    proptest! {
+        #[test]
+        fn hexad_json_roundtrip_is_identity(
+            id in "[A-Za-z0-9:_./-]{0,48}",
+            program in "[A-Za-z0-9:_./-]{0,48}",
+            language in "[a-z]{0,12}",
+            version in "[0-9.]{1,8}",
+            total in 0usize..10_000,
+            crit in 0usize..10_000,
+            high in 0usize..10_000,
+            crashes in 0usize..10_000,
+            robustness in 0.0f64..=1.0,
+            cats in proptest::collection::vec("[A-Za-z]{1,16}", 0..6),
+            attest in proptest::option::of("[0-9a-f]{0,64}"),
+        ) {
+            let hexad = PanicAttackHexad {
+                schema: "panic-attack-hexad/1".to_string(),
+                id,
+                created_at: "2026-06-04T00:00:00Z".to_string(),
+                provenance: HexadProvenance {
+                    tool: "panic-attack".to_string(),
+                    version,
+                    program_path: program,
+                    language,
+                    attestation_hash: attest,
+                },
+                semantic: HexadSemantic {
+                    total_weak_points: total,
+                    critical_count: crit,
+                    high_count: high,
+                    total_crashes: crashes,
+                    robustness_score: robustness,
+                    categories: cats,
+                    migration: None,
+                    finding: None,
+                    campaign: None,
+                    crosslang: None,
+                },
+                document: serde_json::json!({ "weak_points": [], "n": total }),
+            };
+            let v1 = serde_json::to_value(&hexad).expect("serialise");
+            let back: PanicAttackHexad =
+                serde_json::from_value(v1.clone()).expect("deserialise");
+            let v2 = serde_json::to_value(&back).expect("re-serialise");
+            prop_assert_eq!(v1, v2);
         }
     }
 
