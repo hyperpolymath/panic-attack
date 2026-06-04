@@ -1,0 +1,188 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# AGENTIC.a2ml — AI agent operational gating and scan dispatch
+# Defines safety constraints, entropy budgets, and explicit-intent gating for AI agents
+# working in panic-attack (static-analysis scanner with 49 language analyzers,
+# 25 weak-point categories, and three deployment modes).
+
+[metadata]
+version = "0.1.0"
+last-updated = "2026-06-04"
+spec-version = "AGENTIC-FORMAT v0.1.0"
+authority = "Jonathan D.A. Jewell (hyperpolymath)"
+conformance = "AGENTIC-FORMAT-SPEC-compliant"
+
+# === AGENT ROLES ===
+# The concrete AI agents that interact with panic-attack and how.
+
+[agent-roles.panicbot]
+kind = "gitbot-fleet verifier bot"
+invokes = "panic-attack assail --output-format json"
+consumes = "JSON AssailReport"
+emits = "Findings PA001–PA025 (WeakPoints translated to fleet Findings)"
+directives = ".machine_readable/bot_directives/panicbot.scm"
+translator = "gitbot-fleet/bots/panicbot/src/translator.rs"
+filters = "Drops items with WeakPoint.suppressed = true (kanren + v2.5.5 context suppression)"
+notes = "Read-only consumer of scan output; never edits the repo under scan. Surfaces test_context + suppression-reason in fleet-side reports."
+
+[agent-roles.hypatia]
+kind = "neurosymbolic rule engine"
+consumes = "JSON AssailReport via Elixir rules"
+processes = "Findings as neurosymbolic facts; env-var watcher in src/diagnostics.rs"
+planned = "Ingestion of test_context / ffi_kind / jit_context metadata; ContextSuppressed bucket distinct from RuleSuppressed"
+notes = "Downstream rule processor; does not mutate panic-attack state."
+
+[agent-roles.echidnabot]
+kind = "proof-verification bot (planned)"
+purpose = "Proof verification of scan claims"
+status = "planned"
+reciprocal = "panic-attack scans echidna's Rust + Idris2 ABI for banned patterns (echidna NEUROSYM.a2ml proof-obligations.abi-integrity)"
+
+# === GATING POLICIES ===
+# Per-operation-class rules: when may an action proceed?
+
+[gating-policies]
+file-read = { mode = "auto", entropy-cost = 1, description = "Reading source files for analysis" }
+file-write = { mode = "auto", entropy-cost = 10, description = "Creating/modifying source files in the panic-attack repo" }
+scan-execute = { mode = "auto", entropy-cost = 15, description = "Running assail/assault on a target (read-only over the target tree)" }
+batch-scan = { mode = "auto", entropy-cost = 40, description = "assemblyline batch scan across a repo directory (rayon + BLAKE3)" }
+network-external = { mode = "require-confirmation", entropy-cost = 50, description = "OSV API queries (Patch Bridge, http feature) or GitHub issue creation (notify)" }
+state-mutation = { mode = "require-confirmation", entropy-cost = 30, description = "Writing the mitigation registry, verisimdb hexads, or suppression classifications" }
+suppression-edit = { mode = "require-confirmation", entropy-cost = 35, description = "Editing audits/assail-classifications.a2ml (flips findings to suppressed)" }
+credentials-read = { mode = "require-confirmation", entropy-cost = 75, description = "Accessing an Ed25519 signing key for attestation sealing" }
+credentials-write = { mode = "require-explicit-intent", entropy-cost = 100, description = "Storing or transmitting credentials" }
+
+# === ENTROPY BUDGETS ===
+# Session-scoped risk tracking: accumulated cost per operation type, four threshold levels.
+
+[entropy-budgets.operations]
+session-max = 500
+threshold-low = 100
+threshold-medium = 200
+threshold-high = 350
+threshold-critical = 500
+
+scan-run = 15               # Cost to run a single assail scan
+batch-scan-run = 40         # Cost to run an assemblyline batch scan
+osv-api-call = 50           # Cost to query the OSV CVE feed
+github-issue-create = 50    # Cost for the notify pipeline to open a GitHub issue
+file-write-source = 10      # Cost per source file modification
+file-write-critical = 75    # Cost per critical file (assail/analyzer.rs, kanren/*, types.rs)
+suppression-registry-edit = 35  # Cost to add/modify a suppression classification
+verisim-push = 30           # Cost to push a hexad to verisimdb
+attestation-seal = 60       # Cost to Ed25519-seal an attestation chain
+emergency-override = 200    # Cost to override a gating decision
+
+[entropy-budgets.thresholds]
+low = "Routine operations (read, scan, small writes, single-target assail)"
+medium = "Elevated risk (batch scan, source writes, suppression-registry edits)"
+high = "Sensitive operations (external API, GitHub issue creation, attestation sealing)"
+critical = "Reserved for emergency overrides only"
+
+# === RISK THRESHOLDS ===
+
+[risk-thresholds.low]
+entropy-range = [0, 100]
+operations = ["file-read", "scan-execute", "scan-run"]
+user-confirmation-required = false
+audit-log-level = "info"
+override-allowed = true
+
+[risk-thresholds.medium]
+entropy-range = [101, 200]
+operations = ["file-write", "batch-scan", "suppression-edit"]
+user-confirmation-required = false
+audit-log-level = "warning"
+override-allowed = true
+override-requires = "explicit-present-intent"
+
+[risk-thresholds.high]
+entropy-range = [201, 350]
+operations = ["network-external", "github-issue-create", "credentials-read", "attestation-seal"]
+user-confirmation-required = true
+audit-log-level = "critical"
+override-allowed = true
+override-requires = ["explicit-present-intent", "META-permit"]
+
+[risk-thresholds.critical]
+entropy-range = [351, 500]
+operations = ["credentials-write", "emergency-override"]
+user-confirmation-required = true
+audit-log-level = "critical"
+override-allowed = false
+never-override-actions = ["credential-exfiltration", "finding-falsification", "self-suppression", "attestation-forgery"]
+
+# === OVERRIDE PATHS ===
+
+[override-paths.bypass-1]
+condition = "User types: 'yes, I intend to <action>'"
+scope = "Any low/medium/high entropy operation"
+requires = ["explicit-present-intent-in-current-turn", "META-permit"]
+audit = "Must record user's exact intent phrase + timestamp"
+never-applies-to = ["credential-exfiltration", "finding-falsification", "self-suppression"]
+
+[override-paths.bypass-2]
+condition = "PLAYBOOK.a2ml explicitly schedules <action> with user's prior written intent"
+scope = "Pre-authorized scheduled operations (e.g. nightly Mass-panic batch scan)"
+requires = ["META-permit", "PLAYBOOK entry with timestamp"]
+audit = "Reference PLAYBOOK by section + date; log override use"
+never-applies-to = ["credential-exfiltration", "finding-falsification", "self-suppression"]
+
+[override-paths.never-override]
+actions = [
+  "credential-exfiltration (storing secrets in clear text, sending creds to untrusted service)",
+  "finding-falsification (suppressing a real WeakPoint without a reviewable companion classification, or silencing analyzer errors)",
+  "self-suppression (editing source under scan to hide a finding instead of recording an audited classification in the separate registry)",
+  "attestation-forgery (sealing an attestation chain that does not bind the actual scan inputs)",
+  "corpus-skip-abuse (relocating real source under external_corpora/ / third_party/ / corpus/ to dodge scanning)"
+]
+reason = "These actions irreversibly compromise panic-attack's diagnostic trust model. No override path exists."
+
+# === DECISION RECORDING ===
+
+[decision-recording]
+enabled = true
+backend = "attestation evidence chain (src/attestation/) + optional verisimdb hexads"
+columns = [
+  "timestamp (ISO 8601)",
+  "action_type (scan-execute, file-write, osv-api-call, suppression-edit, etc.)",
+  "target (path scanned or file written)",
+  "gate_result (allowed | denied)",
+  "entropy_cost (numeric)",
+  "entropy_after (session running total)",
+  "risk_threshold_applied (low | medium | high | critical)",
+  "user_intent_type (explicit-present | inferred-from-memory | none)",
+  "override_used (true | false)",
+  "audit_note (freetext; mandatory for denied/overridden actions)"
+]
+retention = "Bound to the attestation envelope; persisted to verisimdb where Mass-panic is active"
+
+# === AGENT PERMISSIONS & CONSTRAINTS ===
+
+[agent-permissions]
+can-edit-source = true
+can-edit-tests = true
+can-edit-docs = true
+can-edit-config = true
+can-create-files = true
+can-run-scans = true
+can-edit-suppression-registry = "with-confirmation"
+can-push-verisimdb = "with-confirmation"
+
+[agent-constraints]
+never-use = [
+  "hardcoded secrets or credentials",
+  "AGPL license (use MPL-2.0)",
+  "state files in repository root (use .machine_readable/ only)",
+  "self-suppressing source edits (record audits in the separate classification registry instead)",
+  "compiler warnings in release or test builds (zero-warning policy)",
+  ".unwrap() in test harness code (return Result and use ?; production .unwrap() held ≤50)"
+]
+always-do = [
+  "Check entropy budget before high-cost operations (network, GitHub issues, sealing)",
+  "Keep suppressions in audits/assail-classifications.a2ml — a reviewable companion change, never a single-side source edit",
+  "Run cargo test (--features http for bridge) before commit",
+  "Dogfood: scan panic-attack's own source after analyzer changes",
+  "Honour SPDX MPL-2.0 headers on every new file"
+]
