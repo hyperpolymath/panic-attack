@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added — attestation unforgeability proof (Idris2, PROOF-PROGRAMME §3.2)
+
+- **`src/abi/AttestationUnforgeability.idr`**: Idris2 proof that the
+  intent→evidence→seal attestation chain is unforgeable. Models
+  `chain_hash = H(intent‖evidence‖report)` + the Ed25519 signature with the
+  cryptographic facts (chain-hash collision-resistance, Ed25519 EUF-CMA
+  message- and signer-binding, signature correctness) as a `parameters`
+  block — hypotheses, **not** `postulate` (PA021 bans escape hatches), so it
+  is an honest *conditional* theorem. Under `%default total` it Qed-closes
+  `integrity` (tampering any phase invalidates the seal), `authenticity`
+  (a verifying seal comes from the matching key), and `nonRepudiation`
+  (a genuine seal verifies), plus two corollaries. Typechecks under Idris2
+  0.8.0. Closes #123.
+
+### Added — contractile registry (INDEX.a2ml)
+
+- **`.machine_readable/contractiles/INDEX.a2ml`**: the previously-missing
+  contractile registry, modelled on echidna's canonical INDEX. Catalogues all
+  six verbs (must / trust / intend / adjust / bust / dust) with their *actual
+  current locations* across the three pre-consolidation trees, flags the
+  duplicate `trust` Trustfile, and records the canonical trident target. The
+  physical consolidation of the three trees stays in #124 — it couples to the
+  `contractile gen-just` generator (which reads the root `contractiles/` tree)
+  and needs the standards CONTRACTILE-SPEC to do safely.
+
 ### Added — `assay` / `assimilate` / `aggregate` proof-integration subcommands
 
 Three new a-themed subcommands that wire panic-attack into the

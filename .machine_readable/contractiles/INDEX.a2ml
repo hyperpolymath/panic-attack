@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: MPL-2.0
+# INDEX.a2ml — Contractile Registry (panic-attack)
+# Author: Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# Machine-readable catalogue of the contractile verbs present in this repo.
+# Consumers (CI scripts, the contractile CLI, Hypatia rules) SHOULD read this
+# file to discover the available verbs and their on-disk locations rather than
+# hard-coding the list.
+#
+# Canonical shape: hyperpolymath/standards docs/CONTRACTILE-SPEC.adoc §Registry,
+# exemplified by hyperpolymath/echidna .machine_readable/contractiles/ (v2.0.0,
+# full trident shape for all six verbs).
+#
+# STATUS: panic-attack's contractile set predates the trident consolidation and
+# is currently SCATTERED across three trees (see [layout]). This registry
+# catalogues what exists and its real location; the physical consolidation to
+# the canonical .machine_readable/contractiles/<verb>/ trident shape is tracked
+# in issue #124 — it is held because the root `contractiles/` tree is read by
+# `contractile gen-just` to emit contractile.just, so a blind move would break
+# the generator, and the authoritative CONTRACTILE-SPEC lives in the (here
+# unreachable) standards repo.
+
+---
+id = "contractiles-registry"
+project = "panic-attack"
+version = "0.1.0"   # 0.1.0: registry introduced over the existing pre-consolidation layout.
+spec = "hyperpolymath/standards docs/CONTRACTILE-SPEC.adoc"
+canonical_reference = "hyperpolymath/echidna .machine_readable/contractiles/INDEX.a2ml (v2.0.0)"
+base_schema = ".machine_readable/contractiles/_base.ncl (NOT YET PRESENT — see #124; reference: echidna _base.ncl)"
+last_updated = "2026-06-04"
+consolidation_tracking = "https://github.com/hyperpolymath/panic-attack/issues/124"
+
+## Layout — current reality (three trees, pending consolidation in #124)
+
+[layout]
+flat = ".machine_readable/*.contractile  — ADJUST, INTENT, MUST, TRUST (legacy flat form)"
+machine_readable_tridents = ".machine_readable/contractiles/<verb>/  — adjust, bust, dust, trust (partial: Xfile.a2ml + x.ncl)"
+generator_source = "contractiles/<verb>/  — intend, must, trust (read by `contractile gen-just` → contractile.just)"
+canonical_target = ".machine_readable/contractiles/<verb>/  — full trident: Xfile.a2ml + x.ncl + x.k9.ncl + manifest"
+
+## Verbs
+# Canonical verb set per the standard: adjust, bust, dust, intend, must, trust
+# (six, on the trident shape), plus the k9 trust-tier template exception.
+# panic-attack has all six present in at least one tree; none yet on the full
+# trident. `present` lists the actual on-disk files today.
+
+[[verbs]]
+name = "must"
+semantics = "invariant assertion — release-blocking"
+authority = "blocking"
+gating = "hard (exit-nonzero)"
+present = ["contractiles/must/Mustfile.a2ml", ".machine_readable/MUST.contractile"]
+trident_status = "file-only — missing must.ncl + must.k9.ncl + must.manifest.a2ml"
+
+[[verbs]]
+name = "trust"
+semantics = "security + provenance + safe-hacking"
+authority = "blocking"
+gating = "hard (exit-nonzero)"
+present = ["contractiles/trust/Trustfile.a2ml", ".machine_readable/contractiles/trust/Trustfile.a2ml", ".machine_readable/TRUST.contractile"]
+trident_status = "DUPLICATE — root and .machine_readable Trustfile.a2ml differ; reconcile in #124"
+
+[[verbs]]
+name = "intend"
+semantics = "north-star (commitments + aspirations)"
+authority = "reporting"
+gating = "non-gating (continue)"
+present = ["contractiles/intend/Intentfile.a2ml", ".machine_readable/INTENT.contractile"]
+trident_status = "file-only — missing intend.ncl + intend.k9.ncl + intend.manifest.a2ml"
+
+[[verbs]]
+name = "adjust"
+semantics = "drift tolerances + corrective actions"
+authority = "advisory"
+gating = "advisory (continue-with-warnings)"
+present = [".machine_readable/contractiles/adjust/Adjustfile.a2ml", ".machine_readable/contractiles/adjust/adjust.ncl", ".machine_readable/ADJUST.contractile"]
+trident_status = "pair — missing adjust.k9.ncl + adjust.manifest.a2ml"
+
+[[verbs]]
+name = "bust"
+semantics = "hard-stop / expiry / must-not-run declarations"
+authority = "blocking"
+gating = "hard (exit-nonzero)"
+present = [".machine_readable/contractiles/bust/Bustfile.a2ml", ".machine_readable/contractiles/bust/bust.ncl"]
+trident_status = "pair — missing bust.k9.ncl + bust.manifest.a2ml"
+
+[[verbs]]
+name = "dust"
+semantics = "rollback / recovery / deprecation / audit-trail preservation"
+authority = "advisory"
+gating = "advisory (continue-with-warnings)"
+present = [".machine_readable/contractiles/dust/Dustfile.a2ml"]
+trident_status = "file-only — missing dust.ncl + dust.k9.ncl + dust.manifest.a2ml"
