@@ -93,7 +93,7 @@ macro_rules! qprintln {
 
 #[derive(Parser)]
 #[command(name = "panic-attack")]
-#[command(version = "2.1.0")]
+#[command(version)]
 #[command(about = "Universal stress testing and logic-based bug signature detection")]
 #[command(long_about = None)]
 #[command(disable_help_subcommand = true)]
