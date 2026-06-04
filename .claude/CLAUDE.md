@@ -2,7 +2,7 @@
 
 ## Overview
 
-Static analysis and bug signature detection tool. Scans source code for weak points (unwrap/expect, unsafe blocks, panic sites, error handling gaps, command injection, unsafe deserialization, FFI boundaries, atom exhaustion, and more) across 47 programming languages.
+Static analysis and bug signature detection tool. Scans source code for weak points (unwrap/expect, unsafe blocks, panic sites, error handling gaps, command injection, unsafe deserialization, FFI boundaries, atom exhaustion, and more) across 49 programming languages.
 
 **Position in AmbientOps ecosystem**: Part of the hospital model, loosely affiliated. Sits alongside the Operating Room as a diagnostic tool for software health (while hardware-crash-team handles hardware health). Independent top-level repo, but feeds findings to the hospital's Records system via verisimdb.
 
@@ -19,7 +19,7 @@ Static analysis and bug signature detection tool. Scans source code for weak poi
 
 ```
 src/
-├── main.rs              # CLI entry point (clap) — 20 subcommands
+├── main.rs              # CLI entry point (clap) — 38 subcommands
 ├── lib.rs               # Library API
 ├── types.rs             # Core types (AssailReport, WeakPoint, etc.)
 ├── assail/              # Static analysis engine
@@ -55,6 +55,8 @@ src/
 ├── amuck/               # Mutation combinations
 ├── abduct/              # Isolation + time-skew
 ├── adjudicate/          # Campaign verdict aggregation
+├── aggregate/           # Fold external prover output into reports (BLAKE3-hashed, trust-tagged)
+├── assay/               # Proven-library substitution survey + assimilate swap
 ├── axial/               # Reaction observation
 ├── bridge/              # Patch Bridge — CVE mitigation lifecycle (feature: http)
 │   ├── mod.rs           # Triage orchestrator, core types (BridgeReport, AssessedCve)
