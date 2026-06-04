@@ -400,7 +400,7 @@ pub fn assimilate(config: AssimilateConfig) -> Result<AssimilationOutcome> {
         );
 
         // No source and module already in-tree → call-site rewiring only.
-        if source.is_none() {
+        let Some(source) = source else {
             if cand.port_present {
                 let record = AssimilationRecord {
                     schema_version: assay_schema_version(),
@@ -427,8 +427,7 @@ pub fn assimilate(config: AssimilateConfig) -> Result<AssimilationOutcome> {
                 "{}: no replacement source; supply --proven <DIR> or --from <FILE>",
                 cand.id
             ));
-        }
-        let source = source.unwrap();
+        };
         if !source.is_file() {
             return Err(anyhow!(
                 "{}: replacement source {} is not a file",
