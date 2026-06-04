@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Added — `assay` / `assimilate` / `aggregate` proof-integration subcommands
+
+Three new a-themed subcommands that wire panic-attack into the
+PROOF-PROGRAMME loop (survey → swap → fold-in-proofs):
+
+- **`panic-attack assay [TARGET] [--proven DIR]…`** (`src/assay/mod.rs`):
+  surveys a target for code that has a formally proven drop-in equivalent
+  in a `proven` / `proven-servers` library and reports each candidate with
+  the proof artifact that backs it — operationalising the "Proven cross-fit"
+  table in `PROOF-PROGRAMME.md` mechanically instead of by hand. Built-in
+  catalogue: `SafePath` (canonicalize/unwrap pattern) and `SafeUrl`
+  (`VERISIMDB_URL`). On this repo: `safe-path` **Offered** (port present in
+  `src/safe_path.rs`, call sites still to rewire), `safe-url`
+  **NoReplacementSource** (not yet ported).
+- **`panic-attack assimilate [TARGET] --candidate ID [--proven DIR] [--from FILE] [--all] [--dry-run]`**:
+  performs a swap — stages the proven module into the tree, backs up the
+  original (`*.orig`), and writes a provenance record (source BLAKE3 hash +
+  proof backing + pending call-site rewires) under `.assimilated/`. Module
+  swaps are automatic; call-site rewiring is reported, never auto-edited
+  (mechanically editing arbitrary call sites is not a reviewable operation).
+- **`panic-attack aggregate --proof PATH… [--label PATH=NAME] [--covers PATH=SPEC] [--report BASE]`**
+  (`src/aggregate/mod.rs`): folds external prover output (Agda / Idris2 /
+  Coq·Rocq / Lean / Isabelle / TSTP / Alethe / DRAT·LRAT) into a report. Each
+  artifact is **BLAKE3-hashed for non-repudiation**, given a friendly name,
+  classified (Closed / Holes / Refuted / Indeterminate — comment-stripped so
+  prose mentioning `postulate` / `Admitted` does not false-trigger), and
+  reconciled against findings (**Backed / Corroborated / Contradicted**).
+  Every verdict is explicitly conditioned on the named checker's trust; the
+  recorded hash lets the tool show exactly which bytes it was handed if the
+  assessment is later challenged. `@name "…"` / `@covers [claim:]kind:value`
+  annotations travel inside the artifact; CLI `--label` / `--covers` override.
+
+Proof foundation re-verified from first principles under a fresh **Idris2
+0.8.0** install: `Types`, `Stripping` (Layer 1.0), `PatternCompleteness`
+(PA1) and `ClassificationSoundness` (PA2) all typecheck. 17 new unit tests;
+full library suite (395 tests) green; zero new compiler warnings.
+
 ## [2.5.5] — 2026-06-02
 
 Release of the v2.5.5 cohort that landed across 11 PRs in panic-attack + wiki + gitbot-fleet on 2026-06-02 PM. Tagged 2026-06-02 PM-evening.

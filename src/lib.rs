@@ -17,9 +17,11 @@
 pub mod a2ml;
 pub mod abduct;
 pub mod adjudicate;
+pub mod aggregate;
 pub mod ambush;
 pub mod amuck;
 pub mod assail;
+pub mod assay;
 pub mod assemblyline;
 pub mod attack;
 pub mod attestation;
