@@ -358,3 +358,160 @@ fn main() {
     assert!(stats.lines > 0);
     Ok(())
 }
+
+// ============================================================
+// Shell script analyzer tests
+// ============================================================
+
+#[test]
+fn test_shell_comment_stripper_removes_comment_only_tmp() -> Result<(), Box<dyn std::error::Error>> {
+    // Test that /tmp/ in comments doesn't trigger PathTraversal
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "test.sh",
+        r#"
+#!/bin/bash
+# This script uses PT_TMPDIR for safety
+# Default is /tmp/ but can be overridden
+PT_TMPDIR="${PT_TMPDIR:-/tmp}"
+echo "Hello" > "${PT_TMPDIR}/output.log"
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+
+    // Should have NO PathTraversal findings because /tmp/ is only in comments
+    let pathtraversal_count = report.weak_points.iter()
+        .filter(|wp| wp.category == WeakPointCategory::PathTraversal)
+        .count();
+    assert_eq!(pathtraversal_count, 0, "Should not flag /tmp/ in comments");
+    Ok(())
+}
+
+#[test]
+fn test_shell_tmpdir_variable_not_flagged() -> Result<(), Box<dyn std::error::Error>> {
+    // Test that PT_TMPDIR/TMPDIR variables are recognized as safe
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "test.sh",
+        r#"
+#!/bin/bash
+PT_TMPDIR="${PT_TMPDIR:-/tmp}"
+echo "Hello" > "${PT_TMPDIR}/output.log"
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+
+    let pathtraversal_count = report.weak_points.iter()
+        .filter(|wp| wp.category == WeakPointCategory::PathTraversal)
+        .count();
+    assert_eq!(pathtraversal_count, 0, "Should not flag PT_TMPDIR variable usage");
+    Ok(())
+}
+
+#[test]
+fn test_shell_hardcoded_tmp_still_flagged() -> Result<(), Box<dyn std::error::Error>> {
+    // Test that actual hardcoded /tmp/ (not in comment, no variable) is still flagged
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "test.sh",
+        r#"
+#!/bin/bash
+echo "Hello" > /tmp/output.log
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+
+    let pathtraversal_count = report.weak_points.iter()
+        .filter(|wp| wp.category == WeakPointCategory::PathTraversal)
+        .count();
+    assert!(pathtraversal_count > 0, "Should flag hardcoded /tmp/");
+    Ok(())
+}
+
+#[test]
+fn test_shell_mktemp_not_flagged() -> Result<(), Box<dyn std::error::Error>> {
+    // Test that mktemp usage is not flagged
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "test.sh",
+        r#"
+#!/bin/bash
+TMPFILE=$(mktemp /tmp/output.XXXXXX)
+echo "Hello" > "$TMPFILE"
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+
+    let pathtraversal_count = report.weak_points.iter()
+        .filter(|wp| wp.category == WeakPointCategory::PathTraversal)
+        .count();
+    assert_eq!(pathtraversal_count, 0, "Should not flag mktemp usage");
+    Ok(())
+}
+
+// ============================================================
+// Rust UnboundedAllocation analyzer tests
+// ============================================================
+
+#[test]
+fn test_rust_bounded_read_to_string_with_max_bytes() -> Result<(), Box<dyn std::error::Error>> {
+    // Test that read_to_string with max_bytes check is NOT flagged as UnboundedAllocation
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
+use std::fs;
+
+fn read_file(path: &str) -> Result<String, std::io::Error> {
+    const MAX_BYTES: u64 = 10 * 1024 * 1024;
+    let meta = fs::metadata(path)?;
+    if meta.len() > MAX_BYTES {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "File too large"));
+    }
+    let content = std::fs::read_to_string(path)?;
+    Ok(content)
+}
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+
+    let unbounded_count = report.weak_points.iter()
+        .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+        .count();
+    assert_eq!(unbounded_count, 0, "Should not flag read_to_string with max_bytes check");
+    Ok(())
+}
+
+#[test]
+fn test_rust_bounded_read_to_string_with_limit() -> Result<(), Box<dyn std::error::Error>> {
+    // Test that read_to_string with 'limit' word is NOT flagged (existing behavior)
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "test.rs",
+        r#"
+use std::fs;
+
+fn read_file(path: &str) -> Result<String, std::io::Error> {
+    const READ_LIMIT: u64 = 1024;
+    let content = std::fs::read_to_string(path)?;
+    if content.len() > READ_LIMIT {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Too large"));
+    }
+    Ok(content)
+}
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+
+    let unbounded_count = report.weak_points.iter()
+        .filter(|wp| wp.category == WeakPointCategory::UnboundedAllocation)
+        .count();
+    assert_eq!(unbounded_count, 0, "Should not flag read_to_string with limit in name");
+    Ok(())
+}

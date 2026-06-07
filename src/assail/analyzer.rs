@@ -44,6 +44,9 @@ fn read_bounded(path: &Path, limit: u64) -> Option<String> {
 // ═══════════════════════════════════════════════════════════════════════
 // UnboundedAllocation detector — word-boundary keyword matchers
 // ═══════════════════════════════════════════════════════════════════════
+// NOTE: Extended regex to match 'max_bytes', 'bound', 'cap', 'len' patterns
+// in addition to 'limit'. This fixes false positives for bounded reads like
+// `if meta.len() > max_bytes { ... } std::fs::read_to_string(...)`.
 //
 // Historical context: the detector originally did substring matches like
 // `code_only.contains("unbounded")`. This fires on any identifier
@@ -101,7 +104,7 @@ fn has_recursion_word(code: &str) -> bool {
 
 fn has_limit_word(code: &str) -> bool {
     LIMIT_WORD_RE
-        .get_or_init(|| Regex::new(r"(?i)\blimit").expect("static regex is valid"))
+        .get_or_init(|| Regex::new(r"(?i)\b(limit|max_?bytes?|bound(ed)?|cap(acity)?|size(_check)?|len)").expect("static regex is valid"))
         .is_match(code)
 }
 
@@ -4445,14 +4448,24 @@ impl Analyzer {
         }
 
         // Unsafe temp files
-        if content.contains("/tmp/") && !content.contains("mktemp") {
+        // Strip comments first to avoid false positives from documentation.
+        // Check for /tmp/ in executable code only.
+        let content_no_comments = strip_shell_comments(content);
+        // Check if the script uses safe temp directory patterns
+        let has_mktemp = content.contains("mktemp");
+        let has_tmpdir_env = content.contains("TMPDIR") 
+            || content.contains("PT_TMPDIR")
+            || content.contains("TEMP")
+            || content.contains("TMP");
+        
+        if content_no_comments.contains("/tmp/") && !has_mktemp && !has_tmpdir_env {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
                 category: WeakPointCategory::PathTraversal,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
-                description: format!("Hardcoded /tmp/ path without mktemp in {}", file_path),
+                description: format!("Hardcoded /tmp/ path without mktemp or tmpdir variable in {}", file_path),
                 recommended_attack: vec![AttackAxis::Disk],
                 suppressed: false,
             });
@@ -5487,6 +5500,49 @@ fn strip_shell_quoted_strings(line: &str) -> String {
                         break;
                     }
                 }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Strip shell-style line comments (# ...) from content.
+/// Preserves comments inside quoted strings to avoid false positives
+/// on strings that contain '#'. For example: echo "arg=#value" keeps the #.
+fn strip_shell_comments(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    for line in content.lines() {
+        if out.len() > 0 {
+            out.push('\n');
+        }
+        // Strip everything from first unquoted # to end of line
+        let stripped = strip_shell_comment_from_line(line);
+        out.push_str(&stripped);
+    }
+    out
+}
+
+/// Strip shell comment from a single line, preserving # inside quotes.
+fn strip_shell_comment_from_line(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    let mut in_double_quote = false;
+    let mut in_single_quote = false;
+    
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+                out.push('"');
+            }
+            '\'' if !in_double_quote => {
+                in_single_quote = !in_single_quote;
+                out.push('\'');
+            }
+            '#' if !in_double_quote && !in_single_quote => {
+                // This # starts a comment, skip rest of line
+                break;
             }
             other => out.push(other),
         }
