@@ -32,23 +32,18 @@
 # workflow trusts the HTTPS endpoint at chapel-lang/chapel releases.
 
 name: chapel-ci
-
 on:
   push:
     branches: [main]
   pull_request:
-
 permissions:
   contents: read
-
 concurrency:
   group: chapel-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 env:
   CHAPEL_VERSION: "2.8.0"
   CHAPEL_DEB_URL: "https://github.com/chapel-lang/chapel/releases/download/2.8.0/chapel-2.8.0-1.ubuntu22.amd64.deb"
-
 jobs:
   detect-relevant-changes:
     name: detect-relevant-changes
@@ -82,7 +77,6 @@ jobs:
             echo "relevant=false" >> "$GITHUB_OUTPUT"
             echo "detect: no chapel-relevant paths — gates skipped via if-guard"
           fi
-
   chapel-parse-check:
     name: chapel-parse-check
     needs: detect-relevant-changes
@@ -105,7 +99,6 @@ jobs:
           set -euo pipefail
           chpl --parse-only src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl
           chpl --parse-only smoke/two_repo_smoke.chpl src/Protocol.chpl src/Imaging.chpl
-
   chapel-build:
     name: chapel-build
     needs: [detect-relevant-changes, chapel-parse-check]
@@ -136,7 +129,6 @@ jobs:
             chapel/mass-panic
             chapel/smoke/two_repo_smoke
           retention-days: 1
-
   chapel-smoke:
     name: chapel-smoke
     needs: [detect-relevant-changes, chapel-build]
@@ -161,7 +153,6 @@ jobs:
         run: chmod +x chapel/mass-panic chapel/smoke/two_repo_smoke
       - name: Run two_repo_smoke
         run: ./chapel/smoke/two_repo_smoke
-
   chapel-e2e:
     name: chapel-e2e
     needs: [detect-relevant-changes, chapel-build]
@@ -198,7 +189,6 @@ jobs:
           ./chapel/mass-panic --repoDirectory="$WORK/corpus" --numLocales=1 --quiet --outputDir="$WORK/out"
           ls "$WORK/out"/system-image-*.json >/dev/null
           echo "chapel-e2e: PASS"
-
   chapel-cli-contract:
     name: chapel-cli-contract
     needs: detect-relevant-changes
@@ -219,7 +209,6 @@ jobs:
         run: cargo build --release --locked
       - name: Run contract gate
         run: ./chapel/tests/contract_check.sh
-
   chapel-rust-diff:
     name: chapel-rust-diff
     needs: [detect-relevant-changes, chapel-build]
@@ -254,7 +243,6 @@ jobs:
         run: cargo build --release --locked
       - name: rayon vs Chapel single-locale aggregate parity
         run: ./chapel/tests/rayon_vs_chapel_diff.sh
-
   # Always-on aggregator. This is the ONLY job listed in the Base ruleset's
   # required_status_checks rule. If detect-relevant-changes determined nothing
   # in this PR touches Chapel-relevant paths, the gate passes immediately

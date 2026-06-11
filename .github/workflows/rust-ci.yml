@@ -3,15 +3,12 @@
 # hyperpolymath/standards. Configure once, propagate everywhere.
 # See: docs/CI-REUSABLE-WORKFLOWS.adoc in standards.
 name: Rust CI
-
 on:
   push:
     branches: [main, master]
   pull_request:
-
 permissions:
   contents: read
-
 jobs:
   rust-ci:
     uses: hyperpolymath/standards/.github/workflows/rust-ci-reusable.yml@822fa14e2a4b7a93c40677e12d2d060e83b95776

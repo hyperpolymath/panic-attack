@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
 name: Scan and Report to VeriSimDB
-
 on:
   workflow_call:
     inputs:
@@ -14,33 +13,26 @@ on:
         description: 'PAT with repo scope for cross-repo dispatch to verisimdb-data'
         required: false
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7  # stable
-
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5  # v2
-
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
       - name: Install panic-attack
         run: |
           cargo install --git https://github.com/hyperpolymath/panic-attack --branch main
-
       - name: Run scan
         id: scan
         run: |
           panic-attack assail ${{ inputs.repo_path }} --output scan-result.json
           echo "scan_complete=true" >> $GITHUB_OUTPUT
-
       - name: Send to verisimdb-data
         if: steps.scan.outputs.scan_complete == 'true'
         env:
