@@ -1043,7 +1043,13 @@ impl Analyzer {
                 line: None,
                 category: WeakPointCategory::UnboundedAllocation,
                 location: Some(file_path.to_string()),
-                severity: Severity::Critical,
+                // Heuristic keyword match ("potential pattern"), not a
+                // confirmed vulnerability: at Critical this one matcher was
+                // ~70% of all estate Criticals (2026-06-11 estate-loop
+                // audit), drowning confirmed findings. Medium reflects its
+                // confirmation strength; hypatia's ingest applies the same
+                // cap for scans produced by older binaries.
+                severity: Severity::Medium,
                 description: format!(
                     "Potential unbounded allocation pattern detected in {}",
                     file_path
