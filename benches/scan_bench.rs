@@ -203,6 +203,7 @@ fn bench_location_extraction(c: &mut Criterion) {
             description: "test".to_string(),
             recommended_attack: vec![],
             suppressed: false,
+            test_context: None,
         };
         100
     ];
