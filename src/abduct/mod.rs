@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 //! Abduct isolation harness for defensive lock-in and delayed-trigger testing.
 
