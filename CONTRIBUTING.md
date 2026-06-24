@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk> -->
 # Contributing to panic-attack
 
 Thank you for your interest in contributing to panic-attack! This document provides guidelines and information for contributors.

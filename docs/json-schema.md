@@ -198,3 +198,4 @@ Starting with v1.0.0:
 ## SPDX License
 
 SPDX-License-Identifier: MPL-2.0
+<!-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk> -->

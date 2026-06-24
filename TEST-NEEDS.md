@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk> -->
 # TEST-NEEDS.md — panic-attack
 
 ## CRG Grade: B — ACHIEVED 2026-04-04

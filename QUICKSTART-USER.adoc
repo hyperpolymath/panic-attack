@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Template: QUICKSTART-USER.adoc — 5-minute path to working software
 // Replace panic-attack, Panic Attacker — See README.adoc for details., just run, Panic Attacker started successfully. with actuals
 = panic-attack — Quick Start for Users

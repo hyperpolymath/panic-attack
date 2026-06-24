@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Template: QUICKSTART-DEV.adoc — clone → build → test → PR
 // Replace panic-attack, {{BUILD_CMD}}, {{TEST_CMD}}, {{LANG_STACK}} with actuals
 = panic-attack — Quick Start for Developers
