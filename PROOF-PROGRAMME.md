@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk> -->
 # PROOF-PROGRAMME.md — panic-attack from first principles
 
 > Strategic plan for moving panic-attack from "two completed sibling Idris2 proofs (PA1 + PA2)" to **end-to-end formal soundness** of detection, inference, and persistence — without changing perf or functionality.
