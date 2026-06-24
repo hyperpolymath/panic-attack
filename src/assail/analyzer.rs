@@ -241,6 +241,9 @@ static RE_UNCHECKED_MALLOC: OnceLock<Regex> = OnceLock::new();
 static RE_ELIXIR_APPLY: OnceLock<Regex> = OnceLock::new();
 static RE_PONY_FFI: OnceLock<Regex> = OnceLock::new();
 static RE_SHELL_UNQUOTED_VAR: OnceLock<Regex> = OnceLock::new();
+static RE_SHELL_EVAL_BUILTIN: OnceLock<Regex> = OnceLock::new();
+static RE_WORD_EVAL_CALL: OnceLock<Regex> = OnceLock::new();
+static RE_WORD_EVAL_EXEC_CALL: OnceLock<Regex> = OnceLock::new();
 static RE_HTTP_URL: OnceLock<Regex> = OnceLock::new();
 static RE_HTTP_LOCALHOST: OnceLock<Regex> = OnceLock::new();
 static RE_HTTP_JSONLD_IDENTIFIER: OnceLock<Regex> = OnceLock::new();
@@ -259,6 +262,59 @@ static RE_HARDCODED_SECRET: OnceLock<Regex> = OnceLock::new();
 /// SQL/Lua/Idris), `;;` (Lisp/Scheme/Racket), `%%` (Erlang/Matlab).
 /// Does not handle OCaml `(* *)` or Forth `\` — edge cases for later.
 static RE_TODO_COMMENT: OnceLock<Regex> = OnceLock::new();
+
+/// Heuristic: is the `malloc` on `lines[idx]` NULL-checked within a short
+/// window of following lines?
+///
+/// An "UncheckedAllocation" finding should only fire when the result is *not*
+/// guarded. This recognises the common C idioms (`if (p == NULL)`,
+/// `if (!p)`, `if (p == nullptr)`) on the lvalue assigned from `malloc`.
+///
+/// Deliberately conservative to avoid false negatives in a security scanner:
+/// a site is treated as checked only on a clear NULL-guard signal that
+/// references the allocated variable (or, when no lvalue can be parsed, any
+/// NULL/nullptr token in the window). Genuinely-unchecked allocations — the
+/// real finding — are still reported.
+fn c_alloc_result_is_null_checked(lines: &[&str], idx: usize) -> bool {
+    let line = lines[idx];
+    // Parse the lvalue assigned from malloc: the last identifier left of '='.
+    // e.g. `cache` in `LRUCache* cache = malloc(...)`, `data` in
+    // `buf->data = malloc(...)`.
+    let var = if line.contains('=') {
+        line.split('=')
+            .next()
+            .and_then(|lhs| {
+                lhs.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .filter(|s| !s.is_empty())
+                    .last()
+            })
+            .map(str::to_string)
+    } else {
+        None
+    };
+
+    let end = (idx + 7).min(lines.len());
+    for l in &lines[idx..end] {
+        let null_token = l.contains("NULL") || l.contains("nullptr");
+        match &var {
+            Some(v) if !v.is_empty() => {
+                if null_token && l.contains(v.as_str()) {
+                    return true;
+                }
+                // `if (!p)` / `if (! p)` negation guard on the variable.
+                if l.trim_start().starts_with("if") && l.contains(&format!("!{}", v)) {
+                    return true;
+                }
+            }
+            _ => {
+                if null_token {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
 
 pub struct Analyzer {
     target: PathBuf,
@@ -1663,20 +1719,29 @@ impl Analyzer {
         stats.threading_constructs += content.matches("pthread_").count();
         stats.threading_constructs += content.matches("std::thread").count();
 
+        // UncheckedAllocation: report only mallocs whose result is NOT
+        // NULL-checked within a short window of following lines. Scanning
+        // per-line (rather than the whole file) lets us (a) skip guarded
+        // allocations — `if (p == NULL)` / `if (!p)` — instead of flagging
+        // every malloc, and (b) attach a line number, which in turn lets an
+        // inline `// panic-attack: accepted` marker suppress a reviewed site.
         let unchecked_malloc = RE_UNCHECKED_MALLOC
             .get_or_init(|| Regex::new(r"malloc\([^)]+\)\s*;").expect("static regex is valid"));
-        if unchecked_malloc.is_match(content) {
-            weak_points.push(WeakPoint {
-                file: None,
-                line: None,
-                category: WeakPointCategory::UncheckedAllocation,
-                location: Some(file_path.to_string()),
-                severity: Severity::Critical,
-                description: format!("Unchecked malloc in {}", file_path),
-                recommended_attack: vec![AttackAxis::Memory],
-                suppressed: false,
-                test_context: None,
-            });
+        let c_lines: Vec<&str> = content.lines().collect();
+        for (idx, line) in c_lines.iter().enumerate() {
+            if unchecked_malloc.is_match(line) && !c_alloc_result_is_null_checked(&c_lines, idx) {
+                weak_points.push(WeakPoint {
+                    file: None,
+                    line: Some((idx + 1) as u32),
+                    category: WeakPointCategory::UncheckedAllocation,
+                    location: Some(file_path.to_string()),
+                    severity: Severity::Critical,
+                    description: format!("Unchecked malloc in {}", file_path),
+                    recommended_attack: vec![AttackAxis::Memory],
+                    suppressed: false,
+                    test_context: None,
+                });
+            }
         }
 
         // gets() — no bounds checking, classic buffer overflow vector
@@ -2036,7 +2101,11 @@ impl Analyzer {
             });
         }
 
-        if content.contains("eval(") || content.contains("exec(") {
+        // Word-boundary match so identifiers like `safe_eval(` / `myexec(`
+        // are not flagged as a Python eval/exec call.
+        let py_eval_exec = RE_WORD_EVAL_EXEC_CALL
+            .get_or_init(|| Regex::new(r"\b(?:eval|exec)\s*\(").expect("static regex is valid"));
+        if py_eval_exec.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -2235,8 +2304,12 @@ impl Analyzer {
         stats.threading_constructs += content.matches("Worker(").count();
         stats.threading_constructs += content.matches("new Worker").count();
 
-        // Skip eval() check for browser extensions using DevTools API
-        if content.contains("eval(") && !self.browser_extension {
+        // Skip eval() check for browser extensions using DevTools API.
+        // Word-boundary match so FFI symbol names like `proven_calculator_eval(`
+        // are not flagged as a JS `eval()` call.
+        let word_eval = RE_WORD_EVAL_CALL
+            .get_or_init(|| Regex::new(r"\beval\s*\(").expect("static regex is valid"));
+        if word_eval.is_match(content) && !self.browser_extension {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -4476,8 +4549,13 @@ impl Analyzer {
         stats.io_operations += content.matches("curl ").count();
         stats.io_operations += content.matches("wget ").count();
 
-        // Command injection via eval
-        if content.contains("eval ") || content.contains("eval\t") {
+        // Command injection via the shell `eval` builtin. Match `eval` only in
+        // statement position (start of line, or after whitespace/`;`/`&`/`|`/`(`)
+        // so that `--eval` / `-eval` CLI flags and identifiers like `myeval`
+        // are not flagged.
+        let shell_eval = RE_SHELL_EVAL_BUILTIN
+            .get_or_init(|| Regex::new(r"(?m)(?:^|[\s;&|(])eval[ \t]").expect("static regex is valid"));
+        if shell_eval.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,

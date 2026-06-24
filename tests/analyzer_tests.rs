@@ -359,3 +359,109 @@ fn main() {
     assert!(stats.lines > 0);
     Ok(())
 }
+
+// --- Track C precision fixes (2026-06-23) ---------------------------------
+
+#[test]
+fn test_c_analyzer_skips_null_checked_malloc() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "checked.c",
+        r#"
+#include <stdlib.h>
+
+int* make(void) {
+    int* ptr = malloc(100);
+    if (ptr == NULL) {
+        return NULL;
+    }
+    *ptr = 42;
+    return ptr;
+}
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+    let unchecked = report
+        .weak_points
+        .iter()
+        .any(|wp| matches!(wp.category, WeakPointCategory::UncheckedAllocation));
+    assert!(!unchecked, "NULL-checked malloc must NOT be flagged");
+    Ok(())
+}
+
+#[test]
+fn test_c_analyzer_still_flags_genuinely_unchecked_malloc(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "unchecked.c",
+        r#"
+#include <stdlib.h>
+int main() {
+    int* ptr = malloc(100);
+    *ptr = 42;
+    return 0;
+}
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+    let unchecked = report
+        .weak_points
+        .iter()
+        .any(|wp| matches!(wp.category, WeakPointCategory::UncheckedAllocation));
+    assert!(unchecked, "unguarded malloc must still be flagged");
+    Ok(())
+}
+
+#[test]
+fn test_shell_eval_builtin_flagged_but_not_cli_flag(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    // `--eval` is a CLI flag, not the shell eval builtin.
+    let flag = write_test_file(&dir, "flag.sh", "#!/bin/sh\nmybinary --eval \"window.close()\"\n")?;
+    let report = assail::analyze(&flag)?;
+    let flagged = report
+        .weak_points
+        .iter()
+        .any(|wp| matches!(wp.category, WeakPointCategory::CommandInjection));
+    assert!(!flagged, "--eval CLI flag must NOT be flagged as shell eval");
+
+    // The real eval builtin must still be flagged.
+    let builtin = write_test_file(&dir, "real.sh", "#!/bin/sh\neval \"$user_input\"\n")?;
+    let report2 = assail::analyze(&builtin)?;
+    let flagged2 = report2
+        .weak_points
+        .iter()
+        .any(|wp| matches!(wp.category, WeakPointCategory::CommandInjection));
+    assert!(flagged2, "shell eval builtin must still be flagged");
+    Ok(())
+}
+
+#[test]
+fn test_js_ffi_eval_symbol_not_flagged() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    // An FFI symbol named *_eval is not a JS eval() call.
+    let ffi = write_test_file(
+        &dir,
+        "ffi.js",
+        "const r = lib.proven_calculator_eval(buf, buf.length);\n",
+    )?;
+    let report = assail::analyze(&ffi)?;
+    let flagged = report
+        .weak_points
+        .iter()
+        .any(|wp| matches!(wp.category, WeakPointCategory::DynamicCodeExecution));
+    assert!(!flagged, "FFI symbol *_eval must NOT be flagged as JS eval()");
+
+    // A genuine eval() call must still be flagged.
+    let real = write_test_file(&dir, "real.js", "const r = eval(userInput);\n")?;
+    let report2 = assail::analyze(&real)?;
+    let flagged2 = report2
+        .weak_points
+        .iter()
+        .any(|wp| matches!(wp.category, WeakPointCategory::DynamicCodeExecution));
+    assert!(flagged2, "genuine JS eval() must still be flagged");
+    Ok(())
+}

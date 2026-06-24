@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk> -->
+
 # Codebase Annotation Map
 
 This document annotates the panic-attack codebase at an architectural level so maintainers can
@@ -46,7 +49,7 @@ trace data flow, intent, and operational boundaries across modules.
   - Aggregates `assault`, `amuck`, `abduct` artifacts.
   - Asserts normalized facts then applies compact inference rules.
   - Emits explainable campaign verdict (`pass`/`warn`/`fail`) plus priorities.
-- `src/audience/mod.rs`
+- `src/axial/mod.rs`
   - Observes target reactions from execution output and stored report artifacts.
   - Supports head/tail excerpts, exact/fuzzy pattern matches (`grep`/`agrep`), aspell, i18n.
   - Exports JSON + Markdown and optional Pandoc conversion.
@@ -81,7 +84,7 @@ trace data flow, intent, and operational boundaries across modules.
 - `src/a2ml/mod.rs`
   - Minimal A2ML parser for AI manifest ingestion.
   - Nickel exporter for config interoperability.
-  - Includes schema-versioned A2ML report bundle import/export for assail/attack/assault/ambush/amuck/abduct/adjudicate/audience.
+  - Includes schema-versioned A2ML report bundle import/export for assail/attack/assault/ambush/amuck/abduct/adjudicate/axial.
 - `src/panll/mod.rs`
   - PanLL event-chain export adapter.
 
@@ -101,7 +104,7 @@ trace data flow, intent, and operational boundaries across modules.
   - `src/adjudicate/mod.rs` for campaign-level verdict logic.
   - `src/kanren/` for deeper relational inference.
 - Add new observation signals:
-  - `src/audience/mod.rs::detect_signals`.
+  - `src/axial/mod.rs::detect_signals`.
 - Add new mutation primitives:
   - `src/amuck/mod.rs::MutationOperation`.
 - Add new isolation semantics:

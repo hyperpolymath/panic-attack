@@ -1,3 +1,4 @@
+.\" SPDX-License-Identifier: MPL-2.0
 .TH PANIC-ATTACK 1 "2026-02-11" "panic-attack 2.0.0" "panic-attack manual"
 .SH NAME
 panic-attack \- universal stress testing and logic-based bug signature detection
@@ -33,7 +34,7 @@ Copies a target into an isolated workspace, optionally includes related files, a
 .B adjudicate REPORTS...
 Aggregates assault/amuck/abduct report artifacts into a campaign-level verdict using rule-based inference.
 .TP
-.B audience TARGET
+.B axial TARGET
 Observes reaction signals by executing an external tool against a target and/or by inspecting existing report artifacts.
 .TP
 .B analyze REPORT.json
@@ -55,7 +56,7 @@ Compares two reports (defaults to the two most recent stored VerisimDB files).
 Exports the AI manifest in Nickel syntax.
 .TP
 .B a2ml-export --kind KIND INPUT --output OUT
-Encodes a report artifact as a schema-versioned A2ML report bundle (supports assail, attack, assault, ambush, amuck, abduct, adjudicate, audience).
+Encodes a report artifact as a schema-versioned A2ML report bundle (supports assail, attack, assault, ambush, amuck, abduct, adjudicate, axial).
 .TP
 .B a2ml-import INPUT --output OUT [--kind KIND]
 Decodes an A2ML report bundle back into JSON (optionally assert expected kind).
@@ -94,14 +95,14 @@ Run a checker against the abducted target while preserving isolation metadata.
 .B panic-attack adjudicate reports/assault-a.json reports/amuck-a.json reports/abduct-a.json
 Compile a larger picture from multiple report types and emit a campaign verdict.
 .TP
-.B panic-attack audience ./src/main.rs --exec-program panic-attack --exec-arg amuck --exec-arg {target} --repeat 3
+.B panic-attack axial ./src/main.rs --exec-program panic-attack --exec-arg amuck --exec-arg {target} --repeat 3
 Watch repeated target reactions while another tool runs against it.
 .TP
-.B panic-attack audience ./src/main.rs --report reports/amuck-a.json --head 30 --tail 30 --grep panic --agrep segmntation --agrep-distance 2 --aspell --aspell-lang en
+.B panic-attack axial ./src/main.rs --report reports/amuck-a.json --head 30 --tail 30 --grep panic --agrep segmntation --agrep-distance 2 --aspell --aspell-lang en
 Inspect report reactions with excerpting, exact/fuzzy pattern matching, and optional spell-check signals.
 .TP
-.B panic-attack audience ./src/main.rs --report reports/amuck-a.json --lang fr --pandoc-to html --pandoc-output reports/audience.html
-Export localized audience markdown and convert it to another format with pandoc.
+.B panic-attack axial ./src/main.rs --report reports/amuck-a.json --lang fr --pandoc-to html --pandoc-output reports/axial.html
+Export localized axial markdown and convert it to another format with pandoc.
 .TP
 .B panic-attack a2ml-export --kind ambush reports/ambush.json --output reports/ambush.a2ml
 Encode an ambush/assault-style report in A2ML report-bundle form.

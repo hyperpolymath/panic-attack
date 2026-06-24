@@ -1,6 +1,9 @@
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk> -->
+
 # Release Prep Checklist
 
-This checklist is for shipping the `amuck`/`abduct`/`adjudicate`/`audience` + A2ML report-bundle work without pulling unrelated tree changes.
+This checklist is for shipping the `amuck`/`abduct`/`adjudicate`/`axial` + A2ML report-bundle work without pulling unrelated tree changes.
 
 ## 1. Validation Gates
 
@@ -28,7 +31,7 @@ panic-attack a2ml-export --kind ambush reports/ambush.json --output /tmp/ambush.
 panic-attack a2ml-import /tmp/ambush.a2ml --output /tmp/ambush.roundtrip.json --kind ambush
 ```
 
-Repeat for `assault`, `amuck`, `abduct`, `adjudicate`, and `audience` when test fixtures are available.
+Repeat for `assault`, `amuck`, `abduct`, `adjudicate`, and `axial` when test fixtures are available.
 
 ## 3. Curated Staging Set
 
