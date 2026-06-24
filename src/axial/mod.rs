@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 //! Axial observer: observe target reactions across attack axes from tool
 //! executions and report artifacts.
@@ -966,7 +967,7 @@ mod tests {
             recommendations: vec!["no critical reaction signals observed".to_string()],
             aspell: None,
         };
-        let path = dir.path().join("audience.md");
+        let path = dir.path().join("axial.md");
         write_markdown(&report, &path).expect("markdown should write");
         let body = fs::read_to_string(path).expect("markdown should read");
         assert!(body.contains("Axial Report"));

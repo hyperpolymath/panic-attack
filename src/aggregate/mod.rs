@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 //! Aggregate — fold external prover output into an assail/assault report.
 //!

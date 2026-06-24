@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 //! Safe path operations — Rust port of `proven::SafePath` (PROOF-PROGRAMME row 3, issue #115).
 //!
