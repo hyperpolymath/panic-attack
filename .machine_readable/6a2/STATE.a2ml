@@ -5,7 +5,7 @@
 [metadata]
 project = "panic-attack"
 version = "2.5.5"
-last-updated = "2026-06-02"
+last-updated = "2026-06-24"
 status = "active"
 
 [project-context]
@@ -87,6 +87,16 @@ proof-programme = "PROOF-PROGRAMME.md (3-layer Surface/Engine/Persistence, 9-pha
 proven-cross-fit = "SafePath + SafeUrl identified as port-to-Rust candidates (perf-neutral, semantic-equivalent); SafeJson / SafeRegex / SafeDateTime / SafeCommand / SafeEnv / SafeUUID marked skip (already total / semantic mismatch); 7 gaps for first-principles proofs (miniKanren engine, hexad model, A2ML chain, bridge reachability, sweep tracker, adjudicate/axial, FFI ABI)"
 test-count = "897 passing (cargo test --release; 4 ignored; 901 runnable per --list)"
 truthfulness-fix = "tests/ WeakPoint constructions sed-updated for test_context field (was silently broken on main post-#102)"
+blocker = "none"
+
+[session-2026-06-24]
+description = "assail detector precision fixes (false-positive reduction) — PR #134"
+unchecked-alloc = "UncheckedAllocation (C) now NULL-check aware: per-line scan, skips malloc whose result is guarded (if (p==NULL)/if(!p)/nullptr) within a 7-line window, attaches line number (enables inline // panic-attack: accepted markers). Genuinely-unchecked malloc still fires. New helper c_alloc_result_is_null_checked() in analyzer.rs."
+dyn-code-exec = "DynamicCodeExecution (JS/Python) word-boundary aware: \\beval\\s*\\( (and \\b(?:eval|exec)\\s*\\( for Python) so FFI symbols like proven_calculator_eval( are not flagged; genuine eval( still fires."
+command-injection = "CommandInjection (Shell) no longer matches --eval/-eval CLI flag: eval builtin matched only in statement position via (?m)(?:^|[\\s;&|(])eval[ \\t]."
+conservative = "All three are precision-only (no new false negatives): a site is treated benign only on a clear signal. 4 new tests in tests/analyzer_tests.rs; full analyzer suite 17/17 green; zero warnings."
+verified = "End-to-end re-scan: proven 1->0 active Critical/High (stubs.c clears, the genuine fix now registers); paint-type 36->35 (gossamer --eval benchmark FP clears; vendored unsafe FFI + irreducible believe_me axiom correctly remain)."
+origin = "Surfaced triaging proven#68 / paint-type#86; refs panic-attack#32."
 blocker = "none"
 
 [next-priorities]
