@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+### Fixed — assail detector precision (false-positive reduction, 2026-06-24)
+
+Three `assail` analyzer fixes, all conservative (no new false negatives), found
+while triaging hyperpolymath/proven#68 and JoshuaJewell/paint-type#86:
+
+- **UncheckedAllocation (C) is now NULL-check aware.** The detector previously
+  flagged *every* `malloc(...)` and emitted a line-less, file-level finding. It
+  now scans per line, skips a malloc whose result is NULL-checked within a short
+  window (`if (p == NULL)`, `if (!p)`, `nullptr`), and attaches a line number —
+  which also lets an inline `// panic-attack: accepted` marker suppress a
+  reviewed site (marker suppression is line-gated). A genuinely-unchecked malloc
+  still fires. This is why a real null-check fix (proven `stubs.c`) previously
+  failed to clear.
+- **DynamicCodeExecution (JS/Python) is word-boundary aware.** `contains("eval(")`
+  matched FFI symbol names like `proven_calculator_eval(`. Now `\beval\s*\(`
+  (and `\b(?:eval|exec)\s*\(` for Python); a genuine `eval(` still fires.
+- **CommandInjection (Shell) no longer matches the `--eval` CLI flag.**
+  `contains("eval ")` matched `--eval`/`-eval`. Now the eval builtin is matched
+  only in statement position (`(?m)(?:^|[\s;&|(])eval[ \t]`).
+
+Verified end-to-end: proven 1→0 active Critical/High (`stubs.c` clears),
+paint-type 36→35 (gossamer `--eval` benchmark FP clears; genuinely-unsafe
+vendored FFI + the irreducible `believe_me` axiom correctly remain). 4 new
+tests in `tests/analyzer_tests.rs`; full analyzer suite green; zero warnings.
+PR #134. Refs #32.
+
 ### Added — attestation unforgeability proof (Idris2, PROOF-PROGRAMME §3.2)
 
 - **`src/abi/AttestationUnforgeability.idr`**: Idris2 proof that the
