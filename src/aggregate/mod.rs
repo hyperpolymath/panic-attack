@@ -50,6 +50,9 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+/// Ingest a `proven-tests` JSON run report as an aggregate input kind.
+pub mod proven_tests;
+
 /// Upper bound on the text we scan for verdict / coverage classification.
 /// The *hash* always covers the whole file (see [`hash_file`]); this cap
 /// only bounds the in-memory text scan for markers.
