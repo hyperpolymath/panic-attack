@@ -47,11 +47,35 @@ jobs:
           DISPATCH_TOKEN: ${{ secrets.VERISIMDB_PAT || secrets.GITHUB_TOKEN }}
         run: |
           REPO_NAME=$(basename $(pwd))
-          SCAN_DATA=$(cat scan-result.json)
+
+          # Build the payload in a file: inlining the scan JSON on argv
+          # overflows the kernel arg-length limit on large repos (curl
+          # exits 126 "Argument list too long").
+          jq -c --arg repo_name "$REPO_NAME" \
+            '{event_type: "scan_result", client_payload: {repo_name: $repo_name, scan_data: .}}' \
+            scan-result.json > dispatch-payload.json
+
+          # repository_dispatch caps client_payload at ~64KB. When the full
+          # report is too big, dispatch a counts-only summary instead of
+          # letting the API reject the whole run with a 422.
+          if [ "$(wc -c < dispatch-payload.json)" -gt 60000 ]; then
+            echo "Full report $(wc -c < scan-result.json) bytes exceeds dispatch cap; sending summary"
+            jq -c --arg repo_name "$REPO_NAME" \
+              '{event_type: "scan_result", client_payload: {repo_name: $repo_name, scan_data: {
+                 schema_version: .schema_version,
+                 program_path: .program_path,
+                 language: .language,
+                 statistics: .statistics,
+                 suppressed_count: (.suppressed_count // 0),
+                 weak_point_count: (.weak_points | length),
+                 weak_points_by_severity: (.weak_points | map(.severity | tostring) | group_by(.) | map({key: .[0], value: length}) | from_entries),
+                 truncated: true
+               }}}' scan-result.json > dispatch-payload.json
+          fi
 
           curl -sf -X POST \
             -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/hyperpolymath/verisimdb-data/dispatches" \
-            -d "{\"event_type\":\"scan_result\",\"client_payload\":{\"repo_name\":\"$REPO_NAME\",\"scan_data\":$SCAN_DATA}}"
+            --data @dispatch-payload.json
           echo "Dispatched scan results for ${REPO_NAME} to verisimdb-data"
