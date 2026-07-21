@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Gitleaks configuration — estate baseline.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# Until #500 the estate's gitleaks step carried `continue-on-error: true`, so
+# the primary secret scanner could not fail a PR. #500 made it gate for real
+# (`gitleaks detect --exit-code 1` against a checksum-verified binary). The
+# first honest run then surfaced 15 findings in this repo — every one a false
+# positive: module integrity hashes, package UUIDs, a public GPG fingerprint,
+# a Haskell type *name*, and synthetic `.example` fixtures.
+#
+# That is very likely the trap the `continue-on-error` was papering over: turn
+# the gate on with no allowlist, get a wall of red that is entirely noise,
+# someone reverts, and the estate is back to a scanner that cannot fail. This
+# config is therefore the *unblocker* for re-pinning callers onto the real
+# gate across the estate.
+#
+# DESIGN RULE — KEEP THIS WHEN EDITING
+# ------------------------------------
+# Allowlist by PATTERN CLASS, anchored to the WHOLE value. Never allowlist a
+# path wholesale because "that file is fine", and never disable a rule.
+#
+# Every `regexes` entry below is anchored `^...$` on purpose. An unanchored
+# entry is a substring match, which silently blinds the scanner: a pattern
+# like `(?i)test|example` would allowlist the real AWS key
+# `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` purely because "EXAMPLE" appears
+# inside it. That was caught by canary-testing an earlier draft of this file —
+# if you add a pattern here, plant a realistic secret and confirm it is still
+# detected before you commit.
+#
+# `paths` entries are limited to formats that cannot legitimately hold a live
+# credential (lockfile integrity hashes, dependency UUIDs). If you want to
+# allowlist any other path wholesale, that is a signal the secret should be
+# removed from the tree instead.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Estate baseline: dependency metadata, anchored placeholder shapes, published test vectors"
+
+paths = [
+  # Lockfiles: the "secrets" are SHA-256 *integrity hashes* of public registry
+  # modules. A lockfile has no legitimate reason to contain a credential.
+  '''(^|/)deno\.lock$''',
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)yarn\.lock$''',
+  '''(^|/)Cargo\.lock$''',
+  # Julia project manifests: entries are public package UUIDs from the General
+  # registry, which trip the generic-api-key entropy heuristic.
+  '''(^|/)Project\.toml$''',
+  '''(^|/)Manifest\.toml$''',
+]
+
+regexes = [
+  # --- documented placeholder shapes (all anchored to the whole value) ------
+
+  # Ellipsis-terminated illustrative values: `abc123def456...` (carrying an
+  # explicit "// Would be real token" comment), `1234567890_abc123...` inside a
+  # fenced ASCII mockup of terminal output. A real credential is never elided.
+  '''^[A-Za-z0-9_\-]{4,}\.\.\.$''',
+
+  # Repeated-character masks: a provider prefix followed by a long run of a
+  # single filler character (the GitLab, GitHub and OpenAI token prefixes are
+  # all commonly masked this way in docs). A real credential never repeats one
+  # character 8+ times.
+  #
+  # Deliberately described rather than shown: writing the masked token out
+  # literally here makes THIS file trip the estate's Hypatia secret detector
+  # ("Secret found: GitLab PAT"), which is how that was found. Do not add
+  # literal example tokens to this file, even inside comments.
+  '''^[A-Za-z0-9_\-]*?(x{8,}|X{8,}|y{8,}|z{8,}|0{12,}|\*{6,})[A-Za-z0-9_\-]*$''',
+
+  # Monotonic hex walks used as filler: `0123456789abcdef` repeated,
+  # `ABCDEF0123456789ABCDEF0123456789`, `0a1b2c3d4e5f6a7b…` (ascending nibble
+  # pairs). These are keyboard-walk fillers, never generated key material.
+  '''^(?i:0123456789abcdef|abcdef0123456789|0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1|deadbeef|cafebabe)+$''',
+
+  # Snake-case self-labelled fixtures, e.g. `sg_test_api_key_abc123`. Anchored
+  # and shape-constrained: an all-lowercase snake_case string with an explicit
+  # test/demo marker as a bounded segment. Real API keys carry mixed case,
+  # digits and symbols and will not match this.
+  '''^[a-z]{2,6}_(test|demo|fake|sample|example|dummy|placeholder)_[a-z0-9_]{2,40}$''',
+
+  # --- published test vectors ----------------------------------------------
+  # RFC 8032 §7.1 TEST 1 Ed25519 seed and the public key it derives. These
+  # exact values are printed in the RFC; checking that one yields the other is
+  # the entire point of the interoperability test.
+  '''^9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60$''',
+  '''^d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a$''',
+
+  # --- public-by-definition / non-secret identifiers ------------------------
+  # OpenPGP 40-hex fingerprints. A fingerprint *identifies* a key; it is
+  # published deliberately (SECURITY.md, audit records, keyservers) and
+  # discloses nothing. Secret key *material* is PEM-armoured and is caught by
+  # the dedicated private-key rules, which are NOT allowlisted here.
+  '''^[A-F0-9]{40}$''',
+
+  # Cryptographic *type names* appearing in source/design docs, e.g. the
+  # Haskell declaration `data Ed25519KeyPair = Ed25519KeyPair`. A bare
+  # CamelCase identifier with no digits or separators is a type, not a key.
+  '''^(Ed25519|X25519|Curve25519|RSA|ECDSA|EdDSA|Secp256k1)[A-Za-z]*$''',
+]
