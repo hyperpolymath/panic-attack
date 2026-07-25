@@ -141,6 +141,10 @@ pub(crate) fn rule_id(category: &WeakPointCategory) -> &'static str {
         WeakPointCategory::SupplyChain => "PA023",
         WeakPointCategory::InputBoundary => "PA024",
         WeakPointCategory::MutationGap => "PA025",
+        WeakPointCategory::LicensePolicy => "PA026",
+        WeakPointCategory::Advisory => "PA027",
+        WeakPointCategory::BannedDep => "PA028",
+        WeakPointCategory::UnknownSource => "PA029",
     }
 }
 
@@ -173,6 +177,10 @@ pub(crate) fn rule_name(category: &WeakPointCategory) -> &'static str {
         WeakPointCategory::SupplyChain => "supply-chain",
         WeakPointCategory::InputBoundary => "input-boundary",
         WeakPointCategory::MutationGap => "mutation-gap",
+        WeakPointCategory::LicensePolicy => "license-policy",
+        WeakPointCategory::Advisory => "advisory",
+        WeakPointCategory::BannedDep => "banned-dep",
+        WeakPointCategory::UnknownSource => "unknown-source",
     }
 }
 

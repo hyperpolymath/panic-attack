@@ -436,6 +436,15 @@ pub enum WeakPointCategory {
     /// value check), and Elixir test files without `ExUnitProperties` or
     /// `StreamData` for property-based testing.
     MutationGap,
+    // cargo-deny specific categories
+    /// License policy violation: crate license not in deny.toml allow-list
+    LicensePolicy,
+    /// Security advisory: dependency has a known vulnerability (RUSTSEC)
+    Advisory,
+    /// Banned dependency: explicitly banned in deny.toml
+    BannedDep,
+    /// Unknown source: dependency from untrusted/unknown source
+    UnknownSource,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

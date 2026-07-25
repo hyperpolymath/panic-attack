@@ -27,6 +27,7 @@ pub mod assemblyline;
 pub mod attack;
 pub mod attestation;
 pub mod axial;
+pub mod scan;
 #[cfg(feature = "http")]
 pub mod bridge;
 pub mod campaign;

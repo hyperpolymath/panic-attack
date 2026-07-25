@@ -39,6 +39,7 @@ ureq = { version = "3.3", optional = true }
 default = []
 signing = ["ed25519-dalek"]
 http = ["ureq"]
+sarif = []
 # Native GUI viewer (eframe/egui). Opt-in because eframe raises MSRV above the
 # 1.85.0 baseline; default builds remain pure-CLI and MSRV-clean.
 gui = ["eframe"]
