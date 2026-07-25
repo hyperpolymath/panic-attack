@@ -323,6 +323,10 @@ fn category_label(cat: WeakPointCategory) -> &'static str {
         WeakPointCategory::SupplyChain => "supply-chain",
         WeakPointCategory::InputBoundary => "input-boundary",
         WeakPointCategory::MutationGap => "mutation-gap",
+        WeakPointCategory::LicensePolicy => "license-policy",
+        WeakPointCategory::Advisory => "advisory",
+        WeakPointCategory::BannedDep => "banned-dep",
+        WeakPointCategory::UnknownSource => "unknown-source",
     }
 }
 
