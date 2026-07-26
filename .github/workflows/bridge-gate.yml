@@ -22,6 +22,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 permissions:
+  actions: read
   contents: read
 jobs:
   bridge-gate:
