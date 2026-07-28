@@ -9,6 +9,18 @@ on:
         description: 'Path to scan (default: .)'
         default: '.'
         type: string
+      fail_on_severity:
+        description: >-
+          Fail the job when a non-suppressed finding at or above this severity
+          is present. One of: none | low | medium | high | critical.
+
+          Defaults to 'none', which preserves the historical behaviour exactly:
+          `panic-attack assail` has no non-zero exit path of its own (no
+          process::exit, no ExitCode, no --fail-on anywhere in src/main.rs), so
+          without this input a Security Scan reports success regardless of what
+          it finds. Existing callers are unaffected until they opt in.
+        default: 'none'
+        type: string
     secrets:
       VERISIMDB_PAT:
         description: 'PAT with repo scope for cross-repo dispatch to verisimdb-data'
@@ -40,6 +52,54 @@ jobs:
         run: |
           panic-attack assail ${{ inputs.repo_path }} --output scan-result.json
           echo "scan_complete=true" >> $GITHUB_OUTPUT
+
+      - name: Enforce severity gate
+        if: steps.scan.outputs.scan_complete == 'true' && inputs.fail_on_severity != 'none'
+        env:
+          FAIL_ON: ${{ inputs.fail_on_severity }}
+        run: |
+          set -euo pipefail
+
+          # Normalise and validate up front. An unrecognised value must abort,
+          # never silently degrade to "threshold 0" -- a typo'd threshold that
+          # quietly passes everything is precisely the failure this gate exists
+          # to remove.
+          case "$(printf '%s' "$FAIL_ON" | tr '[:upper:]' '[:lower:]')" in
+            low)      THRESHOLD=1 ;;
+            medium)   THRESHOLD=2 ;;
+            high)     THRESHOLD=3 ;;
+            critical) THRESHOLD=4 ;;
+            *)
+              echo "::error::fail_on_severity must be one of none|low|medium|high|critical (got '${FAIL_ON}')"
+              exit 1
+              ;;
+          esac
+
+          # Count only findings the scanner did NOT suppress. `suppressed` is
+          # set by the user-classification registry (audits/*.a2ml) and by
+          # test-context detection, and is omitted rather than set false, so
+          # test for `!= true`.
+          OFFENDING=$(jq --argjson t "$THRESHOLD" '
+            def rank: {"Low":1,"Medium":2,"High":3,"Critical":4}[.] // 0;
+            [ .weak_points[]?
+              | select(.suppressed != true)
+              | select((.severity | rank) >= $t) ]
+          ' scan-result.json)
+
+          COUNT=$(printf '%s' "$OFFENDING" | jq 'length')
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::${COUNT} unsuppressed finding(s) at or above '${FAIL_ON}'"
+            printf '%s' "$OFFENDING" \
+              | jq -r '.[] | "  [\(.severity)] \(.category)  \(.file // .location // "?")"'
+            echo
+            echo "To accept one of these, add a (file, category) entry with an audit"
+            echo "rationale to the repo's assail classification registry -- not to this"
+            echo "workflow. Suppression belongs next to the evidence, in review."
+            exit 1
+          fi
+
+          echo "OK: no unsuppressed findings at or above '${FAIL_ON}'"
 
       - name: Send to verisimdb-data
         if: steps.scan.outputs.scan_complete == 'true'
