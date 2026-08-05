@@ -189,7 +189,7 @@ Eight PRs landed in one cohort closing the v2.5.5 ROADMAP section, a v3.0.0 item
 - **rsr-template scaffolding gaps filled** (#96): LICENSE flipped from
   AGPL-3.0 body to MPL-2.0 (matching SPDX headers + Cargo.toml +
   README.adoc); CODE_OF_CONDUCT.md placeholders instantiated
-  (`{{CONDUCT_EMAIL}}` → `j.d.a.jewell@open.ac.uk`, `{{CONDUCT_TEAM}}` →
+  (`j.d.a.jewell@open.ac.uk` → `j.d.a.jewell@open.ac.uk`, `{{CONDUCT_TEAM}}` →
   `panic-attack maintainers`, `{{RESPONSE_TIME}}` → `48 hours`,
   `language-bridges` → `panic-attack`); bug_report/feature_request
   issue templates Rust-toolchain-aware; empty `custom.md` removed;

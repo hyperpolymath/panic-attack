@@ -17,7 +17,7 @@ Repository: /var/mnt/eclipse/repos/panic-attacker
     - Claims: 49 languages, 196 tests, v2.1.0.
     - Actual: Matches implementation files and badges.
 - **Template Residue**:
-    - `{{PACKAGE_NAME}}`, `{{DEPS}}`, `{{BUILD_OUTPUT_PATH}}` found in `QUICKSTART-MAINTAINER.adoc`.
+    - `panic-attack`, `{{DEPS}}`, `{{BUILD_OUTPUT_PATH}}` found in `QUICKSTART-MAINTAINER.adoc`.
 
 ## Verdict
 - **CRG Grade**: B
