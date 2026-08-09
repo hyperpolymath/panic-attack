@@ -949,27 +949,14 @@ impl Analyzer {
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
     ) -> Result<()> {
-        // Detect if this is a test file - Expanded patterns
-        let is_test_file = file_path.contains("_tests.") 
-            || file_path.contains("/tests/") 
-            || file_path.ends_with("_test.rs")
-            || file_path.starts_with("tests/")
-            || file_path.contains("/test_")
-            || file_path.contains("_spec.")  // RSpec, Jest patterns
-            || file_path.contains("_bench.") // Benchmark files
-            || file_path.contains("/benches/") // Rust bench directory
-            || file_path.ends_with("_bench.rs")
-            || file_path.contains("__tests__/") // JavaScript
-            || file_path.contains("/__tests__/")
-            || file_path.ends_with(".test.") // Generic test files
-            || file_path.ends_with(".spec.")
-            || file_path.contains("_integration.") // Integration tests
-            || file_path.contains("_e2e.") // End-to-end tests
-            || file_path.contains("_unit.") // Unit tests
-            || file_path.contains("/examples/") // Example code (often test-like)
-            || file_path.contains("/samples/") // Sample code
-            || file_path.contains("_mock.") // Mock files
-            || file_path.contains("_stub."); // Stub files
+        // Use the canonical cross-language classifier rather than a second,
+        // subtly different Rust-only heuristic. Build scripts are also
+        // excluded from the panic surface: a build-script panic is a build
+        // hard-stop, not a production runtime panic in the crate being
+        // scanned.
+        let is_test_file = crate::test_context::is_test_path(file_path);
+        let is_build_script = file_path == "build.rs" || file_path.ends_with("/build.rs");
+        let panic_surface_excluded = is_test_file || is_build_script;
 
         // Strip string literal contents AND comments before counting so that
         // detection-tool source files (which embed patterns as string literals)
@@ -997,7 +984,9 @@ impl Analyzer {
         // crypto counts too (a `#[test] fn exercises_unsafe_wrapper()`
         // inside a production file would otherwise count toward that
         // file's unsafe-block total).
-        let code_only = Self::strip_cfg_test_modules_rs(&without_comments);
+        let code_only = Self::strip_should_panic_items_rs(
+            &Self::strip_cfg_test_modules_rs(&without_comments),
+        );
 
         stats.unsafe_blocks += code_only.matches("unsafe {").count();
         stats.unsafe_blocks += code_only.matches("unsafe fn").count();
@@ -1016,24 +1005,12 @@ impl Analyzer {
         let unwrap_calls = raw_unwrap + code_only.matches(".expect(").count();
         let safe_unwrap_calls = safe_unwrap;
 
-        // Apply test file suppression. In test files, normal
-        // assert-macro use pushes panic/unwrap counts high with no
-        // production-code signal, so we suppress the counts unless they
-        // exceed a "clearly excessive" threshold — only the delta above
-        // the threshold is attributed to the file's statistics.
-        //
-        // Panic and unwrap thresholds are evaluated independently: a
-        // test file with 30 panics + 5 unwraps should report 10 panics
-        // (30 − 20) and 0 unwraps, not suppress everything because the
-        // unwrap count is normal. The previous version declared both
-        // thresholds but only compared panics, silently dropping any
-        // excessive unwrap signal.
-        let (effective_panic_sites, effective_unwrap_calls) = if is_test_file {
-            let panic_threshold = 20;
-            let unwrap_threshold = 10;
-            let eff_panics = panic_sites.saturating_sub(panic_threshold);
-            let eff_unwraps = unwrap_calls.saturating_sub(unwrap_threshold);
-            (eff_panics, eff_unwraps)
+        // Test, benchmark, #[should_panic], and build-script code is not part
+        // of the production panic surface. Suppress it completely; a
+        // threshold-based exception makes a sufficiently large test suite
+        // look like production code and defeats the precision contract.
+        let (effective_panic_sites, effective_unwrap_calls) = if panic_surface_excluded {
+            (0, 0)
         } else {
             (panic_sites, unwrap_calls) // Production code: count all
         };
@@ -1138,7 +1115,7 @@ impl Analyzer {
             });
         }
 
-        if stats.unwrap_calls > 5 {
+        if effective_panic_sites > 0 || effective_unwrap_calls > 0 {
             weak_points.push(WeakPoint {
                 file: None,
                 line: None,
@@ -1146,8 +1123,8 @@ impl Analyzer {
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
                 description: format!(
-                    "{} unwrap/expect calls in {}",
-                    stats.unwrap_calls, file_path
+                    "{} panic sites and {} unwrap/expect calls in {}",
+                    effective_panic_sites, effective_unwrap_calls, file_path
                 ),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Disk],
                 suppressed: false,
@@ -1543,14 +1520,15 @@ impl Analyzer {
         out
     }
 
-    /// Strip the bodies of `#[cfg(test)] mod <name> { … }` blocks from
-    /// `content`, leaving the attribute, `mod` keyword, name, and
-    /// enclosing braces in place but replacing everything between the
+    /// Strip the bodies of `#[cfg(test)]` modules and functions from
+    /// `content`, leaving the attribute, item signature, and enclosing
+    /// braces in place but replacing everything between the
     /// braces with whitespace. Newlines in the body are preserved so
     /// line numbers downstream stay stable.
     ///
     /// This is the Rust analogue of Zig's `count_unsafe_in_test_blocks`
-    /// and is used to treat an inline `#[cfg(test)] mod tests { … }`
+    /// and is used to treat an inline `#[cfg(test)] mod tests { … }` or
+    /// `#[cfg(test)] fn test() { … }`
     /// inside a production file as test context for substring-based
     /// dangerous-pattern checks — the same way a whole file under
     /// `/tests/` is already treated as test context by `is_test_file`.
@@ -1628,26 +1606,42 @@ impl Analyzer {
                 }
             }
 
-            if k + 4 > n || &bytes[k..k + 4] != b"mod " {
+            let is_mod = k + 4 <= n && &bytes[k..k + 4] == b"mod ";
+            let is_fn = (k + 3 <= n && &bytes[k..k + 3] == b"fn ")
+                || (k + 8 <= n && &bytes[k..k + 8] == b"async fn");
+            if !is_mod && !is_fn {
                 out.extend_from_slice(&bytes[attr_start..attr_end]);
                 i = attr_end;
                 continue;
             }
-            k += 4;
-            while k < n && (bytes[k] as char).is_whitespace() {
-                k += 1;
-            }
-            while k < n && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_') {
-                k += 1;
-            }
-            while k < n && (bytes[k] as char).is_whitespace() {
-                k += 1;
-            }
-
-            if k >= n || bytes[k] != b'{' {
-                out.extend_from_slice(&bytes[attr_start..attr_end]);
-                i = attr_end;
-                continue;
+            if is_mod {
+                k += 4;
+                while k < n && (bytes[k] as char).is_whitespace() {
+                    k += 1;
+                }
+                while k < n && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_') {
+                    k += 1;
+                }
+                while k < n && (bytes[k] as char).is_whitespace() {
+                    k += 1;
+                }
+                if k >= n || bytes[k] != b'{' {
+                    out.extend_from_slice(&bytes[attr_start..attr_end]);
+                    i = attr_end;
+                    continue;
+                }
+            } else {
+                // A function signature has parameters and possibly a return
+                // type between its name and body; scan to the first body
+                // brace while leaving declarations without a body untouched.
+                while k < n && bytes[k] != b'{' && bytes[k] != b';' {
+                    k += 1;
+                }
+                if k >= n || bytes[k] != b'{' {
+                    out.extend_from_slice(&bytes[attr_start..attr_end]);
+                    i = attr_end;
+                    continue;
+                }
             }
 
             let body_start = k + 1;
@@ -1673,6 +1667,78 @@ impl Analyzer {
             }
             out.push(b'}');
             i = m;
+        }
+
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    /// Strip the bodies of `#[should_panic]` items from Rust source while
+    /// preserving line numbers. `#[should_panic]` is meaningful on test
+    /// functions even when the function is not inside a `#[cfg(test)]` module
+    /// or a conventional `tests/` path.
+    fn strip_should_panic_items_rs(content: &str) -> String {
+        let bytes = content.as_bytes();
+        let n = bytes.len();
+        let mut out = Vec::with_capacity(n);
+        let mut i = 0;
+
+        while i < n {
+            if i + 14 > n || &bytes[i..i + 14] != b"#[should_panic" {
+                out.push(bytes[i]);
+                i += 1;
+                continue;
+            }
+
+            let attr_start = i;
+            let mut attr_end = i + 14;
+            while attr_end < n && bytes[attr_end] != b']' {
+                attr_end += 1;
+            }
+            if attr_end >= n {
+                out.push(bytes[i]);
+                i += 1;
+                continue;
+            }
+            attr_end += 1;
+
+            let mut body_start = attr_end;
+            while body_start < n && (bytes[body_start] as char).is_whitespace() {
+                body_start += 1;
+            }
+            let mut brace = body_start;
+            while brace < n && bytes[brace] != b'{' && bytes[brace] != b';' {
+                brace += 1;
+            }
+            // A malformed attribute or an item without a body is left
+            // untouched so the detector fails open.
+            if brace >= n || bytes[brace] != b'{' {
+                out.extend_from_slice(&bytes[attr_start..attr_end]);
+                i = attr_end;
+                continue;
+            }
+
+            let mut depth = 1i32;
+            let mut end = brace + 1;
+            while end < n && depth > 0 {
+                match bytes[end] {
+                    b'{' => depth += 1,
+                    b'}' => depth -= 1,
+                    _ => {}
+                }
+                end += 1;
+            }
+            if depth != 0 {
+                out.extend_from_slice(&bytes[attr_start..attr_end]);
+                i = attr_end;
+                continue;
+            }
+
+            out.extend_from_slice(&bytes[attr_start..brace + 1]);
+            for byte in &bytes[brace + 1..end - 1] {
+                out.push(if *byte == b'\n' { b'\n' } else { b' ' });
+            }
+            out.push(b'}');
+            i = end;
         }
 
         String::from_utf8_lossy(&out).into_owned()
@@ -6566,26 +6632,18 @@ fn safe_wrapper() {
     }
 
     // ---------------------------------------------------------------
-    // 5. analyze() on a Rust file containing `.unwrap()` — PanicPath
+    // 5. analyze() on a Rust file containing one explicit panic — PanicPath
     // ---------------------------------------------------------------
 
     #[test]
-    fn analyze_rust_detects_panic_path_from_unwrap() {
+    fn analyze_rust_detects_panic_path_from_explicit_panic() {
         let tmp = TempDir::new().unwrap();
-        let rust_file = tmp.path().join("unwrappy.rs");
-        // The analyzer triggers PanicPath when unwrap_calls > 5,
-        // so we need at least 6 unwrap calls.
+        let rust_file = tmp.path().join("panic_control.rs");
         fs::write(
             &rust_file,
             r#"
-fn lots_of_unwraps() {
-    let a = Some(1).unwrap();
-    let b = Some(2).unwrap();
-    let c = Some(3).unwrap();
-    let d = Some(4).unwrap();
-    let e = Some(5).unwrap();
-    let f = Some(6).unwrap();
-    let g = Some(7).unwrap();
+fn production_positive_control() {
+    panic!("production positive control");
 }
 "#,
         )
@@ -6602,7 +6660,7 @@ fn lots_of_unwraps() {
 
         assert!(
             !panic_points.is_empty(),
-            "Should detect PanicPath weak point when >5 unwrap() calls are present"
+            "Should detect a single production panic"
         );
     }
 
@@ -6768,21 +6826,19 @@ func main() {
     }
 
     // ---------------------------------------------------------------
-    // 11. Rust file with few unwraps should NOT trigger PanicPath
+    // 11. Rust file with one production unwrap should trigger PanicPath
     // ---------------------------------------------------------------
 
     #[test]
-    fn analyze_rust_few_unwraps_no_panic_path() {
+    fn analyze_rust_single_unwrap_triggers_panic_path() {
         let tmp = TempDir::new().unwrap();
         let rust_file = tmp.path().join("safe.rs");
-        // Only 3 unwrap calls — threshold is >5
+        // A single production unwrap is sufficient for the recall contract.
         fs::write(
             &rust_file,
             r#"
-fn few_unwraps() {
+fn one_unwrap() {
     let a = Some(1).unwrap();
-    let b = Some(2).unwrap();
-    let c = Some(3).unwrap();
 }
 "#,
         )
@@ -6797,10 +6853,7 @@ fn few_unwraps() {
             .filter(|wp| wp.category == WeakPointCategory::PanicPath)
             .collect();
 
-        assert!(
-            panic_points.is_empty(),
-            "Should NOT trigger PanicPath when unwrap count is <= 5"
-        );
+        assert!(!panic_points.is_empty(), "A production unwrap must be reported");
     }
 
     // ---------------------------------------------------------------
@@ -7517,6 +7570,17 @@ trailing_production_code();
         let out = Analyzer::strip_cfg_test_modules_rs(src);
         assert!(out.contains("mod tests;"));
         assert!(out.contains("fn prod"));
+    }
+
+    #[test]
+    fn strip_cfg_test_function_and_should_panic_bodies() {
+        let src = "#[cfg(test)]\nfn cfg_test() { panic!(\"cfg\"); }\n#[should_panic]\nfn expected() { panic!(\"expected\"); }\nfn prod() { panic!(\"prod\"); }";
+        let cfg_stripped = Analyzer::strip_cfg_test_modules_rs(src);
+        let out = Analyzer::strip_should_panic_items_rs(&cfg_stripped);
+        assert!(!out.contains("panic!(\"cfg\")"));
+        assert!(!out.contains("panic!(\"expected\")"));
+        assert!(out.contains("panic!(\"prod\")"));
+        assert_eq!(out.lines().count(), src.lines().count());
     }
 
     #[test]

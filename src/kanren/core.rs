@@ -570,27 +570,6 @@ impl LogicEngine {
             },
         ));
 
-        // Rule 2: suppress_unwrap_boundary(File) :-
-        //   weak_point(PanicPath, File, _),
-        //   context(File, "result_returning_fn").
-        let v2 = Term::Var(202);
-        let v3 = Term::Var(203);
-        self.db.add_rule(LogicRule::with_metadata(
-            "suppress_unwrap_boundary".into(),
-            LogicFact::new("suppressed", vec![Term::atom("PanicPath"), v2.clone()]),
-            vec![
-                LogicFact::new("weak_point", vec![Term::atom("PanicPath"), v2.clone(), v3]),
-                LogicFact::new(
-                    "context",
-                    vec![v2.clone(), Term::atom("result_returning_fn")],
-                ),
-            ],
-            RuleMetadata {
-                confidence: 0.90,
-                ..Default::default()
-            },
-        ));
-
         // Rule 3: suppress_validated_deser(File) :-
         //   weak_point(UnsafeDeserialization, File, _),
         //   context(File, "schema_validated").
@@ -932,7 +911,6 @@ impl LogicEngine {
     /// - `test_file`: path contains test/spec indicators (singular _test.rs or plural _tests.rs)
     /// - `mutex_guarded`: file has threading constructs
     /// - `raii_managed`: Rust files (RAII by default)
-    /// - `result_returning_fn`: Rust files with unwrap calls
     /// - `pest_parser`: parser file with high unwrap count + zero unsafe blocks (grammar-safe)
     /// - `ffi_safe_wrapper`: Rust FFI wrapper around extern-C boundary with
     ///   documented SAFETY invariants (set by `is_rust_ffi_safe_wrapper` during
@@ -985,14 +963,6 @@ impl LogicEngine {
                 self.db.assert_fact(LogicFact::new(
                     "context",
                     vec![Term::atom(path), Term::atom("raii_managed")],
-                ));
-            }
-
-            // Result-returning function detection (Rust files with unwrap)
-            if is_rust && fs.unwrap_calls > 0 {
-                self.db.assert_fact(LogicFact::new(
-                    "context",
-                    vec![Term::atom(path), Term::atom("result_returning_fn")],
                 ));
             }
 
@@ -1611,11 +1581,10 @@ mod tests {
             "tests/integration_test.rs",
             "raii_managed"
         ));
-        assert!(has_context(
-            &engine,
-            "tests/integration_test.rs",
-            "result_returning_fn"
-        ));
+        assert!(
+            !has_context(&engine, "tests/integration_test.rs", "result_returning_fn"),
+            "unwrap presence alone must not prove a Result-returning boundary"
+        );
 
         // New description-based fact
         assert!(has_context(
@@ -1767,11 +1736,9 @@ mod tests {
             unsafe_wp.suppressed,
             "UnsafeCode must be suppressed by Rule 13"
         );
-        // PanicPath may or may not be suppressed by Rule 2 (depends on
-        // whether unwrap_calls > 0 triggered result_returning_fn), but
-        // Rule 13 specifically must not suppress it. Assert only that
-        // Rule 13's action is category-scoped by checking the rule's
-        // own condition: UnsafeCode got suppressed, PanicPath exists.
+        // Rule 13 specifically must not suppress PanicPath. Assert only that
+        // its action is category-scoped by checking that UnsafeCode got
+        // suppressed while PanicPath remains visible.
         let _ = panic_wp; // presence already asserted above
     }
 }
