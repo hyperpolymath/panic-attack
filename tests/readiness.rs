@@ -240,6 +240,90 @@ fn main() {
 }
 
 #[test]
+fn readiness_c_assail_panic_surface_has_precision_and_recall_controls(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    fs::create_dir_all(dir.path().join("src"))?;
+    fs::create_dir_all(dir.path().join("tests"))?;
+    fs::create_dir_all(dir.path().join("benches"))?;
+
+    fs::write(
+        dir.path().join("src/positive_control.rs"),
+        r#"
+pub fn production_positive_control() {
+    panic!("production panic");
+}
+
+#[should_panic]
+fn expected_panic_control() {
+    panic!("test panic");
+}
+
+#[cfg(test)]
+fn cfg_test_panic() {
+    None::<()>.unwrap();
+}
+"#,
+    )?;
+    fs::write(
+        dir.path().join("tests/integration.rs"),
+        "#[should_panic]\nfn integration_panic() { panic!(\"expected\"); }\n",
+    )?;
+    fs::write(
+        dir.path().join("benches/scan.rs"),
+        "fn benchmark_setup() { None::<()>.unwrap(); }\n",
+    )?;
+    fs::write(
+        dir.path().join("build.rs"),
+        "fn main() { panic!(\"build stop\"); }\n",
+    )?;
+
+    let report = assail::analyze(dir.path())?;
+    let active: Vec<_> = report
+        .weak_points
+        .iter()
+        .filter(|wp| wp.category == WeakPointCategory::PanicPath && !wp.suppressed)
+        .collect();
+    assert_eq!(active.len(), 1, "only the production control should remain active");
+    assert_eq!(
+        active[0].location.as_deref(),
+        Some("src/positive_control.rs")
+    );
+
+    fs::write(
+        dir.path().join("src/positive_control.rs"),
+        "pub fn production_unwrap_control() { None::<()>.unwrap(); }\n#[should_panic]\nfn expected() { panic!(\"test\"); }\n",
+    )?;
+    let unwrap_report = assail::analyze(dir.path())?;
+    let active_unwrap: Vec<_> = unwrap_report
+        .weak_points
+        .iter()
+        .filter(|wp| wp.category == WeakPointCategory::PanicPath && !wp.suppressed)
+        .collect();
+    assert_eq!(
+        active_unwrap.len(),
+        1,
+        "one production unwrap must remain visible"
+    );
+
+    fs::write(
+        dir.path().join("src/positive_control.rs"),
+        "pub fn clean_production() {}\n#[should_panic]\nfn expected() { panic!(\"test\"); }\n",
+    )?;
+    let clean_report = assail::analyze(dir.path())?;
+    assert!(
+        clean_report
+            .weak_points
+            .iter()
+            .filter(|wp| wp.category == WeakPointCategory::PanicPath && !wp.suppressed)
+            .next()
+            .is_none(),
+        "excluded panic contexts must produce zero active findings"
+    );
+    Ok(())
+}
+
+#[test]
 fn readiness_c_assail_json_output() -> Result<(), Box<dyn std::error::Error>> {
     let dir = TempDir::new()?;
     let src = dir.path().join("test.rs");
