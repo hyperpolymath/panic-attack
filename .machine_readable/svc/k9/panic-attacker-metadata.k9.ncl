@@ -7,6 +7,8 @@ K9!
 
 {
   pedigree = {
+    name = "panic-attacker-metadata.k9.ncl",
+    security = { leash = 'Yard },
     schema_version = "1.0.0",
     component_type = "security-tool-metadata",
     security = {
@@ -17,7 +19,7 @@ K9!
       allow_subprocess = false,
     },
     metadata = {
-      name = "panic-attacker-metadata",
+      
       version = "2.1.0",
       description = "panic-attack: universal static analysis and bug signature detection — project invariants",
       author = "Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>",

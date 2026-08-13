@@ -6,7 +6,9 @@ K9!
 [must]
 metadata.license : string {
   pedigree = {
-    security = { leash = "Yard" }, schema_version = "1.0.0", name = "container-build.k9" }, == 'MPL-2.0' }
+    name = "container-build.k9",
+    security = { leash = "Yard" },
+     schema_version = "1.0.0",  }, == 'MPL-2.0' }
 metadata.registry : string { == 'ghcr.io/hyperpolymath' }
 build.runtime : string { == 'podman' }
 layers.base.verify : bool { == true }

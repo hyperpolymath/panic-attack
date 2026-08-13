@@ -6,7 +6,9 @@ K9!
 [must]
 package.name : string {
   pedigree = {
-    security = { leash = "Yard" }, schema_version = "1.0.0", name = "cargo-manifest.k9" }, == 'panic-attack' }
+    name = "cargo-manifest.k9",
+    security = { leash = "Yard" },
+     schema_version = "1.0.0",  }, == 'panic-attack' }
 package.edition : string { == '2021' }
 profile.release.codegen-units : string { == 1 }
 profile.release.strip : string { == 'symbols' }
