@@ -1,8 +1,11 @@
+K9!
+# SPDX-License-Identifier: MPL-2.0
 # Auto-generated K9 contract for container-build
 # Safety tier: hunt
 
 [must]
-metadata.license : string { == 'MPL-2.0' }
+metadata.license : string {
+  pedigree = { schema_version = "1.0.0", name = "container-build.k9" }, == 'MPL-2.0' }
 metadata.registry : string { == 'ghcr.io/hyperpolymath' }
 build.runtime : string { == 'podman' }
 layers.base.verify : bool { == true }

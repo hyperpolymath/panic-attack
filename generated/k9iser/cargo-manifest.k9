@@ -1,8 +1,11 @@
+K9!
+# SPDX-License-Identifier: MPL-2.0
 # Auto-generated K9 contract for cargo-manifest
 # Safety tier: hunt
 
 [must]
-package.name : string { == 'panic-attack' }
+package.name : string {
+  pedigree = { schema_version = "1.0.0", name = "cargo-manifest.k9" }, == 'panic-attack' }
 package.edition : string { == '2021' }
 profile.release.codegen-units : string { == 1 }
 profile.release.strip : string { == 'symbols' }
