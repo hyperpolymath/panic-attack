@@ -53,3 +53,6 @@ jobs:
         uses: github/codeql-action/analyze@c6f931105cb2c34c8f901cc885ba1e2e259cf745 # v3
         with:
           category: "/language:${{ matrix.language }}"
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@master
