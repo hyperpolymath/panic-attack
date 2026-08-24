@@ -170,7 +170,7 @@ impl Language {
             "jtv" => Language::JuliaTheViper,
             "obli" => Language::Oblibeny,
             "anvom" => Language::Anvomidav,
-            "aff" => Language::AffineScript,
+            "aff" | "affine" => Language::AffineScript,
             "ephapax" | "eph" => Language::Ephapax,
             "bet" => Language::BetLang,
             "err" => Language::ErrorLang,

@@ -292,6 +292,8 @@ fn is_source_file(path: &Path) -> bool {
             | "yaml"
             | "yml"
             | "json"
+            | "aff"
+            | "affine"
     )
 }
 
@@ -546,6 +548,7 @@ mod tests {
         assert!(is_source_file(Path::new("lib.py")));
         assert!(is_source_file(Path::new("app.js")));
         assert!(is_source_file(Path::new("mod.gleam")));
+        assert!(is_source_file(Path::new("module.affine")));
         assert!(!is_source_file(Path::new("image.png")));
         assert!(!is_source_file(Path::new("binary.exe")));
         assert!(!is_source_file(Path::new("readme.md")));
