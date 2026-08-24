@@ -4998,6 +4998,25 @@ impl Analyzer {
             });
         }
 
+        // AffineScript uses ReScript-compatible JSON bindings. Preserve the
+        // unsafe-deserialization coverage that canonical `.affine` sources
+        // received when they were historically scanned as ReScript files.
+        if (file_path.ends_with(".aff") || file_path.ends_with(".affine"))
+            && content.contains("JSON.parseExn")
+        {
+            weak_points.push(WeakPoint {
+                file: None,
+                line: None,
+                category: WeakPointCategory::UnsafeDeserialization,
+                location: Some(file_path.to_string()),
+                severity: Severity::High,
+                description: format!("JSON.parseExn in {}", file_path),
+                recommended_attack: vec![AttackAxis::Memory],
+                suppressed: false,
+                test_context: None,
+            });
+        }
+
         // Resource budgets (Eclexia-specific)
         if file_path.ends_with(".ecl") {
             stats.allocation_sites += content.matches("budget").count();
@@ -6567,7 +6586,7 @@ mod tests {
         let affine_file = tmp.path().join("ffi_boundary.affine");
         fs::write(
             &affine_file,
-            "external one\nexternal two\nexternal three\nexternal four\n",
+            "external one\nexternal two\nexternal three\nexternal four\nJSON.parseExn(input)\n",
         )
         .unwrap();
 
@@ -6583,6 +6602,13 @@ mod tests {
                 .iter()
                 .any(|point| point.category == WeakPointCategory::UnsafeFFI),
             ".affine files must reach the AffineScript analyzer, not Unknown"
+        );
+        assert!(
+            report
+                .weak_points
+                .iter()
+                .any(|point| point.category == WeakPointCategory::UnsafeDeserialization),
+            ".affine files must retain JSON.parseExn detection"
         );
     }
 
