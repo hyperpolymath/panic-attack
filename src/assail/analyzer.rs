@@ -6561,6 +6561,31 @@ mod tests {
         assert_eq!(Language::detect("page.jsx"), Language::JavaScript);
     }
 
+    #[test]
+    fn analyze_affinescript_extension_reaches_dsl_analyzer() {
+        let tmp = TempDir::new().unwrap();
+        let affine_file = tmp.path().join("ffi_boundary.affine");
+        fs::write(
+            &affine_file,
+            "external one\nexternal two\nexternal three\nexternal four\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            Language::detect(affine_file.to_str().unwrap()),
+            Language::AffineScript
+        );
+
+        let report = Analyzer::new(&affine_file).unwrap().analyze().unwrap();
+        assert!(
+            report
+                .weak_points
+                .iter()
+                .any(|point| point.category == WeakPointCategory::UnsafeFFI),
+            ".affine files must reach the AffineScript analyzer, not Unknown"
+        );
+    }
+
     // ---------------------------------------------------------------
     // 2. Analyzer::new() with a valid temp directory
     // ---------------------------------------------------------------
