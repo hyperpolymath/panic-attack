@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This workflow is managed by gh actions-lock.
+# This workflow is managed by gh actions-lock.
 #
 # chapel-ci — strict CI gates for the OPTIONAL Chapel mass-panic harness.
 #
@@ -220,7 +221,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
+      - uses: dtolnay/rust-toolchain@v1
       - uses: actions/cache@v4.3.0
         with:
           path: |
@@ -241,7 +242,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
-      - uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
+      - uses: dtolnay/rust-toolchain@v1
       - uses: actions/cache@v4.3.0
         with:
           path: |
