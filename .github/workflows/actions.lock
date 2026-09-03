@@ -3,14 +3,6 @@
 # Docs: https://gh.io/actions-lockfile
 version: 'v0.0.2'
 workflows:
-    '.github/workflows/governance.yml': []
-    '.github/workflows/hypatia-scan.yml': []
-    '.github/workflows/label-triage.yml': []
-    '.github/workflows/labels.yml': []
-    '.github/workflows/mirror.yml': []
-    '.github/workflows/rust-ci.yml': []
-    '.github/workflows/scorecard.yml': []
-    '.github/workflows/secret-scanner.yml': []
     '.github/workflows/boj-build.yml':
         - 'actions/checkout@v4.1.7'
     '.github/workflows/bridge-gate.yml':
@@ -48,14 +40,19 @@ workflows:
         - 'actions/upload-artifact@v4.6.2'
         - 'dtolnay/rust-toolchain@v1'
         - 'swatinem/rust-cache@v2.8.2'
+    '.github/workflows/governance.yml': []
+    '.github/workflows/hypatia-scan.yml': []
     '.github/workflows/instant-sync.yml':
         - 'peter-evans/repository-dispatch@v4.0.1'
+    '.github/workflows/label-triage.yml': []
+    '.github/workflows/labels.yml': []
+    '.github/workflows/mirror.yml': []
     '.github/workflows/pages.yml':
         - 'actions/checkout@v4.4.0'
         - 'actions/deploy-pages@v4.0.5'
         - 'actions/upload-pages-artifact@v3.0.1'
     '.github/workflows/push-email-notify.yml':
-        - 'dawidd6/action-send-mail@v3.12.0'
+        - 'hyperpolymath/smtp-notify-action@v0.2.0'
     '.github/workflows/release.yml':
         - 'actions/checkout@v5.0.1'
         - 'actions/download-artifact@v4.1.8'
@@ -63,10 +60,13 @@ workflows:
         - 'dtolnay/rust-toolchain@v1'
         - 'softprops/action-gh-release@v2.5.0'
         - 'swatinem/rust-cache@v2.8.2'
+    '.github/workflows/rust-ci.yml': []
     '.github/workflows/scan-and-report.yml':
         - 'actions/checkout@v4.3.1'
         - 'dtolnay/rust-toolchain@v1'
         - 'swatinem/rust-cache@v2.8.2'
+    '.github/workflows/scorecard.yml': []
+    '.github/workflows/secret-scanner.yml': []
 dependencies:
     'actions/cache@v4.3.0':
         ref: 'v4.3.0'
@@ -152,11 +152,6 @@ dependencies:
         repo_id: 200299178
         uses:
             - 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea'
-    'dawidd6/action-send-mail@v3.12.0':
-        ref: 'v3.12.0'
-        commit: 'sha1-6e502825a508b867ab2954ad6343b68787624c01'
-        owner_id: 9713907
-        repo_id: 222439721
     'dtolnay/rust-toolchain@v1':
         ref: 'v1'
         commit: 'sha1-6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772'
@@ -172,6 +167,11 @@ dependencies:
         commit: 'sha1-ec49483bfc012387b227434aba94f59a6ecd0900'
         owner_id: 75048950
         repo_id: 623796603
+    'hyperpolymath/smtp-notify-action@v0.2.0':
+        ref: 'v0.2.0'
+        commit: 'sha1-ede1191ef6ff3ac02c4f4d9efdf837ee517e11d7'
+        owner_id: 6759885
+        repo_id: 1352485172
     'peter-evans/repository-dispatch@v4.0.1':
         ref: 'v4.0.1'
         commit: 'sha1-28959ce8df70de7be546dd1250a005dd32156697'
