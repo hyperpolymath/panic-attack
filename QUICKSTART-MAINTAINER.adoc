@@ -32,7 +32,7 @@ Output: `target/release/panic-attack`
 
 [source,bash]
 ----
-guix build -f guix.scm
+guix build -f build/guix.scm
 ----
 
 === Nix
