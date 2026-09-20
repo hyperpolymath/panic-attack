@@ -68,76 +68,168 @@ workflows:
     '.github/workflows/scorecard.yml': []
     '.github/workflows/secret-scanner.yml': []
 dependencies:
+    'actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830':
+        ref: '0057852bfaa89a56745cba8c7296529d2fc39830'
+        commit: 'sha1-0057852bfaa89a56745cba8c7296529d2fc39830'
+        owner_id: 44036562
+        repo_id: 215566462
+
     'actions/cache@v4.3.0':
         ref: 'v4.3.0'
         commit: 'sha1-0057852bfaa89a56745cba8c7296529d2fc39830'
         owner_id: 44036562
         repo_id: 215566462
+
+    'actions/checkout@11d5960a326750d5838078e36cf38b85af677262':
+        ref: '11d5960a326750d5838078e36cf38b85af677262'
+        commit: 'sha1-11d5960a326750d5838078e36cf38b85af677262'
+        owner_id: 44036562
+        repo_id: 197814629
+
+    'actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5':
+        ref: '34e114876b0b11c390a56381ad16ebd13914f8d5'
+        commit: 'sha1-34e114876b0b11c390a56381ad16ebd13914f8d5'
+        owner_id: 44036562
+        repo_id: 197814629
+
+    'actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332':
+        ref: '692973e3d937129bcbf40652eb9f2f61becf3332'
+        commit: 'sha1-692973e3d937129bcbf40652eb9f2f61becf3332'
+        owner_id: 44036562
+        repo_id: 197814629
+
+    'actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd':
+        ref: '93cb6efe18208431cddfb8368fd83d5badbf9bfd'
+        commit: 'sha1-93cb6efe18208431cddfb8368fd83d5badbf9bfd'
+        owner_id: 44036562
+        repo_id: 197814629
+
+    'actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11':
+        ref: 'b4ffde65f46336ab88eb53be808477a3936bae11'
+        commit: 'sha1-b4ffde65f46336ab88eb53be808477a3936bae11'
+        owner_id: 44036562
+        repo_id: 197814629
+
+    'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd':
+        ref: 'de0fac2e4500dabe0009e67214ff5f5447ce83dd'
+        commit: 'sha1-de0fac2e4500dabe0009e67214ff5f5447ce83dd'
+        owner_id: 44036562
+        repo_id: 197814629
+
     'actions/checkout@v4.1.1':
         ref: 'v4.1.1'
         commit: 'sha1-b4ffde65f46336ab88eb53be808477a3936bae11'
         owner_id: 44036562
         repo_id: 197814629
+
     'actions/checkout@v4.1.7':
         ref: 'v4.1.7'
         commit: 'sha1-692973e3d937129bcbf40652eb9f2f61becf3332'
         owner_id: 44036562
         repo_id: 197814629
+
     'actions/checkout@v4.3.1':
         ref: 'v4.3.1'
         commit: 'sha1-34e114876b0b11c390a56381ad16ebd13914f8d5'
         owner_id: 44036562
         repo_id: 197814629
+
     'actions/checkout@v4.4.0':
         ref: 'v4.4.0'
         commit: 'sha1-11d5960a326750d5838078e36cf38b85af677262'
         owner_id: 44036562
         repo_id: 197814629
+
     'actions/checkout@v5.0.1':
         ref: 'v5.0.1'
         commit: 'sha1-93cb6efe18208431cddfb8368fd83d5badbf9bfd'
         owner_id: 44036562
         repo_id: 197814629
+
     'actions/checkout@v6.0.2':
         ref: 'v6.0.2'
         commit: 'sha1-de0fac2e4500dabe0009e67214ff5f5447ce83dd'
         owner_id: 44036562
         repo_id: 197814629
+
+    'actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b':
+        ref: '983d7736d9b0ae728b81ab479565c72886d7745b'
+        commit: 'sha1-983d7736d9b0ae728b81ab479565c72886d7745b'
+        owner_id: 44036562
+        repo_id: 513659658
+
     'actions/configure-pages@v5.0.0':
         ref: 'v5.0.0'
         commit: 'sha1-983d7736d9b0ae728b81ab479565c72886d7745b'
         owner_id: 44036562
         repo_id: 513659658
+
+    'actions/dependency-review-action@5a2ce3f5b92ee19cbb1541a4984c76d921601d7c':
+        ref: '5a2ce3f5b92ee19cbb1541a4984c76d921601d7c'
+        commit: 'sha1-5a2ce3f5b92ee19cbb1541a4984c76d921601d7c'
+        owner_id: 44036562
+        repo_id: 476372928
+
     'actions/dependency-review-action@v4.3.4':
         ref: 'v4.3.4'
         commit: 'sha1-5a2ce3f5b92ee19cbb1541a4984c76d921601d7c'
         owner_id: 44036562
         repo_id: 476372928
+
+    'actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e':
+        ref: 'd6db90164ac5ed86f2b6aed7e0febac5b3c0c03e'
+        commit: 'sha1-d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e'
+        owner_id: 44036562
+        repo_id: 438112499
+
     'actions/deploy-pages@v4.0.5':
         ref: 'v4.0.5'
         commit: 'sha1-d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e'
         owner_id: 44036562
         repo_id: 438112499
+
+    'actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16':
+        ref: 'fa0a91b85d4f404e444e00e005971372dc801d16'
+        commit: 'sha1-fa0a91b85d4f404e444e00e005971372dc801d16'
+        owner_id: 44036562
+        repo_id: 192626254
+
     'actions/download-artifact@v4.1.8':
         ref: 'v4.1.8'
         commit: 'sha1-fa0a91b85d4f404e444e00e005971372dc801d16'
         owner_id: 44036562
         repo_id: 192626254
+
     'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea':
         ref: 'v7.0.1'
         commit: 'sha1-60a0d83039c74a4aee543508d2ffcb1c3799cdea'
         owner_id: 44036562
         repo_id: 205262760
+
+    'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02':
+        ref: 'ea165f8d65b6e75b540449e92b4886f43607fa02'
+        commit: 'sha1-ea165f8d65b6e75b540449e92b4886f43607fa02'
+        owner_id: 44036562
+        repo_id: 192625955
+
     'actions/upload-artifact@v4':
         ref: 'v4'
         commit: 'sha1-ea165f8d65b6e75b540449e92b4886f43607fa02'
         owner_id: 44036562
         repo_id: 192625955
+
     'actions/upload-artifact@v4.6.2':
         ref: 'v4.6.2'
         commit: 'sha1-ea165f8d65b6e75b540449e92b4886f43607fa02'
         owner_id: 44036562
         repo_id: 192625955
+
+    'actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa':
+        ref: '56afc609e74202658d3ffba0e8f6dda462b719fa'
+        commit: 'sha1-56afc609e74202658d3ffba0e8f6dda462b719fa'
+        owner_id: 44036562
+        repo_id: 496012378
+
     'actions/upload-pages-artifact@v3.0.1':
         ref: 'v3.0.1'
         commit: 'sha1-56afc609e74202658d3ffba0e8f6dda462b719fa'
@@ -145,6 +237,13 @@ dependencies:
         repo_id: 496012378
         uses:
             - 'actions/upload-artifact@v4'
+
+    'codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de':
+        ref: '671740ac38dd9b0130fbe1cec585b89eea48d3de'
+        commit: 'sha1-671740ac38dd9b0130fbe1cec585b89eea48d3de'
+        owner_id: 8226205
+        repo_id: 200299178
+
     'codecov/codecov-action@v5.5.2':
         ref: 'v5.5.2'
         commit: 'sha1-671740ac38dd9b0130fbe1cec585b89eea48d3de'
@@ -152,36 +251,85 @@ dependencies:
         repo_id: 200299178
         uses:
             - 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea'
+
+    'dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de':
+        ref: '02cb101ec7c40f2c49e1d9714d64511d8e1b74de'
+        commit: 'sha1-02cb101ec7c40f2c49e1d9714d64511d8e1b74de'
+        owner_id: 1940490
+        repo_id: 260749683
+
     'dtolnay/rust-toolchain@v1':
         ref: 'v1'
         commit: 'sha1-02cb101ec7c40f2c49e1d9714d64511d8e1b74de'
         owner_id: 1940490
         repo_id: 260749683
+
+    'github/codeql-action@c6f931105cb2c34c8f901cc885ba1e2e259cf745':
+        ref: 'c6f931105cb2c34c8f901cc885ba1e2e259cf745'
+        commit: 'sha1-c6f931105cb2c34c8f901cc885ba1e2e259cf745'
+        owner_id: 9919
+        repo_id: 259445878
+
     'github/codeql-action@v4.34.0':
         ref: 'v4.34.0'
         commit: 'sha1-c6f931105cb2c34c8f901cc885ba1e2e259cf745'
         owner_id: 9919
         repo_id: 259445878
+
+    'haskell-actions/setup@ec49483bfc012387b227434aba94f59a6ecd0900':
+        ref: 'ec49483bfc012387b227434aba94f59a6ecd0900'
+        commit: 'sha1-ec49483bfc012387b227434aba94f59a6ecd0900'
+        owner_id: 75048950
+        repo_id: 623796603
+
     'haskell-actions/setup@v2.7.5':
         ref: 'v2.7.5'
         commit: 'sha1-ec49483bfc012387b227434aba94f59a6ecd0900'
         owner_id: 75048950
         repo_id: 623796603
+
+    'hyperpolymath/smtp-notify-action@ede1191ef6ff3ac02c4f4d9efdf837ee517e11d7':
+        ref: 'ede1191ef6ff3ac02c4f4d9efdf837ee517e11d7'
+        commit: 'sha1-ede1191ef6ff3ac02c4f4d9efdf837ee517e11d7'
+        owner_id: 6759885
+        repo_id: 1352485172
+
     'hyperpolymath/smtp-notify-action@v0.2.0':
         ref: 'v0.2.0'
         commit: 'sha1-ede1191ef6ff3ac02c4f4d9efdf837ee517e11d7'
         owner_id: 6759885
         repo_id: 1352485172
+
+    'peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697':
+        ref: 'v4.0.1'
+        commit: 'sha1-28959ce8df70de7be546dd1250a005dd32156697'
+        owner_id: 18365890
+        repo_id: 220359305
+
     'peter-evans/repository-dispatch@v4.0.1':
         ref: 'v4.0.1'
         commit: 'sha1-28959ce8df70de7be546dd1250a005dd32156697'
         owner_id: 18365890
         repo_id: 220359305
+
+    'softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b':
+        ref: 'a06a81a03ee405af7f2048a818ed3f03bbf83c7b'
+        commit: 'sha1-a06a81a03ee405af7f2048a818ed3f03bbf83c7b'
+        owner_id: 2242
+        repo_id: 204253808
+
     'softprops/action-gh-release@v2.5.0':
         ref: 'v2.5.0'
         commit: 'sha1-a06a81a03ee405af7f2048a818ed3f03bbf83c7b'
         owner_id: 2242
         repo_id: 204253808
+
+    'swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5':
+        ref: '779680da715d629ac1d338a641029a2f4372abb5'
+        commit: 'sha1-779680da715d629ac1d338a641029a2f4372abb5'
+        owner_id: 580492
+        repo_id: 298565987
+
     'swatinem/rust-cache@v2.8.2':
         ref: 'v2.8.2'
         commit: 'sha1-779680da715d629ac1d338a641029a2f4372abb5'
