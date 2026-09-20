@@ -28,7 +28,6 @@ workflows:
         - 'github/codeql-action@v4.34.0'
     '.github/workflows/coverage.yml':
         - 'actions/checkout@v5.0.1'
-        - 'codecov/codecov-action@v5.5.2'
         - 'dtolnay/rust-toolchain@v1'
     '.github/workflows/dependency-review.yml':
         - 'actions/checkout@v5.0.1'
@@ -238,19 +237,7 @@ dependencies:
         uses:
             - 'actions/upload-artifact@v4'
 
-    'codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de':
-        ref: '671740ac38dd9b0130fbe1cec585b89eea48d3de'
-        commit: 'sha1-671740ac38dd9b0130fbe1cec585b89eea48d3de'
-        owner_id: 8226205
-        repo_id: 200299178
 
-    'codecov/codecov-action@v5.5.2':
-        ref: 'v5.5.2'
-        commit: 'sha1-671740ac38dd9b0130fbe1cec585b89eea48d3de'
-        owner_id: 8226205
-        repo_id: 200299178
-        uses:
-            - 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea'
 
     'dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de':
         ref: '02cb101ec7c40f2c49e1d9714d64511d8e1b74de'
