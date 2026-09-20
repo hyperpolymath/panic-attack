@@ -154,7 +154,7 @@ dependencies:
             - 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea'
     'dtolnay/rust-toolchain@v1':
         ref: 'v1'
-        commit: 'sha1-6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772'
+        commit: 'sha1-02cb101ec7c40f2c49e1d9714d64511d8e1b74de'
         owner_id: 1940490
         repo_id: 260749683
     'github/codeql-action@v4.34.0':
