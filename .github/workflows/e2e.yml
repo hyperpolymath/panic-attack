@@ -40,7 +40,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v7.0.1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
@@ -48,7 +48,7 @@ jobs:
           toolchain: v1
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.8.2
+        uses: Swatinem/rust-cache@v2.9.2
 
       - name: Build release binary
         run: cargo build --release
@@ -63,13 +63,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v7.0.1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.8.2
+        uses: Swatinem/rust-cache@v2.9.2
 
       - name: Build release binary
         run: cargo build --release
@@ -113,7 +113,7 @@ jobs:
 
       - name: Upload E2E artifacts
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: e2e-scan-results
           path: /tmp/*-scan.json
@@ -127,13 +127,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v7.0.1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.8.2
+        uses: Swatinem/rust-cache@v2.9.2
 
       - name: Run readiness tests (Grade D/C/B)
         run: cargo test --test readiness -- --nocapture
@@ -146,20 +146,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v7.0.1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.8.2
+        uses: Swatinem/rust-cache@v2.9.2
 
       - name: Run benchmarks
         run: cargo bench 2>&1 | tee /tmp/bench-results.txt
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: benchmark-results
           path: /tmp/bench-results.txt

@@ -72,7 +72,7 @@ jobs:
     outputs:
       relevant: ${{ steps.f.outputs.relevant }}
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 2
       - id: f
@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
@@ -128,7 +128,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
@@ -144,7 +144,7 @@ jobs:
           chpl src/MassPanic.chpl src/Protocol.chpl src/Imaging.chpl src/Temporal.chpl -o mass-panic
           chpl smoke/two_repo_smoke.chpl src/Protocol.chpl src/Imaging.chpl -o smoke/two_repo_smoke
       - name: Upload Chapel artefacts
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: chapel-binaries
           path: |
@@ -159,7 +159,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
@@ -168,7 +168,7 @@ jobs:
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
           sudo apt-get install -y /tmp/chapel.deb
       - name: Download Chapel artefacts
-        uses: actions/download-artifact@v4.1.8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: chapel-binaries
           path: chapel/
@@ -184,7 +184,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       - name: Install Chapel ${{ env.CHAPEL_VERSION }}
         run: |
           set -euo pipefail
@@ -193,7 +193,7 @@ jobs:
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
           sudo apt-get install -y /tmp/chapel.deb
       - name: Download Chapel artefacts
-        uses: actions/download-artifact@v4.1.8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: chapel-binaries
           path: chapel/
@@ -221,11 +221,11 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: v1
-      - uses: actions/cache@v4.3.0
+      - uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -244,9 +244,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@v1
-      - uses: actions/cache@v4.3.0
+      - uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -261,7 +261,7 @@ jobs:
           curl -fsSL --retry 3 -o /tmp/chapel.deb "${{ env.CHAPEL_DEB_URL }}"
           sudo apt-get install -y /tmp/chapel.deb
       - name: Download Chapel artefacts
-        uses: actions/download-artifact@v4.1.8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: chapel-binaries
           path: chapel/
@@ -281,7 +281,7 @@ jobs:
     env:
       CHPL_HOME: /opt/chapel-multilocale
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
 
       # Cache the entire built-from-source Chapel tree. Key is stable across
       # PRs as long as the version, conduit, launcher and cache-gen marker
@@ -289,7 +289,7 @@ jobs:
       # restore is ~30s.
       - name: Cache multilocale Chapel ($CHPL_HOME)
         id: chapel-cache
-        uses: actions/cache@v4.3.0
+        uses: actions/cache@v6.1.0
         with:
           path: ${{ env.CHAPEL_MULTILOCALE_HOME }}
           key: ${{ runner.os }}-chapel-multilocale-${{ env.CHAPEL_VERSION }}-gasnet-smp-${{ env.CHAPEL_MULTILOCALE_CACHE_GEN }}
