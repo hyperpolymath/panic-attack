@@ -24,8 +24,8 @@ workflows:
         - 'actions/upload-artifact@v4.6.2'
         - 'dtolnay/rust-toolchain@v1'
     '.github/workflows/codeql.yml':
-        - 'actions/checkout@v6.0.2'
-        - 'github/codeql-action@v4.34.0'
+        - 'actions/checkout@v7.0.1'
+        - 'github/codeql-action@v4.38.2'
     '.github/workflows/coverage.yml':
         - 'actions/checkout@v5.0.1'
         - 'dtolnay/rust-toolchain@v1'
@@ -61,9 +61,9 @@ workflows:
         - 'swatinem/rust-cache@v2.8.2'
     '.github/workflows/rust-ci.yml': []
     '.github/workflows/scan-and-report.yml':
-        - 'actions/checkout@v4.3.1'
-        - 'dtolnay/rust-toolchain@v1'
-        - 'swatinem/rust-cache@v2.8.2'
+        - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+        - 'dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de'
+        - 'Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6'
     '.github/workflows/scorecard.yml': []
     '.github/workflows/secret-scanner.yml': []
 dependencies:
@@ -100,6 +100,11 @@ dependencies:
     'actions/checkout@v6.0.2':
         ref: 'v6.0.2'
         commit: 'sha1-de0fac2e4500dabe0009e67214ff5f5447ce83dd'
+        owner_id: 44036562
+        repo_id: 197814629
+    'actions/checkout@v7.0.1':
+        ref: 'v7.0.1'
+        commit: 'sha1-3d3c42e5aac5ba805825da76410c181273ba90b1'
         owner_id: 44036562
         repo_id: 197814629
     'actions/configure-pages@v5.0.0':
@@ -144,9 +149,9 @@ dependencies:
         commit: 'sha1-02cb101ec7c40f2c49e1d9714d64511d8e1b74de'
         owner_id: 1940490
         repo_id: 260749683
-    'github/codeql-action@v4.34.0':
-        ref: 'v4.34.0'
-        commit: 'sha1-c6f931105cb2c34c8f901cc885ba1e2e259cf745'
+    'github/codeql-action@v4.38.2':
+        ref: 'v4.38.2'
+        commit: 'sha1-2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2'
         owner_id: 9919
         repo_id: 259445878
     'haskell-actions/setup@v2.7.5':
@@ -199,6 +204,11 @@ dependencies:
         commit: 'sha1-65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08'
         owner_id: 44036562
         repo_id: 192625955
+    'dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de':
+        ref: 'v1'
+        commit: 'sha1-02cb101ec7c40f2c49e1d9714d64511d8e1b74de'
+        owner_id: 1940490
+        repo_id: 260749683
     'dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772':
         ref: 'stable'
         commit: 'sha1-6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772'
