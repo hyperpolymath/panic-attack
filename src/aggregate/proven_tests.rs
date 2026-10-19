@@ -115,11 +115,9 @@ impl ReportTier {
     }
 }
 
-impl std::str::FromStr for ProvenTestsReport {
-    type Err = anyhow::Error;
-
+impl ProvenTestsReport {
     /// Parse a run report from JSON text.
-    fn from_str(text: &str) -> Result<Self> {
+    pub fn from_str(text: &str) -> Result<Self> {
         let report: ProvenTestsReport =
             serde_json::from_str(text).context("parsing proven-tests run report")?;
         if report.schema_version != 1 {
@@ -130,21 +128,12 @@ impl std::str::FromStr for ProvenTestsReport {
         }
         Ok(report)
     }
-}
-
-impl ProvenTestsReport {
-    /// Parse a run report from JSON text.
-    // Preserve the existing constructor alongside the standard parsing trait.
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(text: &str) -> Result<Self> {
-        text.parse()
-    }
 
     /// Parse a run report from a file path.
     pub fn from_path(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        text.parse()
+        Self::from_str(&text)
     }
 
     /// The distinct `.idr` proof-ladder files cited by Actually-Proven entries.
@@ -221,7 +210,7 @@ mod tests {
 
     #[test]
     fn parses_schema_v1() {
-        let r: ProvenTestsReport = SAMPLE.parse().expect("parse");
+        let r = ProvenTestsReport::from_str(SAMPLE).expect("parse");
         assert_eq!(r.schema_version, 1);
         assert_eq!(r.entries.len(), 3);
         assert_eq!(r.summary.actually_proven, 1);

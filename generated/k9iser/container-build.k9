@@ -1,62 +1,28 @@
-K9!
-# SPDX-License-Identifier: MPL-2.0
-# Configuration contract derived from k9iser.toml.
-# Keep the requirements below in sync with that source manifest.
-{
-  pedigree = {
-    schema_version = "1.0.0",
-    component_type = "configuration-contract",
-    security = {
-      leash = 'Hunt,
-      signature_required = true,
-      allow_network = false,
-      allow_filesystem_write = false,
-      allow_subprocess = false,
-    },
-    metadata = {
-      name = "container-build",
-      version = "1.0.0",
-      description = "Requirements for stapeln.toml",
-    },
-    side_effects = ["Validation reads the source configuration; no deployment is performed."],
-  },
+# Auto-generated K9 contract for container-build
+# Safety tier: hunt
 
-  config = {
-    source = "stapeln.toml",
-    format = "toml",
-  },
+[must]
+metadata.license : string { == 'MPL-2.0' }
+metadata.registry : string { == 'ghcr.io/hyperpolymath' }
+build.runtime : string { == 'podman' }
+layers.base.verify : bool { == true }
+layers.runtime.user : string { == 'nonroot' }
+security.non-root : bool { == true }
+security.no-new-privileges : bool { == true }
+security.signing.algorithm : string { == 'ML-DSA-87' }
+security.signing.provider : string { == 'cerro-torre' }
+security.sbom.format : string { == 'spdx-json' }
+security.sbom.include-deps : bool { == true }
+verify.vordr : bool { == true }
+verify.svalinn : bool { == true }
+verify.scan-on-build : bool { == true }
 
-  # Declarative requirements; a signature is required before Hunt execution.
-  validation = {
-    must = [
-      "metadata.license == 'MPL-2.0'",
-      "metadata.registry == 'ghcr.io/hyperpolymath'",
-      "build.runtime == 'podman'",
-      "layers.base.from starts-with 'cgr.dev/chainguard/'",
-      "layers.base.verify == true",
-      "layers.runtime.user == 'nonroot'",
-      "security.non-root == true",
-      "security.no-new-privileges == true",
-      "security.cap-drop contains 'ALL'",
-      "security.signing.algorithm == 'ML-DSA-87'",
-      "security.signing.provider == 'cerro-torre'",
-      "security.sbom.format == 'spdx-json'",
-      "security.sbom.include-deps == true",
-      "verify.vordr == true",
-      "verify.svalinn == true",
-      "verify.scan-on-build == true",
-      "verify.fail-on contains 'critical'",
-      "verify.fail-on contains 'high'",
-    ],
-    trust = [
-      "signed-by: ci-pipeline",
-    ],
-    dust = [
-      "remove: deprecated layer definitions",
-    ],
-    intend = [
-      "production-ready",
-      "supply-chain-verified",
-    ],
-  },
-}
+[trust]
+signed-by = "ci-pipeline"
+
+[dust]
+remove = ["deprecated layer definitions"]
+
+[intend]
+production-ready = true
+supply-chain-verified = true

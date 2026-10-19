@@ -22,11 +22,12 @@ mod axial;
 #[cfg(feature = "http")]
 mod bridge;
 mod campaign;
-use panic_attack::comment_marker;
+mod comment_marker;
 mod diagnostics;
-use panic_attack::ffi_kind;
+mod ffi_kind;
 mod groove;
 mod i18n;
+mod jit_context;
 mod kanren;
 mod kin;
 mod mass_panic;

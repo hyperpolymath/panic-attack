@@ -235,7 +235,7 @@ fn build_hexad(report: &AssaultReport) -> Result<PanicAttackHexad> {
     let id = format!(
         "pa-{}-{}",
         now.format("%Y%m%d%H%M%S"),
-        uuid_from_timestamp(now.timestamp_millis())
+        &uuid_from_timestamp(now.timestamp_millis())
     );
 
     let critical_count = report
@@ -382,7 +382,7 @@ fn build_assemblyline_hexad(
     let id = format!(
         "pa-asmline-{}-{}",
         now.format("%Y%m%d%H%M%S"),
-        uuid_from_timestamp(now.timestamp_millis())
+        &uuid_from_timestamp(now.timestamp_millis())
     );
 
     let document = serde_json::to_value(report)?;
@@ -510,7 +510,7 @@ pub fn build_finding_hexads(
     let run_id = format!(
         "pa-asmline-{}-{}",
         now.format("%Y%m%d%H%M%S"),
-        uuid_from_timestamp(now.timestamp_millis())
+        &uuid_from_timestamp(now.timestamp_millis())
     );
 
     let mut hexads = Vec::new();
@@ -540,7 +540,7 @@ pub fn build_finding_hexads(
                 now.format("%Y%m%d%H%M%S"),
                 repo_idx,
                 wp_idx,
-                uuid_from_timestamp(now.timestamp_millis()),
+                &uuid_from_timestamp(now.timestamp_millis()),
             );
 
             let document = serde_json::json!({
@@ -691,7 +691,7 @@ pub fn build_crosslang_hexads(
                 run_ts,
                 repo_idx,
                 int_idx,
-                uuid_from_timestamp(now.timestamp_millis()),
+                &uuid_from_timestamp(now.timestamp_millis()),
             );
 
             let document = serde_json::json!({
@@ -780,7 +780,7 @@ pub fn build_campaign_hexad(semantic: CampaignSemantic) -> PanicAttackHexad {
     let hexad_id = format!(
         "pa-campaign-{}-{}",
         now.format("%Y%m%d%H%M%S"),
-        uuid_from_timestamp(now.timestamp_millis())
+        &uuid_from_timestamp(now.timestamp_millis())
     );
 
     PanicAttackHexad {

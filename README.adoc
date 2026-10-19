@@ -183,7 +183,7 @@ Consult `man/panic-attack.1` or `panic-attack help` for every command, and use `
 
 === Automation readiness
 
-`panic-attack diagnostics` validates AI manifests, VeriSimDB caches, Hypatia and gitbot-fleet watchers, and the docs PanLL expects (`docs/ambush-timeline.adoc`, `docs/panll-export.adoc`). `docs/patch-bridge-design.md` details how the patch-bridge subcommands plug into BoJ cartridges, CVE workflows, and the PanLL panel.
+`panic-attack diagnostics` validates AI manifests, VeriSimDB caches, Hypatia and gitbot-fleet watchers, and the docs PanLL expects (`docs/ambush-timeline.md`, `docs/panll-export.md`). `docs/patch-bridge-design.md` details how the patch-bridge subcommands plug into BoJ cartridges, CVE workflows, and the PanLL panel.
 
 `just test-elixir` runs the Elixir harnesses that cover the CLI surface so documentation, help text, and automation flags stay aligned.
 
