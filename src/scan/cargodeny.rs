@@ -8,7 +8,7 @@
 // feedback_no_automated_licence_edits.
 
 use crate::types::{Severity, WeakPoint, WeakPointCategory};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -173,18 +173,13 @@ pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
             .map(|c| code_to_category(&c))
             .unwrap_or(WeakPointCategory::Advisory);
 
-        let location = diagnostic
-            .location
-            .map(|loc| {
-                if let (Some(ref file), Some(line)) = (&loc.file, loc.line) {
-                    Some(format!("{}:{}", file, line))
-                } else if let Some(ref file) = loc.file {
-                    Some(file.clone())
-                } else {
-                    None
-                }
-            })
-            .flatten();
+        let location = diagnostic.location.and_then(|loc| {
+            if let (Some(ref file), Some(line)) = (&loc.file, loc.line) {
+                Some(format!("{}:{}", file, line))
+            } else {
+                loc.file.clone()
+            }
+        });
 
         // Parse file and line from location string
         let (file, line) = if let Some(ref loc) = location {
@@ -272,13 +267,13 @@ pub fn parse_sarif_output(sarif_json: &str) -> Result<Vec<WeakPoint>> {
     // SARIF structure: { runs: [{ results: [{ ... }] }] }
     let runs = v["runs"]
         .as_array()
-        .ok_or_else(|| anyhow!("no runs in SARIF"))?;
+        .ok_or_else(|| anyhow::anyhow!("no runs in SARIF"))?;
     let mut weak_points = Vec::new();
 
     for run in runs {
         let results = run["results"]
             .as_array()
-            .ok_or_else(|| anyhow!("no results in SARIF run"))?;
+            .ok_or_else(|| anyhow::anyhow!("no results in SARIF run"))?;
         for result in results {
             let message = result["message"]["text"]
                 .as_str()
