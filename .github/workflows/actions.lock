@@ -73,6 +73,7 @@ workflows:
         - 'hyperpolymath/standards@333b06a01db1874ffedb2de1bfabb195640927c7'
     '.github/workflows/secret-scanner.yml':
         - 'hyperpolymath/standards@333b06a01db1874ffedb2de1bfabb195640927c7'
+    '.github/workflows/zz-one-off-lock-regen.yml': []
 dependencies:
     'Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6':
         ref: 'v2.9.2'
