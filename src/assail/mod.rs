@@ -411,7 +411,8 @@ pub fn apply_suppression(report: &mut AssailReport) {
 ///   3. UnsafeFFI finding where the file's [[ffi_kind]] is
 ///      `BuildSystem` or `TestMock` (audit-accepted by default).
 ///
-/// JIT context handling remains inline in analyzer.rs:1117..1129.
+/// JIT context handling remains in the transmute classification block of
+/// `Analyzer::analyze_rust` in `analyzer.rs`.
 ///
 /// Fills missing `wp.test_context` for findings with a known file path so
 /// downstream audit consumers can render it. Returns the number of
