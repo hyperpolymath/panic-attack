@@ -263,18 +263,16 @@ static RE_HARDCODED_SECRET: OnceLock<Regex> = OnceLock::new();
 /// Does not handle OCaml `(* *)` or Forth `\` — edge cases for later.
 static RE_TODO_COMMENT: OnceLock<Regex> = OnceLock::new();
 
-/// Heuristic: is the `malloc` on `lines[idx]` NULL-checked within a short
-/// window of following lines?
+/// Heuristically recognise a null check for the allocation on `lines[idx]`.
 ///
-/// An "UncheckedAllocation" finding should only fire when the result is *not*
-/// guarded. This recognises the common C idioms (`if (p == NULL)`,
-/// `if (!p)`, `if (p == nullptr)`) on the lvalue assigned from `malloc`.
+/// Searches the allocation line and up to six following lines for `NULL` or
+/// `nullptr` alongside the assigned identifier, or an `if` line containing `!`
+/// immediately followed by that identifier. If no identifier can be extracted,
+/// any `NULL` or `nullptr` substring in the window suffices. Substring matches
+/// do not establish that the allocation is guarded.
 ///
-/// Deliberately conservative to avoid false negatives in a security scanner:
-/// a site is treated as checked only on a clear NULL-guard signal that
-/// references the allocated variable (or, when no lvalue can be parsed, any
-/// NULL/nullptr token in the window). Genuinely-unchecked allocations — the
-/// real finding — are still reported.
+/// # Panics
+/// Panics if the zero-based `idx` is outside `lines`.
 fn c_alloc_result_is_null_checked(lines: &[&str], idx: usize) -> bool {
     let line = lines[idx];
     // Parse the lvalue assigned from malloc: the last identifier left of '='.

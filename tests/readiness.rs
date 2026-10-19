@@ -114,8 +114,8 @@ fn readiness_d_assail_runs() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn readiness_d_diagnostics_runs() {
-    let (ok, _stdout, stderr) = run(&["diagnostics"]);
-    assert!(ok, "diagnostics should succeed: {}", stderr);
+    let (ok, stdout, stderr) = run(&["diagnostics"]);
+    assert!(ok, "diagnostics should succeed: {stdout}\n{stderr}");
 }
 
 #[test]
@@ -316,11 +316,10 @@ fn cfg_test_panic() {
     )?;
     let clean_report = assail::analyze(dir.path())?;
     assert!(
-        clean_report
+        !clean_report
             .weak_points
             .iter()
-            .find(|wp| wp.category == WeakPointCategory::PanicPath && !wp.suppressed)
-            .is_none(),
+            .any(|wp| wp.category == WeakPointCategory::PanicPath && !wp.suppressed),
         "excluded panic contexts must produce zero active findings"
     );
     Ok(())
@@ -510,7 +509,13 @@ fn readiness_c_panll_runs() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn readiness_c_diagnostics_output() {
     let (ok, stdout, stderr) = run(&["diagnostics"]);
-    assert!(ok, "diagnostics should succeed: {}", stderr);
+    assert!(ok, "diagnostics should succeed: {stdout}\n{stderr}");
+    for guide in ["docs/ambush-timeline.adoc", "docs/panll-export.adoc"] {
+        assert!(
+            stdout.contains(&format!("{guide} exists")),
+            "diagnostics should find the shipped guide {guide}: {stdout}"
+        );
+    }
     assert!(
         stdout.contains("panicbot integration"),
         "diagnostics should check panicbot integration readiness, got: {}",
