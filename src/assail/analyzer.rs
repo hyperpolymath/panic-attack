@@ -941,6 +941,10 @@ impl Analyzer {
     // Original language analyzers
     // ============================================================
 
+    /// Accumulate Rust statistics and append heuristic findings for `file_path`.
+    /// Dangerous-pattern checks exclude string contents, comments, `cfg`-selected
+    /// test bodies and `should_panic` bodies. Panic counts and findings also exclude
+    /// test paths and build scripts.
     fn analyze_rust(
         &self,
         content: &str,
@@ -1767,6 +1771,9 @@ impl Analyzer {
         false
     }
 
+    /// Accumulate C/C++ statistics and append heuristic findings for `file_path`.
+    /// Unchecked malloc findings include one-based line numbers for suppression
+    /// and omit allocations with a recognised nearby null check.
     fn analyze_c_cpp(
         &self,
         content: &str,
@@ -2012,6 +2019,8 @@ impl Analyzer {
         Ok(())
     }
 
+    /// Accumulate Go statistics and append heuristic concurrency, unsafe pointer,
+    /// command execution and cryptography findings located at `file_path`.
     fn analyze_go(
         &self,
         content: &str,
@@ -2141,6 +2150,8 @@ impl Analyzer {
         Ok(())
     }
 
+    /// Accumulate Python I/O and threading counts and append heuristic loop,
+    /// code execution, deserialisation, command and cryptography findings for `file_path`.
     fn analyze_python(
         &self,
         content: &str,
@@ -3168,6 +3179,9 @@ impl Analyzer {
         }
     }
 
+    /// Accumulate OCaml statistics and append heuristic findings for `file_path`.
+    /// Classify `Obj.magic` as proof drift when Coq extraction markers are present,
+    /// or as unsafe type coercion otherwise.
     fn analyze_ocaml(
         &self,
         content: &str,
@@ -4320,6 +4334,8 @@ impl Analyzer {
         Ok(())
     }
 
+    /// Accumulate Odin operation counts and append a Medium unsafe-code finding
+    /// at `file_path` when `rawptr` occurs in the content.
     fn analyze_odin(
         &self,
         content: &str,
@@ -4498,6 +4514,9 @@ impl Analyzer {
     // Config languages (Nickel, Nix)
     // ============================================================
 
+    /// Accumulate Nix/Nickel I/O counts and append Nix command and unpinned-flake findings.
+    /// Uses `file_path` for file-type checks, finding locations and the sibling
+    /// `flake.lock` lookup on disk.
     fn analyze_config(
         &self,
         content: &str,
@@ -4602,6 +4621,9 @@ impl Analyzer {
     // Shell scripting
     // ============================================================
 
+    /// Accumulate shell I/O counts and append heuristic command, permission and
+    /// temporary-path findings for `file_path`. Unquoted expansion findings require
+    /// more than 20 `$VAR` matches after quoted string contents are removed.
     fn analyze_shell(
         &self,
         content: &str,
@@ -5035,6 +5057,8 @@ impl Analyzer {
     // Cross-language security checks (run on ALL files)
     // ============================================================
 
+    /// Append heuristic protocol, hardcoded secret and excessive comment-marker
+    /// findings located at `file_path`, independently of the detected language.
     fn analyze_cross_language(
         &self,
         content: &str,
