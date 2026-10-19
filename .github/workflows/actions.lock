@@ -25,7 +25,7 @@ workflows:
         - 'dtolnay/rust-toolchain@v1'
     '.github/workflows/codeql.yml':
         - 'actions/checkout@v7.0.1'
-        - 'github/codeql-action@v4.38.3'
+        - 'github/codeql-action@v4.39.0'
     '.github/workflows/coverage.yml':
         - 'actions/checkout@v7.0.1'
         - 'dtolnay/rust-toolchain@v1'
@@ -68,7 +68,7 @@ workflows:
     '.github/workflows/scan-and-report.yml':
         - 'Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6'
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
-        - 'dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f'
+        - 'dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8'
     '.github/workflows/scorecard.yml':
         - 'hyperpolymath/standards@333b06a01db1874ffedb2de1bfabb195640927c7'
     '.github/workflows/secret-scanner.yml':
@@ -181,9 +181,9 @@ dependencies:
         commit: 'sha1-b96794f015dfd88f77b49b1c93e0fa7110f94c63'
         owner_id: 9919
         repo_id: 259445878
-    'github/codeql-action@v4.38.3':
-        ref: 'v4.38.3'
-        commit: 'sha1-24c54180a607b1449ed407dd24f251e4e9147c8d'
+    'github/codeql-action@v4.39.0':
+        ref: 'v4.39.0'
+        commit: 'sha1-6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee'
         owner_id: 9919
         repo_id: 259445878
     'goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406':
