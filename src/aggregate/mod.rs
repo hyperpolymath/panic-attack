@@ -394,6 +394,11 @@ pub fn run(config: AggregateConfig) -> Result<AggregateReport> {
     })
 }
 
+/// Write the aggregate report as pretty-printed JSON, creating parent directories
+/// and replacing any existing file at `path`.
+///
+/// # Errors
+/// Returns directory creation, JSON serialisation and file write errors.
 pub fn write_report(report: &AggregateReport, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -493,6 +498,8 @@ fn has_metavar_hole(text: &str) -> bool {
     false
 }
 
+/// Look for case-sensitive proof or declaration substrings as a closure heuristic;
+/// a match does not verify that the text contains a valid proof.
 fn has_proof_keyword(text: &str) -> bool {
     const KW: &[&str] = &[
         "theorem", "lemma", "Theorem", "Lemma", "Proof", "proof", "where", ":=", "data ", "record ",
@@ -606,6 +613,10 @@ fn scan_covers(text: &str) -> Vec<Coverage> {
 
 /// Parse `[claim:]kind:value`, e.g. `sound:category:UnsafeCode`,
 /// `safe:file:src/foo.rs`, `category:PanicPath`, `free:my-lemma`.
+///
+/// A bare token other than `safe` or `sound` becomes free-form coverage with an
+/// unspecified claim. Returns `None` for an empty first field, an unrecognised
+/// kind or an unsupported field layout. Values are retained without trimming.
 pub fn parse_coverage_spec(spec: &str) -> Option<Coverage> {
     let mut parts: Vec<&str> = spec.splitn(3, ':').collect();
     if parts.is_empty() || parts[0].is_empty() {
@@ -692,6 +703,7 @@ fn summarise(findings: &[FindingLite]) -> FindingSummary {
     }
 }
 
+/// Count findings selected by the coverage annotation; free-form coverage matches none.
 fn count_matching(findings: &[FindingLite], cov: &Coverage) -> usize {
     findings.iter().filter(|f| matches_coverage(f, cov)).count()
 }

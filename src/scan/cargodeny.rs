@@ -112,7 +112,15 @@ fn code_to_category(code: &str) -> WeakPointCategory {
     }
 }
 
-/// Run cargo-deny check and parse output
+/// Run `cargo deny check` in the configured workspace and return its diagnostic findings.
+///
+/// Standard output must be UTF-8 JSON matching `DenyOutput`, regardless of
+/// `config.format`. A non-zero exit status still yields findings if parsing succeeds.
+/// Missing severity and code fields default to Medium and Advisory respectively.
+/// `config.deny_toml` is currently ignored.
+///
+/// # Errors
+/// Returns process execution errors, invalid UTF-8 errors and JSON deserialisation errors.
 pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
     let workspace_root = &config.workspace_root;
 
@@ -257,7 +265,13 @@ impl From<WeakPoint> for CargoDenyWeakPoint {
     }
 }
 
-/// Parse cargo-deny SARIF output (alternative to JSON)
+/// Convert cargo-deny SARIF results into findings, using only the first location
+/// of each result. Missing levels default to Medium severity; missing or
+/// unrecognised rule IDs default to Advisory.
+///
+/// # Errors
+/// Returns JSON parsing errors, or an error if `runs` or any run's `results` is
+/// absent or is not an array. Empty `runs` and `results` arrays are valid.
 #[cfg(feature = "sarif")]
 pub fn parse_sarif_output(sarif_json: &str) -> Result<Vec<WeakPoint>> {
     use serde_json::Value;
@@ -344,7 +358,12 @@ pub fn parse_sarif_output(sarif_json: &str) -> Result<Vec<WeakPoint>> {
     Ok(weak_points)
 }
 
-/// High-level function to scan a workspace and emit cargo-deny weak points
+/// Scan a workspace with cargo-deny's JSON defaults and return diagnostic findings.
+/// The `deny_toml` argument currently has no effect.
+///
+/// # Errors
+/// Propagates execution, UTF-8 decoding and JSON deserialisation errors from
+/// [`run_cargo_deny`]. A non-zero cargo-deny exit status alone is not an error.
 pub fn scan_workspace(workspace_root: &Path, deny_toml: Option<&Path>) -> Result<Vec<WeakPoint>> {
     let config = CargoDenyConfig {
         workspace_root: workspace_root.to_path_buf(),
