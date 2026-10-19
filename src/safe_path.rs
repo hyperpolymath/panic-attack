@@ -118,12 +118,6 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    /// Property-test predicate kept separate from the sanitizer implementation.
-    fn all_chars_safe(s: &str) -> bool {
-        s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || SAFE_PUNCT.contains(&c))
-    }
-
     // ─────────────────────────────────────────────────────────────────
     // has_traversal — concrete cases
     // ─────────────────────────────────────────────────────────────────
