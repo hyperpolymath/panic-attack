@@ -55,6 +55,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use clap_complete_nushell::Nushell;
+use panic_attack::{comment_marker, ffi_kind};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};

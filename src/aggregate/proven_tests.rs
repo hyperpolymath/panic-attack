@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn parses_schema_v1() {
-        let r = ProvenTestsReport::from_str(SAMPLE).expect("parse");
+        let r: ProvenTestsReport = SAMPLE.parse().expect("parse");
         assert_eq!(r.schema_version, 1);
         assert_eq!(r.entries.len(), 3);
         assert_eq!(r.summary.actually_proven, 1);
