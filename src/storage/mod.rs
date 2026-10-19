@@ -1393,7 +1393,7 @@ mod tests {
             description: format!("test finding at {}:{}", file, line),
             recommended_attack: Vec::new(),
             suppressed: false,
-                test_context: None,
+            test_context: None,
         }
     }
 
@@ -1619,7 +1619,7 @@ mod tests {
             description: "ffi boundary".to_string(),
             recommended_attack: Vec::new(),
             suppressed: false,
-                test_context: None,
+            test_context: None,
         }
     }
 

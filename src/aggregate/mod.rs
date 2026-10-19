@@ -397,8 +397,7 @@ pub fn run(config: AggregateConfig) -> Result<AggregateReport> {
 pub fn write_report(report: &AggregateReport, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
     }
     let json = serde_json::to_string_pretty(report).context("serializing aggregate report")?;
@@ -496,8 +495,7 @@ fn has_metavar_hole(text: &str) -> bool {
 
 fn has_proof_keyword(text: &str) -> bool {
     const KW: &[&str] = &[
-        "theorem", "lemma", "Theorem", "Lemma", "Proof", "proof", "where", ":=", "data ",
-        "record ",
+        "theorem", "lemma", "Theorem", "Lemma", "Proof", "proof", "where", ":=", "data ", "record ",
     ];
     KW.iter().any(|k| text.contains(k))
 }
@@ -579,10 +577,7 @@ fn scan_name(text: &str) -> Option<String> {
         let end = stripped.find('"')?;
         Some(stripped[..end].to_string())
     } else {
-        let token: String = rest
-            .chars()
-            .take_while(|c| !c.is_whitespace())
-            .collect();
+        let token: String = rest.chars().take_while(|c| !c.is_whitespace()).collect();
         if token.is_empty() {
             None
         } else {
@@ -634,11 +629,7 @@ pub fn parse_coverage_spec(spec: &str) -> Option<Coverage> {
         [single] => (CoverageKind::Free, (*single).to_string()),
         _ => return None,
     };
-    Some(Coverage {
-        claim,
-        kind,
-        value,
-    })
+    Some(Coverage { claim, kind, value })
 }
 
 fn kind_of(s: &str) -> Option<CoverageKind> {
@@ -702,10 +693,7 @@ fn summarise(findings: &[FindingLite]) -> FindingSummary {
 }
 
 fn count_matching(findings: &[FindingLite], cov: &Coverage) -> usize {
-    findings
-        .iter()
-        .filter(|f| matches_coverage(f, cov))
-        .count()
+    findings.iter().filter(|f| matches_coverage(f, cov)).count()
 }
 
 fn matches_coverage(f: &FindingLite, cov: &Coverage) -> bool {
@@ -897,7 +885,11 @@ mod tests {
             Prover::Idris2,
             "-- we deliberately avoid any postulate here\ntheorem t : Nat\nt = 0\n",
         );
-        assert!(holes.is_empty(), "comment word should not register: {:?}", holes);
+        assert!(
+            holes.is_empty(),
+            "comment word should not register: {:?}",
+            holes
+        );
         assert_eq!(v, ProofVerdict::Closed);
     }
 

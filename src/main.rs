@@ -2734,9 +2734,8 @@ fn run_main() -> Result<()> {
                 PanicAttackHexad,
             };
 
-            let json = std::fs::read_to_string(&hexad).with_context(|| {
-                format!("reading hexad file {}", hexad.display())
-            })?;
+            let json = std::fs::read_to_string(&hexad)
+                .with_context(|| format!("reading hexad file {}", hexad.display()))?;
             let hexad_value: PanicAttackHexad = serde_json::from_str(&json)
                 .with_context(|| format!("parsing hexad JSON at {}", hexad.display()))?;
 

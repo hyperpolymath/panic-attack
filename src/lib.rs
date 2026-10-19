@@ -27,7 +27,6 @@ pub mod assemblyline;
 pub mod attack;
 pub mod attestation;
 pub mod axial;
-pub mod scan;
 #[cfg(feature = "http")]
 pub mod bridge;
 pub mod campaign;
@@ -42,6 +41,7 @@ pub mod panll;
 pub mod query;
 pub mod report;
 pub mod safe_path;
+pub mod scan;
 pub mod signatures;
 pub mod storage;
 pub mod sweep_tracker;

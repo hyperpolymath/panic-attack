@@ -131,8 +131,8 @@ impl ProvenTestsReport {
 
     /// Parse a run report from a file path.
     pub fn from_path(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         Self::from_str(&text)
     }
 
@@ -163,12 +163,21 @@ impl ProvenTestsReport {
                     e.proof_ladder.len()
                 ),
                 Some(ReportTier::ProvisionallyProven) => {
-                    format!("{}: Provisionally-Proven → informational (no proof artifact)", e.test_id)
+                    format!(
+                        "{}: Provisionally-Proven → informational (no proof artifact)",
+                        e.test_id
+                    )
                 }
                 Some(ReportTier::Unproven) => {
-                    format!("{}: Unproven → informational (no proof artifact)", e.test_id)
+                    format!(
+                        "{}: Unproven → informational (no proof artifact)",
+                        e.test_id
+                    )
                 }
-                None => format!("{}: unrecognised provenance tier {:?}", e.test_id, e.provenance),
+                None => format!(
+                    "{}: unrecognised provenance tier {:?}",
+                    e.test_id, e.provenance
+                ),
             })
             .collect()
     }
@@ -240,6 +249,9 @@ mod tests {
         let weird = SAMPLE.replace("\"Unproven\"", "\"Sorta-Proven\"");
         let r = ProvenTestsReport::from_str(&weird).unwrap();
         // notes() surfaces the unrecognised tier rather than crashing
-        assert!(r.notes().iter().any(|n| n.contains("unrecognised provenance tier")));
+        assert!(r
+            .notes()
+            .iter()
+            .any(|n| n.contains("unrecognised provenance tier")));
     }
 }

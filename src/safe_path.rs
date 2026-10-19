@@ -191,7 +191,10 @@ mod tests {
 
     #[test]
     fn sanitize_keeps_safe_punct() {
-        assert_eq!(sanitize_filename("my-file_2026.06.02"), "my-file_2026.06.02");
+        assert_eq!(
+            sanitize_filename("my-file_2026.06.02"),
+            "my-file_2026.06.02"
+        );
         assert_eq!(sanitize_filename("config~"), "config~");
     }
 

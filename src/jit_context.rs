@@ -85,8 +85,7 @@ fn is_cranelift(content: &str) -> bool {
     content.contains("cranelift_jit::JITModule")
         || content.contains("cranelift_module::Module")
         || content.contains("JITModule::new(")
-        || (content.contains("cranelift_jit")
-            && content.contains("get_finalized_function"))
+        || (content.contains("cranelift_jit") && content.contains("get_finalized_function"))
         || content.contains("use cranelift_jit")
         || content.contains("use cranelift_module")
 }
@@ -131,8 +130,7 @@ pub fn transmute_targets_fn_ptr(content: &str) -> bool {
     // `: unsafe fn(...)`) annotation co-occurs with a `transmute(`
     // call. The `=` may have intervening tokens (`unsafe { ... }`,
     // closure wrappers, etc.), so we don't require it adjacent.
-    let has_fn_annotation =
-        content.contains(": fn(") || content.contains(": unsafe fn(");
+    let has_fn_annotation = content.contains(": fn(") || content.contains(": unsafe fn(");
     let has_transmute_call = content.contains("transmute(")
         || content.contains("mem::transmute(")
         || content.contains("std::mem::transmute(");
@@ -157,8 +155,7 @@ mod tests {
 
     #[test]
     fn llvm_inkwell_classified() {
-        let src =
-            "use inkwell::execution_engine::ExecutionEngine;\nfn run() {}\n";
+        let src = "use inkwell::execution_engine::ExecutionEngine;\nfn run() {}\n";
         assert_eq!(classify_rust(src), JitContext::Llvm);
     }
 
@@ -203,15 +200,13 @@ mod tests {
 
     #[test]
     fn transmute_to_fn_ptr_turbofish_recognised() {
-        let src =
-            "let f: fn() = unsafe { std::mem::transmute::<_, fn()>(ptr) };";
+        let src = "let f: fn() = unsafe { std::mem::transmute::<_, fn()>(ptr) };";
         assert!(transmute_targets_fn_ptr(src));
     }
 
     #[test]
     fn transmute_to_fn_ptr_let_binding_recognised() {
-        let src =
-            "let f: fn(i64) -> i64 = unsafe { mem::transmute(raw_ptr) };";
+        let src = "let f: fn(i64) -> i64 = unsafe { mem::transmute(raw_ptr) };";
         assert!(transmute_targets_fn_ptr(src));
     }
 
@@ -223,8 +218,7 @@ mod tests {
 
     #[test]
     fn transmute_to_non_fn_not_recognised() {
-        let src =
-            "let n: u64 = unsafe { std::mem::transmute::<_, u64>(value) };";
+        let src = "let n: u64 = unsafe { std::mem::transmute::<_, u64>(value) };";
         assert!(!transmute_targets_fn_ptr(src));
     }
 

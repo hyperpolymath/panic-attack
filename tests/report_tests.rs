@@ -27,7 +27,7 @@ fn make_assail_report() -> AssailReport {
                 description: "2 unsafe blocks in src/main.rs".to_string(),
                 recommended_attack: vec![AttackAxis::Memory, AttackAxis::Concurrency],
                 suppressed: false,
-        test_context: None,
+                test_context: None,
             },
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
@@ -38,7 +38,7 @@ fn make_assail_report() -> AssailReport {
                 description: "5 unwrap/expect calls in src/lib.rs".to_string(),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
-        test_context: None,
+                test_context: None,
             },
         ],
         statistics: ProgramStatistics {
@@ -157,7 +157,7 @@ fn test_robustness_score_clamped_to_zero() -> Result<(), Box<dyn std::error::Err
             description: format!("critical issue {}", i),
             recommended_attack: vec![],
             suppressed: false,
-        test_context: None,
+            test_context: None,
         });
     }
     let results = vec![make_attack_result(AttackAxis::Memory, false, 5)];

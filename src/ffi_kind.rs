@@ -92,8 +92,10 @@ fn is_test_mock_path(p: &str) -> bool {
     // path. Plain test files are still RuntimeAbi if they call the
     // real FFI surface (they exercise it).
     let has_test_scope = p.contains("tests/") || p.contains("test/");
-    let has_mock_indicator =
-        p.contains("/mocks/") || p.contains("_mock.") || p.contains("/stubs/") || p.contains("_stub.");
+    let has_mock_indicator = p.contains("/mocks/")
+        || p.contains("_mock.")
+        || p.contains("/stubs/")
+        || p.contains("_stub.");
     has_test_scope && has_mock_indicator
 }
 
@@ -128,10 +130,9 @@ pub fn is_audited_boundary(audit_text: &str, file_path: &str) -> bool {
     for line in audit_text.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("## ") {
-            in_approved_section =
-                trimmed.eq_ignore_ascii_case("## Approved boundaries")
-                    || trimmed.eq_ignore_ascii_case("## Approved FFI boundaries")
-                    || trimmed.eq_ignore_ascii_case("## Pre-approved boundaries");
+            in_approved_section = trimmed.eq_ignore_ascii_case("## Approved boundaries")
+                || trimmed.eq_ignore_ascii_case("## Approved FFI boundaries")
+                || trimmed.eq_ignore_ascii_case("## Pre-approved boundaries");
             continue;
         }
         if !in_approved_section {
@@ -160,10 +161,7 @@ mod tests {
 
     #[test]
     fn build_zig_classified_build_system() {
-        assert_eq!(
-            FfiKind::classify_by_path("build.zig"),
-            FfiKind::BuildSystem
-        );
+        assert_eq!(FfiKind::classify_by_path("build.zig"), FfiKind::BuildSystem);
         assert_eq!(
             FfiKind::classify_by_path("src/foo/build.zig"),
             FfiKind::BuildSystem
@@ -209,10 +207,7 @@ mod tests {
 
     #[test]
     fn unrecognised_path_is_unknown() {
-        assert_eq!(
-            FfiKind::classify_by_path("src/main.rs"),
-            FfiKind::Unknown
-        );
+        assert_eq!(FfiKind::classify_by_path("src/main.rs"), FfiKind::Unknown);
         assert_eq!(
             FfiKind::classify_by_path("examples/hello.zig"),
             FfiKind::Unknown

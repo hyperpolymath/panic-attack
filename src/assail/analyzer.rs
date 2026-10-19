@@ -984,9 +984,8 @@ impl Analyzer {
         // crypto counts too (a `#[test] fn exercises_unsafe_wrapper()`
         // inside a production file would otherwise count toward that
         // file's unsafe-block total).
-        let code_only = Self::strip_should_panic_items_rs(
-            &Self::strip_cfg_test_modules_rs(&without_comments),
-        );
+        let code_only =
+            Self::strip_should_panic_items_rs(&Self::strip_cfg_test_modules_rs(&without_comments));
 
         stats.unsafe_blocks += code_only.matches("unsafe {").count();
         stats.unsafe_blocks += code_only.matches("unsafe fn").count();
@@ -1903,7 +1902,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -1926,7 +1925,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -2089,7 +2088,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -2111,7 +2110,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -2256,7 +2255,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -2282,7 +2281,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -3204,7 +3203,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             } else {
                 weak_points.push(WeakPoint {
@@ -3216,7 +3215,7 @@ impl Analyzer {
                     description: format!("Obj.magic (unsafe type coercion) in {}", file_path),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -4360,7 +4359,7 @@ impl Analyzer {
                     description: format!("{} rawptr usage in {}", rawptr_count, file_path),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -4561,7 +4560,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                 }
             }
@@ -4577,7 +4576,7 @@ impl Analyzer {
                     description: format!("builtins.exec (command execution) in {}", file_path),
                     recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
 
@@ -4619,8 +4618,9 @@ impl Analyzer {
         // statement position (start of line, or after whitespace/`;`/`&`/`|`/`(`)
         // so that `--eval` / `-eval` CLI flags and identifiers like `myeval`
         // are not flagged.
-        let shell_eval = RE_SHELL_EVAL_BUILTIN
-            .get_or_init(|| Regex::new(r"(?m)(?:^|[\s;&|(])eval[ \t]").expect("static regex is valid"));
+        let shell_eval = RE_SHELL_EVAL_BUILTIN.get_or_init(|| {
+            Regex::new(r"(?m)(?:^|[\s;&|(])eval[ \t]").expect("static regex is valid")
+        });
         if shell_eval.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -5105,15 +5105,18 @@ impl Analyzer {
         // "passwd\s*=" do not appear contiguously on any single source
         // line — the estate-wide secret-scanner grep otherwise self-flags
         // this file (it is the scanner's own pattern data).
-        let secret_re = RE_HARDCODED_SECRET.get_or_init(|| Regex::new(
-            concat!(
+        let secret_re = RE_HARDCODED_SECRET.get_or_init(|| {
+            Regex::new(concat!(
                 r#"(?i)(api[_-]?key|api[_-]?secret|"#,
-                "p", "assword|",
-                "p", "asswd|",
+                "p",
+                "assword|",
+                "p",
+                "asswd|",
                 r#"secret[_-]?key|access[_-]?token|private[_-]?key)"#,
                 r#"\s*[=:]\s*["'][^"']{8,}"#,
-            )
-        ).expect("static regex is valid"));
+            ))
+            .expect("static regex is valid")
+        });
         if secret_re.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -5196,7 +5199,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
 
@@ -5215,7 +5218,7 @@ impl Analyzer {
                         .to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -5241,7 +5244,7 @@ impl Analyzer {
                         .to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -5275,7 +5278,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -5331,7 +5334,7 @@ impl Analyzer {
                             .to_string(),
                         recommended_attack: vec![],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                 }
             }
@@ -6904,7 +6907,10 @@ fn one_unwrap() {
             .filter(|wp| wp.category == WeakPointCategory::PanicPath)
             .collect();
 
-        assert!(!panic_points.is_empty(), "A production unwrap must be reported");
+        assert!(
+            !panic_points.is_empty(),
+            "A production unwrap must be reported"
+        );
     }
 
     // ---------------------------------------------------------------

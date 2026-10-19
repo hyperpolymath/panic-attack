@@ -284,7 +284,11 @@ fn cfg_test_panic() {
         .iter()
         .filter(|wp| wp.category == WeakPointCategory::PanicPath && !wp.suppressed)
         .collect();
-    assert_eq!(active.len(), 1, "only the production control should remain active");
+    assert_eq!(
+        active.len(),
+        1,
+        "only the production control should remain active"
+    );
     assert_eq!(
         active[0].location.as_deref(),
         Some("src/positive_control.rs")
