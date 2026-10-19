@@ -229,7 +229,10 @@ pub struct MigrationSemantic {
     pub snapshot_label: Option<String>,
 }
 
-/// Build a VerisimDB hexad from an assault report
+/// Build a VerisimDB hexad from an assault report.
+///
+/// # Errors
+/// Propagates errors from serialising the report into its JSON document.
 fn build_hexad(report: &AssaultReport) -> Result<PanicAttackHexad> {
     let now = Utc::now();
     let id = format!(
@@ -375,6 +378,9 @@ pub fn persist_report(
 ///
 /// Unlike single-repo hexads which wrap an AssaultReport, assemblyline
 /// hexads capture the batch scan results across many repos.
+///
+/// # Errors
+/// Propagates errors from serialising the report into its JSON document.
 fn build_assemblyline_hexad(
     report: &crate::assemblyline::AssemblylineReport,
 ) -> Result<PanicAttackHexad> {
@@ -492,13 +498,13 @@ fn severity_label(severity: &crate::types::Severity) -> &'static str {
     }
 }
 
-/// Build one hexad per `WeakPoint` across all repo results in an
-/// assemblyline report (issue #33 S1).
+/// Build one hexad per unsuppressed `WeakPoint` across repo results with an
+/// AssailReport in an assemblyline report (issue #33 S1).
 ///
 /// Subject identity lives in `semantic.finding.finding_id`; each emitted
-/// hexad's top-level `id` remains per-run-unique so two runs of the same
-/// finding produce two distinct hexad files (the join key is the
-/// `finding_id`, not the hexad id).
+/// hexad's top-level `id` includes a millisecond timestamp and repo/finding
+/// indices. IDs are distinct within a call but may repeat across calls in
+/// the same millisecond; use `finding_id` as the join key.
 ///
 /// `run_id` is shared across every finding-hexad in this run and stamped
 /// into both `first_seen_run` and `last_seen_run` (S1 has no prior-run
@@ -662,10 +668,10 @@ fn derive_crosslang_interactions_for_report(
 /// repo in an assemblyline report (issue #33 kanren-crosslang follow-up).
 ///
 /// Subject identity lives in `semantic.crosslang.interaction_id`; the
-/// top-level hexad `id` is per-run-unique so two runs of the same
-/// interaction produce two distinct hexad files (the join key is the
-/// `interaction_id`, not the hexad id). Returns an empty `Vec` when the
-/// report has no AssailReport-bearing results or no derivable interactions.
+/// top-level hexad `id` includes a millisecond timestamp and repo/interaction
+/// indices. IDs are distinct within a call but may repeat across calls in
+/// the same millisecond; use `interaction_id` as the join key. Returns an empty
+/// `Vec` when the report has no AssailReport-bearing results or no derivable interactions.
 pub fn build_crosslang_hexads(
     report: &crate::assemblyline::AssemblylineReport,
 ) -> Result<Vec<PanicAttackHexad>> {
@@ -772,9 +778,10 @@ const HEXAD_FILE_READ_LIMIT: u64 = 16 * 1024 * 1024;
 
 /// Build a campaign-state hexad for one lifecycle event (issue #33 S2).
 ///
-/// Append-only: each call produces a fresh hexad with a unique id. The
-/// `finding_id` is carried as the semantic subject so the newest hexad
-/// per finding is the current state.
+/// The id is derived from the current millisecond timestamp, so calls in the
+/// same millisecond can produce the same id. This only constructs a hexad;
+/// it does not write to storage. The `finding_id` is carried as the semantic
+/// subject so stored events can be grouped by finding.
 pub fn build_campaign_hexad(semantic: CampaignSemantic) -> PanicAttackHexad {
     let now = Utc::now();
     let hexad_id = format!(
