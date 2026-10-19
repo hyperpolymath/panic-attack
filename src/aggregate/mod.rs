@@ -51,6 +51,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Ingest a `proven-tests` JSON run report as an aggregate input kind.
+// This public library API is also compiled into the binary's private aggregate
+// module, whose CLI does not yet consume proven-tests reports.
+#[allow(dead_code)]
 pub mod proven_tests;
 
 /// Upper bound on the text we scan for verdict / coverage classification.

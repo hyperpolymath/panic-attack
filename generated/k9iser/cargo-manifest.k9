@@ -1,19 +1,53 @@
-# Auto-generated K9 contract for cargo-manifest
-# Safety tier: hunt
+K9!
+# SPDX-License-Identifier: MPL-2.0
+# K9 contract for cargo-manifest; constraints from k9iser.toml.
+# Hunt-tier signing is required before execution; this file contains no signature.
 
-[must]
-package.name : string { == 'panic-attack' }
-package.edition : string { == '2021' }
-profile.release.codegen-units : string { == 1 }
-profile.release.strip : string { == 'symbols' }
-profile.release.panic : string { == 'unwind' }
+{
+  pedigree = {
+    schema_version = "1.0.0",
+    metadata = {
+      name = "cargo-manifest",
+      version = "1.0.0",
+    },
+    security = {
+      leash = 'Hunt,
+      signature_required = true,
+    },
+  },
 
-[trust]
-signed-by = "ci-pipeline"
+  config = {
+    source = "Cargo.toml",
+    format = "toml",
+  },
 
-[dust]
-remove = ["unused optional features"]
+  # Declarative requirements for the source configuration.
+  must = [
+    "package.name == 'panic-attack'",
+    "package.edition == '2021'",
+    "package.rust-version is set",
+    "package.license-file is set",
+    "package.repository is non-empty",
+    "profile.release.lto is set",
+    "profile.release.codegen-units == 1",
+    "profile.release.strip == 'symbols'",
+    "profile.release.panic == 'unwind'",
+    "dependencies.blake3 is set",
+    "dependencies.sha2 is set",
+    "no dependency on md5",
+    "no dependency on sha1",
+  ],
 
-[intend]
-production-ready = true
-security-critical = true
+  trust = {
+    "signed-by" = "ci-pipeline",
+  },
+
+  dust = {
+    remove = ["unused optional features"],
+  },
+
+  intend = {
+    "production-ready" = true,
+    "security-critical" = true,
+  },
+}
