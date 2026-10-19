@@ -402,21 +402,22 @@ pub fn apply_suppression(report: &mut AssailReport) {
     report.suppressed_count = count;
 }
 
-/// v2.5.5 context-aware FP suppression pass — applies four checks per
+/// v2.5.5 context-aware FP suppression pass — applies three checks per
 /// finding:
 ///   1. Inline `panic-attack: accepted` marker on the same or
-///      preceding line ([[comment_marker]]).
+///      preceding line, when `wp.line` is known ([[comment_marker]]).
 ///   2. PanicPath finding in a TestOnly or Doc test_context
 ///      ([[test_context]]).
 ///   3. UnsafeFFI finding where the file's [[ffi_kind]] is
 ///      `BuildSystem` or `TestMock` (audit-accepted by default).
-///   4. (jit_context wire-up handled inline in analyzer.rs:1117..1129
-///      already; not duplicated here.)
 ///
-/// Sets `wp.test_context` for every finding with a known file path so
+/// JIT context handling remains inline in analyzer.rs:1117..1129.
+///
+/// Fills missing `wp.test_context` for findings with a known file path so
 /// downstream audit consumers can render it. Returns the number of
 /// findings newly flipped from `suppressed=false` to `suppressed=true`
 /// (already-suppressed findings are NOT re-counted).
+/// File read errors disable marker checks and use path-only context classification.
 pub fn apply_v255_context_suppression(report: &mut AssailReport) -> usize {
     use crate::comment_marker;
     use crate::ffi_kind::FfiKind;

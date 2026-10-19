@@ -81,6 +81,7 @@ pub fn classify_rust(content: &str) -> JitContext {
     }
 }
 
+/// Recognise Cranelift imports or JIT API usage by case-sensitive substring matches.
 fn is_cranelift(content: &str) -> bool {
     content.contains("cranelift_jit::JITModule")
         || content.contains("cranelift_module::Module")
@@ -113,9 +114,10 @@ fn is_javascript_embedding(content: &str) -> bool {
         || (content.contains("v8::") && content.contains("Function::call"))
 }
 
-/// True if a `mem::transmute` (or `transmute_copy`) in this content
-/// targets a function-pointer type. Pattern-matches the standard
-/// turbofish forms and let-binding forms documented in
+/// Look for `transmute` syntax suggesting a function-pointer target.
+/// Recognises selected turbofish forms or a function-pointer annotation occurring
+/// anywhere alongside a `transmute(` call, without verifying they belong to the
+/// same expression. `transmute_copy` is not recognised. See the related forms in
 /// `src/assail/analyzer.rs:1110..1129`.
 pub fn transmute_targets_fn_ptr(content: &str) -> bool {
     // Turbofish forms — unambiguous.

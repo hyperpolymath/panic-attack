@@ -277,6 +277,11 @@ pub fn run(config: AssayConfig) -> Result<AssayReport> {
     })
 }
 
+/// Write the assay report as pretty-printed JSON, creating parent directories
+/// and replacing any existing file at `path`.
+///
+/// # Errors
+/// Returns directory creation, JSON serialisation and file write errors.
 pub fn write_report(report: &AssayReport, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -348,6 +353,20 @@ pub struct AssimilateConfig {
     pub dry_run: bool,
 }
 
+/// Apply selected proven-module substitutions and return provenance records and notes.
+///
+/// `apply_all` selects offered candidates; otherwise `candidate_id` is required.
+/// Already-applied candidates are skipped. The `from` override requires exactly
+/// one selected candidate. Call sites are returned for manual rewiring.
+///
+/// Unless `dry_run` is set, copy replacement files, preserve existing `.orig`
+/// backups and write provenance under the target's `.assimilated/` directory.
+/// Dry runs still resolve and hash sources and existing destination files.
+///
+/// # Errors
+/// Returns survey errors, invalid candidate or source selection errors, and errors
+/// from hashing, directory creation, file copying or provenance serialisation/writing.
+/// Earlier file changes remain in place if a later operation fails.
 pub fn assimilate(config: AssimilateConfig) -> Result<AssimilationOutcome> {
     let assay = run(AssayConfig {
         target: config.target.clone(),
