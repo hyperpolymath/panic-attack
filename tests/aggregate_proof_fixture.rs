@@ -6,7 +6,7 @@
 //! folds a *real* prover artifact end to end. This exercises that path against
 //! `tests/fixtures/proofs/UnsafeCodeSoundness.idr` — a genuine, `idris2
 //! --check`-clean, `%default total` Idris2 proof (no escape hatches) of the
-//! UnsafeCode (PA001) detector's soundness, carrying the `@name` / `@covers`
+//! UnsafeCode (PA004) detector's soundness, carrying the `@name` / `@covers`
 //! annotations the folder reads. It asserts the artifact is recognised as
 //! Idris2, classified `Closed` (no holes), hashed, named, and that the
 //! `sound:category:UnsafeCode` coverage is parsed.

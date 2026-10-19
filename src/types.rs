@@ -447,6 +447,85 @@ pub enum WeakPointCategory {
     UnknownSource,
 }
 
+impl WeakPointCategory {
+    /// Every category, in rule-ID order: the list the consistency tests
+    /// iterate over, and the public enumeration for library consumers.
+    // The binary re-declares this module and never reads ALL itself.
+    #[allow(dead_code)]
+    pub const ALL: [WeakPointCategory; 30] = [
+        WeakPointCategory::UncheckedAllocation,
+        WeakPointCategory::UnboundedAllocation,
+        WeakPointCategory::UnboundedLoop,
+        WeakPointCategory::BlockingIO,
+        WeakPointCategory::UnsafeCode,
+        WeakPointCategory::PanicPath,
+        WeakPointCategory::RaceCondition,
+        WeakPointCategory::DeadlockPotential,
+        WeakPointCategory::ResourceLeak,
+        WeakPointCategory::CommandInjection,
+        WeakPointCategory::UnsafeDeserialization,
+        WeakPointCategory::DynamicCodeExecution,
+        WeakPointCategory::UnsafeFFI,
+        WeakPointCategory::AtomExhaustion,
+        WeakPointCategory::InsecureProtocol,
+        WeakPointCategory::ExcessivePermissions,
+        WeakPointCategory::PathTraversal,
+        WeakPointCategory::HardcodedSecret,
+        WeakPointCategory::UncheckedError,
+        WeakPointCategory::InfiniteRecursion,
+        WeakPointCategory::UnsafeTypeCoercion,
+        WeakPointCategory::ProofDrift,
+        WeakPointCategory::CryptoMisuse,
+        WeakPointCategory::SupplyChain,
+        WeakPointCategory::InputBoundary,
+        WeakPointCategory::MutationGap,
+        WeakPointCategory::LicensePolicy,
+        WeakPointCategory::Advisory,
+        WeakPointCategory::BannedDep,
+        WeakPointCategory::UnknownSource,
+    ];
+
+    /// The canonical, stable rule ID for this category: the one table every
+    /// consumer reads (SARIF `ruleId`, VeriSimDB hexads, the query DSL,
+    /// proof coverage `rule:` annotations, the verdict grid). IDs are a
+    /// public contract: never renumber an existing category; a new category
+    /// takes a new ID. `tests::rule_ids_are_stable` locks the table.
+    pub const fn rule_id(self) -> &'static str {
+        match self {
+            WeakPointCategory::UncheckedAllocation => "PA001",
+            WeakPointCategory::UnboundedAllocation => "PA001b",
+            WeakPointCategory::UnboundedLoop => "PA002",
+            WeakPointCategory::BlockingIO => "PA003",
+            WeakPointCategory::UnsafeCode => "PA004",
+            WeakPointCategory::PanicPath => "PA005",
+            WeakPointCategory::RaceCondition => "PA006",
+            WeakPointCategory::DeadlockPotential => "PA007",
+            WeakPointCategory::ResourceLeak => "PA008",
+            WeakPointCategory::CommandInjection => "PA009",
+            WeakPointCategory::UnsafeDeserialization => "PA010",
+            WeakPointCategory::DynamicCodeExecution => "PA011",
+            WeakPointCategory::UnsafeFFI => "PA012",
+            WeakPointCategory::AtomExhaustion => "PA013",
+            WeakPointCategory::InsecureProtocol => "PA014",
+            WeakPointCategory::ExcessivePermissions => "PA015",
+            WeakPointCategory::PathTraversal => "PA016",
+            WeakPointCategory::HardcodedSecret => "PA017",
+            WeakPointCategory::UncheckedError => "PA018",
+            WeakPointCategory::InfiniteRecursion => "PA019",
+            WeakPointCategory::UnsafeTypeCoercion => "PA020",
+            WeakPointCategory::ProofDrift => "PA021",
+            WeakPointCategory::CryptoMisuse => "PA022",
+            WeakPointCategory::SupplyChain => "PA023",
+            WeakPointCategory::InputBoundary => "PA024",
+            WeakPointCategory::MutationGap => "PA025",
+            WeakPointCategory::LicensePolicy => "PA026",
+            WeakPointCategory::Advisory => "PA027",
+            WeakPointCategory::BannedDep => "PA028",
+            WeakPointCategory::UnknownSource => "PA029",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Severity {
     Low,
@@ -958,4 +1037,79 @@ pub enum Predicate {
         loc2: usize,
     },
     Fact(Fact),
+}
+
+#[cfg(test)]
+mod rule_id_tests {
+    use super::WeakPointCategory;
+    use std::collections::HashSet;
+
+    /// Exhaustive by construction: adding a variant without a position here
+    /// is a compile error, which is the prompt to add it to `ALL` as well.
+    fn ordinal(c: WeakPointCategory) -> usize {
+        use WeakPointCategory::*;
+        match c {
+            UncheckedAllocation => 0,
+            UnboundedAllocation => 1,
+            UnboundedLoop => 2,
+            BlockingIO => 3,
+            UnsafeCode => 4,
+            PanicPath => 5,
+            RaceCondition => 6,
+            DeadlockPotential => 7,
+            ResourceLeak => 8,
+            CommandInjection => 9,
+            UnsafeDeserialization => 10,
+            DynamicCodeExecution => 11,
+            UnsafeFFI => 12,
+            AtomExhaustion => 13,
+            InsecureProtocol => 14,
+            ExcessivePermissions => 15,
+            PathTraversal => 16,
+            HardcodedSecret => 17,
+            UncheckedError => 18,
+            InfiniteRecursion => 19,
+            UnsafeTypeCoercion => 20,
+            ProofDrift => 21,
+            CryptoMisuse => 22,
+            SupplyChain => 23,
+            InputBoundary => 24,
+            MutationGap => 25,
+            LicensePolicy => 26,
+            Advisory => 27,
+            BannedDep => 28,
+            UnknownSource => 29,
+        }
+    }
+
+    #[test]
+    fn all_lists_every_variant_once_in_order() {
+        for (i, c) in WeakPointCategory::ALL.iter().enumerate() {
+            assert_eq!(ordinal(*c), i, "ALL[{i}] is {c:?}, out of place");
+        }
+    }
+
+    #[test]
+    fn rule_ids_are_unique() {
+        let ids: HashSet<&str> = WeakPointCategory::ALL.iter().map(|c| c.rule_id()).collect();
+        assert_eq!(
+            ids.len(),
+            WeakPointCategory::ALL.len(),
+            "two categories share a rule ID"
+        );
+    }
+
+    /// The published contract. Changing a line here renumbers a public
+    /// rule ID for every downstream consumer: do it only by owner decision.
+    #[test]
+    fn rule_ids_are_stable() {
+        let expected = [
+            "PA001", "PA001b", "PA002", "PA003", "PA004", "PA005", "PA006", "PA007", "PA008",
+            "PA009", "PA010", "PA011", "PA012", "PA013", "PA014", "PA015", "PA016", "PA017",
+            "PA018", "PA019", "PA020", "PA021", "PA022", "PA023", "PA024", "PA025", "PA026",
+            "PA027", "PA028", "PA029",
+        ];
+        let actual: Vec<&str> = WeakPointCategory::ALL.iter().map(|c| c.rule_id()).collect();
+        assert_eq!(actual, expected);
+    }
 }

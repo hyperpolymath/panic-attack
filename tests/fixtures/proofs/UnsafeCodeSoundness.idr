@@ -3,7 +3,7 @@
 -- @name "UnsafeCode detector soundness (Idris2)"
 -- @covers sound:category:UnsafeCode
 |||
-||| A closed Idris2 soundness witness for panic-attack's UnsafeCode (PA001)
+||| A closed Idris2 soundness witness for panic-attack's UnsafeCode (PA004)
 ||| detector, in the exact shape `panic-attack aggregate` folds: no escape
 ||| hatches, a total proof that a positive detection is backed by a genuine
 ||| occurrence -- the detector raises no UnsafeCode finding on a token stream
