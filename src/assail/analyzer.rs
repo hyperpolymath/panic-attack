@@ -285,8 +285,7 @@ fn c_alloc_result_is_null_checked(lines: &[&str], idx: usize) -> bool {
             .next()
             .and_then(|lhs| {
                 lhs.split(|c: char| !c.is_alphanumeric() && c != '_')
-                    .filter(|s| !s.is_empty())
-                    .last()
+                    .rfind(|s| !s.is_empty())
             })
             .map(str::to_string)
     } else {
