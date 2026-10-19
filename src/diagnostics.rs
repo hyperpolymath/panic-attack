@@ -41,11 +41,11 @@ pub fn run_self_diagnostics(manifest: &Manifest) -> Result<()> {
     checks.push(check_verisimdb(Path::new("verisimdb-data/verisimdb")));
     checks.push(check_file(
         "ambush timeline spec",
-        Path::new("docs/ambush-timeline.md"),
+        Path::new("docs/ambush-timeline.adoc"),
     ));
     checks.push(check_file(
         "panll export guide",
-        Path::new("docs/panll-export.md"),
+        Path::new("docs/panll-export.adoc"),
     ));
 
     checks.push(check_watcher("Hypatia scanner", HYPATIA_ENV));
