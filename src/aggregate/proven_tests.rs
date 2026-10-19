@@ -27,6 +27,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::str::FromStr;
 
 /// A cited proof step (only Actually-Proven entries carry these).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,9 +116,11 @@ impl ReportTier {
     }
 }
 
-impl ProvenTestsReport {
+impl FromStr for ProvenTestsReport {
+    type Err = anyhow::Error;
+
     /// Parse a run report from JSON text.
-    pub fn from_str(text: &str) -> Result<Self> {
+    fn from_str(text: &str) -> Result<Self> {
         let report: ProvenTestsReport =
             serde_json::from_str(text).context("parsing proven-tests run report")?;
         if report.schema_version != 1 {
@@ -128,7 +131,9 @@ impl ProvenTestsReport {
         }
         Ok(report)
     }
+}
 
+impl ProvenTestsReport {
     /// Parse a run report from a file path.
     pub fn from_path(path: &Path) -> Result<Self> {
         let text =
@@ -210,7 +215,7 @@ mod tests {
 
     #[test]
     fn parses_schema_v1() {
-        let r = ProvenTestsReport::from_str(SAMPLE).expect("parse");
+        let r: ProvenTestsReport = SAMPLE.parse().expect("parse");
         assert_eq!(r.schema_version, 1);
         assert_eq!(r.entries.len(), 3);
         assert_eq!(r.summary.actually_proven, 1);
