@@ -1370,6 +1370,13 @@ fn main() -> Result<()> {
     result
 }
 
+/// Parse process arguments and execute the selected command, including its output
+/// and requested persistence. Default manifest settings are used if loading fails.
+/// Argument parsing exits the process for help or invalid CLI syntax.
+///
+/// # Errors
+/// Returns command validation errors and propagates I/O, serialisation and
+/// operation errors that are not handled by a command-specific fallback.
 fn run_main() -> Result<()> {
     let cli = Cli::parse();
     let manifest = match Manifest::load_default() {
