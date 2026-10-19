@@ -120,6 +120,9 @@ impl ReportGui {
 }
 
 impl App for ReportGui {
+    /// Render the file loader, navigation and selected report tab.
+    /// A load-button click or Enter after the path field loses focus attempts
+    /// to read the specified JSON file, updating the viewer or its status message.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {
         egui::Panel::top("header").show(ui, |ui| {
             ui.horizontal(|ui| {

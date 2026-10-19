@@ -11,6 +11,12 @@ const HYPATIA_ENV: &str = "HYPATIA_API_KEY";
 const GITBOT_FLEET_ENV: &str = "GITBOT_FLEET_ENDPOINT";
 const PANICBOT_DIRECTIVE_PATH: &str = ".machine_readable/bot_directives/panicbot.scm";
 
+/// Print readiness checks using `manifest`, paths relative to the current
+/// working directory and the configured integration environment variables.
+///
+/// # Errors
+/// Returns an error after printing all results if any check has error severity.
+/// Warnings alone do not cause failure.
 pub fn run_self_diagnostics(manifest: &Manifest) -> Result<()> {
     println!("panic-attack self-diagnostics");
 

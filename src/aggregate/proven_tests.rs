@@ -119,7 +119,10 @@ impl ReportTier {
 impl FromStr for ProvenTestsReport {
     type Err = anyhow::Error;
 
-    /// Parse a run report from JSON text.
+    /// Parse a run report from JSON text, requiring schema version 1.
+    ///
+    /// # Errors
+    /// Returns JSON deserialisation errors or an error if `schema_version` is not 1.
     fn from_str(text: &str) -> Result<Self> {
         let report: ProvenTestsReport =
             serde_json::from_str(text).context("parsing proven-tests run report")?;
@@ -134,7 +137,11 @@ impl FromStr for ProvenTestsReport {
 }
 
 impl ProvenTestsReport {
-    /// Parse a run report from a file path.
+    /// Read a UTF-8 JSON run report from `path` and parse it as schema version 1.
+    ///
+    /// # Errors
+    /// Returns file read errors (including invalid UTF-8), JSON deserialisation
+    /// errors or an error if `schema_version` is not 1.
     pub fn from_path(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
