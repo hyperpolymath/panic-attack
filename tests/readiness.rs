@@ -319,8 +319,7 @@ fn cfg_test_panic() {
         !clean_report
             .weak_points
             .iter()
-            .find(|wp| wp.category == WeakPointCategory::PanicPath && !wp.suppressed)
-            .is_none(),
+            .any(|wp| wp.category == WeakPointCategory::PanicPath && !wp.suppressed),
         "excluded panic contexts must produce zero active findings"
     );
     Ok(())
