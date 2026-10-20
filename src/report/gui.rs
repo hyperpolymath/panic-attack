@@ -120,8 +120,11 @@ impl ReportGui {
 }
 
 impl App for ReportGui {
+    /// Render the file loader, navigation and selected report tab.
+    /// A load-button click or Enter after the path field loses focus attempts
+    /// to read the specified JSON file, updating the viewer or its status message.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut Frame) {
-        egui::Panel::top("header").show_inside(ui, |ui| {
+        egui::Panel::top("header").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("panic-attack report");
                 ui.separator();
@@ -138,7 +141,7 @@ impl App for ReportGui {
             });
         });
 
-        egui::Panel::left("nav").show_inside(ui, |ui| {
+        egui::Panel::left("nav").show(ui, |ui| {
             ui.selectable_value(&mut self.tab, ReportTab::Summary, "Summary");
             ui.selectable_value(&mut self.tab, ReportTab::Assail, "Assail");
             ui.selectable_value(&mut self.tab, ReportTab::Matrix, "Matrix");
@@ -159,7 +162,7 @@ impl App for ReportGui {
             ui.selectable_value(&mut self.tab, ReportTab::Temporal, temporal_label);
         });
 
-        egui::CentralPanel::default().show_inside(ui, |ui| match self.tab {
+        egui::CentralPanel::default().show(ui, |ui| match self.tab {
             ReportTab::Summary => self.render_summary(ui),
             ReportTab::Assail => self.render_assail(ui),
             ReportTab::Matrix => self.render_matrix(ui),

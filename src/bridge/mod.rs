@@ -12,7 +12,7 @@
 //! This module extends panic-attack with `bridge` subcommands. The core tool
 //! remains standalone — PanLL panel and BoJ cartridge are optional integrations.
 //!
-//! Design document: docs/patch-bridge-design.md
+//! Design document: docs/patch-bridge-design.adoc
 
 pub mod classify;
 pub mod intelligence;
