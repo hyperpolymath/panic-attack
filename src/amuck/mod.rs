@@ -324,11 +324,11 @@ fn load_spec(path: &Path) -> Result<MutationSpecFile> {
         Some("json") => {
             serde_json::from_str(&content).with_context(|| format!("parsing {}", path.display()))?
         }
-        Some("yaml") | Some("yml") => crate::yaml::from_str(&content)
+        Some(ext) if crate::yaml::is_extension(ext) => crate::yaml::from_str(&content)
             .with_context(|| format!("parsing {}", path.display()))?,
         _ => {
             return Err(anyhow!(
-                "spec {} must be json/yaml/yml",
+                "spec {} must be json/yaml/yml/kyaml",
                 path.to_string_lossy()
             ));
         }
@@ -624,6 +624,26 @@ fn describe_operation(operation: &MutationOperation) -> String {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn load_spec_reads_kyaml() {
+        // Output of `yq -o kyaml` for a one-combo YAML spec.
+        let dir = TempDir::new().expect("tempdir should create");
+        let path = dir.path().join("spec.kyaml");
+        std::fs::write(
+            &path,
+            "{\n  combos: [\n    {\n      name: \"c1\",\n      operations: [\n        {\n          op: \"replace_first\",\n          from: \"a\",\n          to: \"b\",\n        },\n      ],\n    },\n  ],\n}\n",
+        )
+        .expect("spec should write");
+
+        let spec = load_spec(&path).expect("kyaml spec should load");
+        assert_eq!(spec.combos.len(), 1);
+        assert_eq!(spec.combos[0].name.as_deref(), Some("c1"));
+        assert!(matches!(
+            spec.combos[0].operations.as_slice(),
+            [MutationOperation::ReplaceFirst { from, to }] if from == "a" && to == "b"
+        ));
+    }
 
     #[test]
     fn replace_first_changes_only_one_match() {

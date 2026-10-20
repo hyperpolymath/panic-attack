@@ -10,11 +10,31 @@
 //! scalar-byte budgets proportional to the input length instead: an alias-free document
 //! cannot have more nodes than bytes, so the cap still bounds alias
 //! expansion while accepting any report the caller's read limit allows.
+//!
+//! KYAML (the estate's YAML dialect, D280/D307) is a strict subset of
+//! YAML, so `.kyaml` files go through the same parser.
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_saphyr::budget::Budget;
 use serde_saphyr::options::Options;
+use std::path::Path;
+
+/// File extensions read as YAML. `kyaml` is the estate extension for
+/// KYAML-dialect configuration.
+pub const EXTENSIONS: [&str; 3] = ["yaml", "yml", "kyaml"];
+
+/// Whether `ext` (without the dot) names a YAML or KYAML file.
+pub fn is_extension(ext: &str) -> bool {
+    EXTENSIONS.contains(&ext)
+}
+
+/// Whether `path` has a YAML or KYAML extension.
+pub fn has_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_extension)
+}
 
 /// Parse a hand-written YAML config with the default resource budget.
 pub fn from_str<T: DeserializeOwned>(input: &str) -> Result<T, serde_saphyr::Error> {
@@ -41,6 +61,21 @@ pub fn to_string<T: Serialize>(value: &T) -> Result<String, serde_saphyr::ser::E
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn yaml_extensions_include_kyaml() {
+        for ext in ["yaml", "yml", "kyaml"] {
+            assert!(is_extension(ext), "{ext}");
+            assert!(
+                has_extension(Path::new(&format!("dir/file.{ext}"))),
+                "{ext}"
+            );
+        }
+        for ext in ["json", "YAML", "kyml", "ncl"] {
+            assert!(!is_extension(ext), "{ext}");
+        }
+        assert!(!has_extension(Path::new("kyaml")));
+    }
 
     #[test]
     fn report_budget_accepts_documents_past_the_default_node_cap() {
