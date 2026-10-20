@@ -288,7 +288,7 @@ pub fn write_report(report: &AssayReport, path: &Path) -> Result<()> {
             fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
     }
-    let json = serde_json::to_string_pretty(report).context("serializing assay report")?;
+    let json = crate::json::to_canonical_string(report).context("serializing assay report")?;
     fs::write(path, json).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }

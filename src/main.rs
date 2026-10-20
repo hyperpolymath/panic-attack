@@ -1443,7 +1443,9 @@ fn run_main() -> Result<()> {
                 }
             };
 
-            let report_json = serde_json::to_string_pretty(&report)?;
+            // Canonical JSON (JCS, one final LF): the attestation seal hashes
+            // exactly these bytes, so any verifier can recompute them.
+            let report_json = panic_attack::json::to_canonical_string(&report)?;
 
             if let Some(output_path) = &output {
                 fs::write(output_path, &report_json)?;
@@ -1451,7 +1453,7 @@ fn run_main() -> Result<()> {
             } else if cli.quiet || headless {
                 // Machine-readable mode: emit JSON to stdout for pipeline consumers.
                 // `--headless` makes this explicit for CI callers that cannot pass --quiet.
-                println!("{report_json}");
+                print!("{report_json}");
             } else {
                 println!("\nAssail Summary:");
                 println!("  Language: {:?}", report.language);
@@ -2528,13 +2530,13 @@ fn run_main() -> Result<()> {
                     }
 
                     // Output JSON
-                    let json = serde_json::to_string_pretty(&report)?;
+                    let json = panic_attack::json::to_canonical_string(&report)?;
                     if let Some(out_path) = output {
                         std::fs::write(&out_path, &json)?;
                         qprintln!(cli.quiet, "\nReport written to: {}", out_path.display());
                     } else if cli.quiet {
                         // In quiet mode with no output file, print JSON to stdout
-                        println!("{}", json);
+                        print!("{}", json);
                     }
                 }
 

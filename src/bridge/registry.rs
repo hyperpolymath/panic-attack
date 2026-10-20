@@ -109,7 +109,7 @@ impl MitigationRegistry {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(self)?;
+        let content = crate::json::to_canonical_string(self)?;
         std::fs::write(&path, content)?;
         Ok(())
     }

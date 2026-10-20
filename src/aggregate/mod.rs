@@ -408,7 +408,7 @@ pub fn write_report(report: &AggregateReport, path: &Path) -> Result<()> {
             fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
     }
-    let json = serde_json::to_string_pretty(report).context("serializing aggregate report")?;
+    let json = crate::json::to_canonical_string(report).context("serializing aggregate report")?;
     fs::write(path, json).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }

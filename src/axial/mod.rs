@@ -279,7 +279,7 @@ pub fn write_report(report: &AxialReport, path: &Path) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("creating report parent directory {}", parent.display()))?;
     }
-    let json = serde_json::to_string_pretty(report).context("serializing axial report")?;
+    let json = crate::json::to_canonical_string(report).context("serializing axial report")?;
     fs::write(path, json).with_context(|| format!("writing report {}", path.display()))?;
     Ok(())
 }

@@ -912,7 +912,7 @@ pub fn persist_assemblyline_report(
         fs::create_dir_all(&base_dir)?;
         let file_name = format!("assemblyline-{}.json", timestamp);
         let path = base_dir.join(&file_name);
-        let content = serde_json::to_string_pretty(report)?;
+        let content = crate::json::to_canonical_string(report)?;
         fs::write(&path, content)?;
         stored.push(path);
     }
