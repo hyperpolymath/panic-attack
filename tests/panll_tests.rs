@@ -85,7 +85,7 @@ fn test_panll_export_summary_reflects_report() -> Result<(), Box<dyn std::error:
             description: "unsafe block".to_string(),
             recommended_attack: vec![],
             suppressed: false,
-        test_context: None,
+            test_context: None,
         }],
         vec![],
     );
@@ -115,7 +115,7 @@ fn test_panll_export_constraints_from_critical_wp() -> Result<(), Box<dyn std::e
                 description: "transmute usage".to_string(),
                 recommended_attack: vec![AttackAxis::Memory],
                 suppressed: false,
-        test_context: None,
+                test_context: None,
             },
             WeakPoint {
                 category: WeakPointCategory::PanicPath,
@@ -126,7 +126,7 @@ fn test_panll_export_constraints_from_critical_wp() -> Result<(), Box<dyn std::e
                 description: "unwrap call".to_string(),
                 recommended_attack: vec![],
                 suppressed: false,
-        test_context: None,
+                test_context: None,
             },
         ],
         vec![],

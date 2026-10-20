@@ -7,39 +7,34 @@
 //! concurrency) and detecting bug signatures using logic programming techniques inspired by
 //! Mozart/Oz and Datalog.
 
-mod a2ml;
-mod abduct;
-mod adjudicate;
-mod aggregate;
-mod ambush;
-mod amuck;
-mod assail;
-mod assay;
-mod assemblyline;
-mod attack;
-mod attestation;
-mod axial;
+use panic_attack::a2ml;
+use panic_attack::abduct;
+use panic_attack::adjudicate;
+use panic_attack::aggregate;
+use panic_attack::ambush;
+use panic_attack::amuck;
+use panic_attack::assail;
+use panic_attack::assay;
+use panic_attack::assemblyline;
+use panic_attack::attack;
+use panic_attack::attestation;
+use panic_attack::axial;
 #[cfg(feature = "http")]
-mod bridge;
-mod campaign;
-mod comment_marker;
+use panic_attack::bridge;
+use panic_attack::campaign;
 mod diagnostics;
-mod ffi_kind;
 mod groove;
-mod i18n;
-mod jit_context;
-mod kanren;
+use panic_attack::i18n;
 mod kin;
-mod mass_panic;
-mod notify;
-mod panll;
-mod query;
-mod report;
-mod signatures;
-mod storage;
-mod sweep_tracker;
-mod test_context;
-mod types;
+use panic_attack::mass_panic;
+use panic_attack::notify;
+use panic_attack::panll;
+use panic_attack::query;
+use panic_attack::report;
+use panic_attack::signatures;
+use panic_attack::storage;
+use panic_attack::sweep_tracker;
+use panic_attack::types;
 
 extern crate walkdir;
 
@@ -1370,6 +1365,13 @@ fn main() -> Result<()> {
     result
 }
 
+/// Parse process arguments and execute the selected command, including its output
+/// and requested persistence. Default manifest settings are used if loading fails.
+/// Argument parsing exits the process for help or invalid CLI syntax.
+///
+/// # Errors
+/// Returns command validation errors and propagates I/O, serialisation and
+/// operation errors that are not handled by a command-specific fallback.
 fn run_main() -> Result<()> {
     let cli = Cli::parse();
     let manifest = match Manifest::load_default() {
@@ -2734,9 +2736,8 @@ fn run_main() -> Result<()> {
                 PanicAttackHexad,
             };
 
-            let json = std::fs::read_to_string(&hexad).with_context(|| {
-                format!("reading hexad file {}", hexad.display())
-            })?;
+            let json = std::fs::read_to_string(&hexad)
+                .with_context(|| format!("reading hexad file {}", hexad.display()))?;
             let hexad_value: PanicAttackHexad = serde_json::from_str(&json)
                 .with_context(|| format!("parsing hexad JSON at {}", hexad.display()))?;
 

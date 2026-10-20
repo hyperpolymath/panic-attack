@@ -263,18 +263,16 @@ static RE_HARDCODED_SECRET: OnceLock<Regex> = OnceLock::new();
 /// Does not handle OCaml `(* *)` or Forth `\` — edge cases for later.
 static RE_TODO_COMMENT: OnceLock<Regex> = OnceLock::new();
 
-/// Heuristic: is the `malloc` on `lines[idx]` NULL-checked within a short
-/// window of following lines?
+/// Heuristically recognise a null check for the allocation on `lines[idx]`.
 ///
-/// An "UncheckedAllocation" finding should only fire when the result is *not*
-/// guarded. This recognises the common C idioms (`if (p == NULL)`,
-/// `if (!p)`, `if (p == nullptr)`) on the lvalue assigned from `malloc`.
+/// Searches the allocation line and up to six following lines for `NULL` or
+/// `nullptr` alongside the assigned identifier, or an `if` line containing `!`
+/// immediately followed by that identifier. If no identifier can be extracted,
+/// any `NULL` or `nullptr` substring in the window suffices. Substring matches
+/// do not establish that the allocation is guarded.
 ///
-/// Deliberately conservative to avoid false negatives in a security scanner:
-/// a site is treated as checked only on a clear NULL-guard signal that
-/// references the allocated variable (or, when no lvalue can be parsed, any
-/// NULL/nullptr token in the window). Genuinely-unchecked allocations — the
-/// real finding — are still reported.
+/// # Panics
+/// Panics if the zero-based `idx` is outside `lines`.
 fn c_alloc_result_is_null_checked(lines: &[&str], idx: usize) -> bool {
     let line = lines[idx];
     // Parse the lvalue assigned from malloc: the last identifier left of '='.
@@ -285,8 +283,7 @@ fn c_alloc_result_is_null_checked(lines: &[&str], idx: usize) -> bool {
             .next()
             .and_then(|lhs| {
                 lhs.split(|c: char| !c.is_alphanumeric() && c != '_')
-                    .filter(|s| !s.is_empty())
-                    .last()
+                    .rfind(|s| !s.is_empty())
             })
             .map(str::to_string)
     } else {
@@ -942,6 +939,10 @@ impl Analyzer {
     // Original language analyzers
     // ============================================================
 
+    /// Accumulate Rust statistics and append heuristic findings for `file_path`.
+    /// Dangerous-pattern checks exclude string contents, comments, `cfg`-selected
+    /// test bodies and `should_panic` bodies. Panic counts and findings also exclude
+    /// test paths and build scripts.
     fn analyze_rust(
         &self,
         content: &str,
@@ -984,9 +985,8 @@ impl Analyzer {
         // crypto counts too (a `#[test] fn exercises_unsafe_wrapper()`
         // inside a production file would otherwise count toward that
         // file's unsafe-block total).
-        let code_only = Self::strip_should_panic_items_rs(
-            &Self::strip_cfg_test_modules_rs(&without_comments),
-        );
+        let code_only =
+            Self::strip_should_panic_items_rs(&Self::strip_cfg_test_modules_rs(&without_comments));
 
         stats.unsafe_blocks += code_only.matches("unsafe {").count();
         stats.unsafe_blocks += code_only.matches("unsafe fn").count();
@@ -1769,6 +1769,9 @@ impl Analyzer {
         false
     }
 
+    /// Accumulate C/C++ statistics and append heuristic findings for `file_path`.
+    /// Unchecked malloc findings include one-based line numbers for suppression
+    /// and omit allocations with a recognised nearby null check.
     fn analyze_c_cpp(
         &self,
         content: &str,
@@ -1903,7 +1906,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -1926,7 +1929,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -2014,6 +2017,8 @@ impl Analyzer {
         Ok(())
     }
 
+    /// Accumulate Go statistics and append heuristic concurrency, unsafe pointer,
+    /// command execution and cryptography findings located at `file_path`.
     fn analyze_go(
         &self,
         content: &str,
@@ -2089,7 +2094,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -2111,7 +2116,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -2143,6 +2148,8 @@ impl Analyzer {
         Ok(())
     }
 
+    /// Accumulate Python I/O and threading counts and append heuristic loop,
+    /// code execution, deserialisation, command and cryptography findings for `file_path`.
     fn analyze_python(
         &self,
         content: &str,
@@ -2256,7 +2263,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -2282,7 +2289,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![AttackAxis::Network],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                     break;
                 }
@@ -3170,6 +3177,9 @@ impl Analyzer {
         }
     }
 
+    /// Accumulate OCaml statistics and append heuristic findings for `file_path`.
+    /// Classify `Obj.magic` as proof drift when Coq extraction markers are present,
+    /// or as unsafe type coercion otherwise.
     fn analyze_ocaml(
         &self,
         content: &str,
@@ -3204,7 +3214,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             } else {
                 weak_points.push(WeakPoint {
@@ -3216,7 +3226,7 @@ impl Analyzer {
                     description: format!("Obj.magic (unsafe type coercion) in {}", file_path),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -4322,6 +4332,8 @@ impl Analyzer {
         Ok(())
     }
 
+    /// Accumulate Odin operation counts and append a Medium unsafe-code finding
+    /// at `file_path` when `rawptr` occurs in the content.
     fn analyze_odin(
         &self,
         content: &str,
@@ -4360,7 +4372,7 @@ impl Analyzer {
                     description: format!("{} rawptr usage in {}", rawptr_count, file_path),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -4500,6 +4512,9 @@ impl Analyzer {
     // Config languages (Nickel, Nix)
     // ============================================================
 
+    /// Accumulate Nix/Nickel I/O counts and append Nix command and unpinned-flake findings.
+    /// Uses `file_path` for file-type checks, finding locations and the sibling
+    /// `flake.lock` lookup on disk.
     fn analyze_config(
         &self,
         content: &str,
@@ -4561,7 +4576,7 @@ impl Analyzer {
                         ),
                         recommended_attack: vec![],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                 }
             }
@@ -4577,7 +4592,7 @@ impl Analyzer {
                     description: format!("builtins.exec (command execution) in {}", file_path),
                     recommended_attack: vec![AttackAxis::Cpu, AttackAxis::Disk],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
 
@@ -4604,6 +4619,9 @@ impl Analyzer {
     // Shell scripting
     // ============================================================
 
+    /// Accumulate shell I/O counts and append heuristic command, permission and
+    /// temporary-path findings for `file_path`. Unquoted expansion findings require
+    /// more than 20 `$VAR` matches after quoted string contents are removed.
     fn analyze_shell(
         &self,
         content: &str,
@@ -4619,8 +4637,9 @@ impl Analyzer {
         // statement position (start of line, or after whitespace/`;`/`&`/`|`/`(`)
         // so that `--eval` / `-eval` CLI flags and identifiers like `myeval`
         // are not flagged.
-        let shell_eval = RE_SHELL_EVAL_BUILTIN
-            .get_or_init(|| Regex::new(r"(?m)(?:^|[\s;&|(])eval[ \t]").expect("static regex is valid"));
+        let shell_eval = RE_SHELL_EVAL_BUILTIN.get_or_init(|| {
+            Regex::new(r"(?m)(?:^|[\s;&|(])eval[ \t]").expect("static regex is valid")
+        });
         if shell_eval.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -5036,6 +5055,8 @@ impl Analyzer {
     // Cross-language security checks (run on ALL files)
     // ============================================================
 
+    /// Append heuristic protocol, hardcoded secret and excessive comment-marker
+    /// findings located at `file_path`, independently of the detected language.
     fn analyze_cross_language(
         &self,
         content: &str,
@@ -5105,15 +5126,18 @@ impl Analyzer {
         // "passwd\s*=" do not appear contiguously on any single source
         // line — the estate-wide secret-scanner grep otherwise self-flags
         // this file (it is the scanner's own pattern data).
-        let secret_re = RE_HARDCODED_SECRET.get_or_init(|| Regex::new(
-            concat!(
+        let secret_re = RE_HARDCODED_SECRET.get_or_init(|| {
+            Regex::new(concat!(
                 r#"(?i)(api[_-]?key|api[_-]?secret|"#,
-                "p", "assword|",
-                "p", "asswd|",
+                "p",
+                "assword|",
+                "p",
+                "asswd|",
                 r#"secret[_-]?key|access[_-]?token|private[_-]?key)"#,
                 r#"\s*[=:]\s*["'][^"']{8,}"#,
-            )
-        ).expect("static regex is valid"));
+            ))
+            .expect("static regex is valid")
+        });
         if secret_re.is_match(content) {
             weak_points.push(WeakPoint {
                 file: None,
@@ -5196,7 +5220,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
 
@@ -5215,7 +5239,7 @@ impl Analyzer {
                         .to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -5241,7 +5265,7 @@ impl Analyzer {
                         .to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -5275,7 +5299,7 @@ impl Analyzer {
                     ),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 });
             }
         }
@@ -5331,7 +5355,7 @@ impl Analyzer {
                             .to_string(),
                         recommended_attack: vec![],
                         suppressed: false,
-                test_context: None,
+                        test_context: None,
                     });
                 }
             }
@@ -6904,7 +6928,10 @@ fn one_unwrap() {
             .filter(|wp| wp.category == WeakPointCategory::PanicPath)
             .collect();
 
-        assert!(!panic_points.is_empty(), "A production unwrap must be reported");
+        assert!(
+            !panic_points.is_empty(),
+            "A production unwrap must be reported"
+        );
     }
 
     // ---------------------------------------------------------------

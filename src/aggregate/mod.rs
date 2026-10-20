@@ -51,6 +51,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Ingest a `proven-tests` JSON run report as an aggregate input kind.
+// This public library API is also compiled into the binary's private aggregate
+// module, whose CLI does not yet consume proven-tests reports.
+#[allow(dead_code)]
 pub mod proven_tests;
 
 /// Upper bound on the text we scan for verdict / coverage classification.
@@ -394,11 +397,15 @@ pub fn run(config: AggregateConfig) -> Result<AggregateReport> {
     })
 }
 
+/// Write the aggregate report as pretty-printed JSON, creating parent directories
+/// and replacing any existing file at `path`.
+///
+/// # Errors
+/// Returns directory creation, JSON serialisation and file write errors.
 pub fn write_report(report: &AggregateReport, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
     }
     let json = serde_json::to_string_pretty(report).context("serializing aggregate report")?;
@@ -494,10 +501,11 @@ fn has_metavar_hole(text: &str) -> bool {
     false
 }
 
+/// Look for case-sensitive proof or declaration substrings as a closure heuristic;
+/// a match does not verify that the text contains a valid proof.
 fn has_proof_keyword(text: &str) -> bool {
     const KW: &[&str] = &[
-        "theorem", "lemma", "Theorem", "Lemma", "Proof", "proof", "where", ":=", "data ",
-        "record ",
+        "theorem", "lemma", "Theorem", "Lemma", "Proof", "proof", "where", ":=", "data ", "record ",
     ];
     KW.iter().any(|k| text.contains(k))
 }
@@ -579,10 +587,7 @@ fn scan_name(text: &str) -> Option<String> {
         let end = stripped.find('"')?;
         Some(stripped[..end].to_string())
     } else {
-        let token: String = rest
-            .chars()
-            .take_while(|c| !c.is_whitespace())
-            .collect();
+        let token: String = rest.chars().take_while(|c| !c.is_whitespace()).collect();
         if token.is_empty() {
             None
         } else {
@@ -611,6 +616,10 @@ fn scan_covers(text: &str) -> Vec<Coverage> {
 
 /// Parse `[claim:]kind:value`, e.g. `sound:category:UnsafeCode`,
 /// `safe:file:src/foo.rs`, `category:PanicPath`, `free:my-lemma`.
+///
+/// A bare token other than `safe` or `sound` becomes free-form coverage with an
+/// unspecified claim. Returns `None` for an empty first field, an unrecognised
+/// kind or an unsupported field layout. Values are retained without trimming.
 pub fn parse_coverage_spec(spec: &str) -> Option<Coverage> {
     let mut parts: Vec<&str> = spec.splitn(3, ':').collect();
     if parts.is_empty() || parts[0].is_empty() {
@@ -634,11 +643,7 @@ pub fn parse_coverage_spec(spec: &str) -> Option<Coverage> {
         [single] => (CoverageKind::Free, (*single).to_string()),
         _ => return None,
     };
-    Some(Coverage {
-        claim,
-        kind,
-        value,
-    })
+    Some(Coverage { claim, kind, value })
 }
 
 fn kind_of(s: &str) -> Option<CoverageKind> {
@@ -701,11 +706,9 @@ fn summarise(findings: &[FindingLite]) -> FindingSummary {
     }
 }
 
+/// Count findings selected by the coverage annotation; free-form coverage matches none.
 fn count_matching(findings: &[FindingLite], cov: &Coverage) -> usize {
-    findings
-        .iter()
-        .filter(|f| matches_coverage(f, cov))
-        .count()
+    findings.iter().filter(|f| matches_coverage(f, cov)).count()
 }
 
 fn matches_coverage(f: &FindingLite, cov: &Coverage) -> bool {
@@ -897,7 +900,11 @@ mod tests {
             Prover::Idris2,
             "-- we deliberately avoid any postulate here\ntheorem t : Nat\nt = 0\n",
         );
-        assert!(holes.is_empty(), "comment word should not register: {:?}", holes);
+        assert!(
+            holes.is_empty(),
+            "comment word should not register: {:?}",
+            holes
+        );
         assert_eq!(v, ProofVerdict::Closed);
     }
 
