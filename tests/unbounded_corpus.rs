@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 
-//! Curated corpus for the UnboundedAllocation detector (PA015).
+//! Curated corpus for the UnboundedAllocation detector (PA001b).
 //!
 //! Each case is a minimal Rust source with a pre-declared expected
 //! verdict: does the detector correctly fire (or correctly not fire)

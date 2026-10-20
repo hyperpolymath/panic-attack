@@ -112,40 +112,11 @@ pub struct SarifRegion {
     pub start_line: u32,
 }
 
-/// Map WeakPointCategory to a stable rule ID
+/// Map WeakPointCategory to its stable rule ID. Delegates to the single
+/// table on the enum (`WeakPointCategory::rule_id`) so SARIF, storage and
+/// proof coverage cannot drift apart.
 pub(crate) fn rule_id(category: &WeakPointCategory) -> &'static str {
-    match category {
-        WeakPointCategory::UncheckedAllocation => "PA001",
-        WeakPointCategory::UnboundedAllocation => "PA001b",
-        WeakPointCategory::UnboundedLoop => "PA002",
-        WeakPointCategory::BlockingIO => "PA003",
-        WeakPointCategory::UnsafeCode => "PA004",
-        WeakPointCategory::PanicPath => "PA005",
-        WeakPointCategory::RaceCondition => "PA006",
-        WeakPointCategory::DeadlockPotential => "PA007",
-        WeakPointCategory::ResourceLeak => "PA008",
-        WeakPointCategory::CommandInjection => "PA009",
-        WeakPointCategory::UnsafeDeserialization => "PA010",
-        WeakPointCategory::DynamicCodeExecution => "PA011",
-        WeakPointCategory::UnsafeFFI => "PA012",
-        WeakPointCategory::AtomExhaustion => "PA013",
-        WeakPointCategory::InsecureProtocol => "PA014",
-        WeakPointCategory::ExcessivePermissions => "PA015",
-        WeakPointCategory::PathTraversal => "PA016",
-        WeakPointCategory::HardcodedSecret => "PA017",
-        WeakPointCategory::UncheckedError => "PA018",
-        WeakPointCategory::InfiniteRecursion => "PA019",
-        WeakPointCategory::UnsafeTypeCoercion => "PA020",
-        WeakPointCategory::ProofDrift => "PA021",
-        WeakPointCategory::CryptoMisuse => "PA022",
-        WeakPointCategory::SupplyChain => "PA023",
-        WeakPointCategory::InputBoundary => "PA024",
-        WeakPointCategory::MutationGap => "PA025",
-        WeakPointCategory::LicensePolicy => "PA026",
-        WeakPointCategory::Advisory => "PA027",
-        WeakPointCategory::BannedDep => "PA028",
-        WeakPointCategory::UnknownSource => "PA029",
-    }
+    category.rule_id()
 }
 
 /// Map WeakPointCategory to a human-readable name

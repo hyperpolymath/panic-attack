@@ -711,12 +711,17 @@ fn count_matching(findings: &[FindingLite], cov: &Coverage) -> usize {
     findings.iter().filter(|f| matches_coverage(f, cov)).count()
 }
 
+/// Return whether a finding falls within the declared coverage, ignoring its claim.
+///
+/// Category names and canonical rule IDs match case-insensitively, ignoring
+/// non-alphanumeric characters. File coverage uses a case-sensitive substring
+/// match against the finding's file text before the first `:`; an empty value
+/// matches any present file. File coverage without file text and free-form
+/// coverage never match.
 fn matches_coverage(f: &FindingLite, cov: &Coverage) -> bool {
     match cov.kind {
         CoverageKind::Category => eq_loose(&category_name(&f.category), &cov.value),
-        CoverageKind::RuleId => category_code(&f.category)
-            .map(|c| eq_loose(c, &cov.value))
-            .unwrap_or(false),
+        CoverageKind::RuleId => eq_loose(f.category.rule_id(), &cov.value),
         CoverageKind::File => f
             .file
             .as_deref()
@@ -816,27 +821,6 @@ fn category_name(c: &WeakPointCategory) -> String {
 }
 
 /// Map a category to its documented PA rule-id where one is assigned.
-fn category_code(c: &WeakPointCategory) -> Option<&'static str> {
-    use WeakPointCategory::*;
-    Some(match c {
-        UnsafeCode => "PA001",
-        PanicPath => "PA006",
-        CommandInjection => "PA011",
-        UnsafeDeserialization => "PA012",
-        DynamicCodeExecution => "PA013",
-        UnsafeFFI => "PA014",
-        AtomExhaustion => "PA015",
-        PathTraversal => "PA017",
-        HardcodedSecret => "PA018",
-        ProofDrift => "PA021",
-        CryptoMisuse => "PA022",
-        SupplyChain => "PA023",
-        InputBoundary => "PA024",
-        MutationGap => "PA025",
-        _ => return None,
-    })
-}
-
 fn read_text_bounded(path: &Path) -> Result<String> {
     let mut buf = String::new();
     File::open(path)
@@ -1014,5 +998,32 @@ mod tests {
             ReconcileEffect::Contradicted
         );
         assert_eq!(report.reconciliations[0].affected_findings, 1);
+    }
+
+    /// `rule:` coverage reads the same table SARIF emits, for every category.
+    /// Before the table was unified, `rule:PA004` never matched UnsafeCode
+    /// (aggregate called it PA001) and 16 categories had no rule ID at all.
+    #[test]
+    fn rule_coverage_uses_the_canonical_table() {
+        for c in WeakPointCategory::ALL {
+            let f = FindingLite {
+                category: c,
+                file: None,
+            };
+            let own = parse_coverage_spec(&format!("rule:{}", c.rule_id())).unwrap();
+            assert!(
+                matches_coverage(&f, &own),
+                "{c:?} not covered by its own ID"
+            );
+            assert_eq!(c.rule_id(), crate::report::sarif::rule_id(&c));
+        }
+        let unsafe_code = FindingLite {
+            category: WeakPointCategory::UnsafeCode,
+            file: None,
+        };
+        let pa004 = parse_coverage_spec("sound:rule:PA004").unwrap();
+        let pa001 = parse_coverage_spec("sound:rule:PA001").unwrap();
+        assert!(matches_coverage(&unsafe_code, &pa004));
+        assert!(!matches_coverage(&unsafe_code, &pa001));
     }
 }
