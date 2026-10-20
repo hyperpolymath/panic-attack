@@ -2,6 +2,25 @@
 
 === [Unreleased]
 
+==== Fixed — YAML parser replaced with safe Rust (RUSTSEC-2024-0449)
+
+* *`+serde_yaml+` → `+serde-saphyr+` 2.0.* `+serde_yaml+` 0.9 is
+deprecated and pulled in `+unsafe-libyaml+`, an archived c2rust
+translation of libyaml flagged unmaintained by RUSTSEC-2024-0449.
+`+serde-saphyr+` is `+#![forbid(unsafe_code)]+`. All YAML now goes
+through `+src/yaml.rs+`: hand-written configs (attack profiles,
+timelines, amuck specs) keep the parser's default resource budget;
+machine-written reports get a node/event budget scaled to input
+length, so large-scan reports still load while alias expansion stays
+bounded.
+* *MSRV raised from 1.85.0 to 1.89.* No maintained safe-Rust serde
+YAML crate builds on 1.85 (serde-saphyr needs 1.89, noyalib 1.86+),
+and the committed lockfile already required 1.88.
+* *YAML output is equivalent but not byte-identical.* Quoting switches
+from `+'…'+` to `+"…"+` and multi-line strings use `+|+` blocks.
+Reports written by earlier versions still load. A bare `+~+`/`+null+`
+in a string field is now rejected (YAML 1.2 null); quote it.
+
 ==== Fixed — assail detector precision (false-positive reduction, 2026-06-24)
 
 Three `+assail+` analyzer fixes, all conservative (no new false
