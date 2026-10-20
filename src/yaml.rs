@@ -6,8 +6,8 @@
 //! `serde-saphyr` enforces resource budgets while parsing. Its defaults
 //! suit hand-written configs (attack profiles, timelines, mutation specs),
 //! but its 250k-node cap rejects YAML reports from large scans (roughly
-//! 15k files). Machine-written reports therefore get a node and event
-//! budget proportional to the input length instead: an alias-free document
+//! 15k files). Machine-written reports therefore get node, event and
+//! scalar-byte budgets proportional to the input length instead: an alias-free document
 //! cannot have more nodes than bytes, so the cap still bounds alias
 //! expansion while accepting any report the caller's read limit allows.
 
@@ -27,6 +27,7 @@ pub fn from_report_str<T: DeserializeOwned>(input: &str) -> Result<T, serde_saph
     let mut budget = Budget::default();
     budget.max_nodes = defaults.max_nodes.max(input.len());
     budget.max_events = defaults.max_events.max(input.len());
+    budget.max_total_scalar_bytes = defaults.max_total_scalar_bytes.max(input.len());
     let mut options = Options::default();
     options.budget = Some(budget);
     serde_saphyr::from_str_with_options(input, options)
