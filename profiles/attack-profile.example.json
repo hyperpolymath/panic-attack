@@ -1,11 +1,1 @@
-{
-  "common_args": ["--config", "cfg.toml"],
-  "axes": {
-    "cpu": ["--iterations", "5000"],
-    "memory": ["--allocate-mb", "512"],
-    "disk": ["--write-files", "200"],
-    "network": ["--connections", "150"],
-    "concurrency": ["--threads", "64"]
-  },
-  "probe_mode": "always"
-}
+{"axes":{"concurrency":["--threads","64"],"cpu":["--iterations","5000"],"disk":["--write-files","200"],"memory":["--allocate-mb","512"],"network":["--connections","150"]},"common_args":["--config","cfg.toml"],"probe_mode":"always"}

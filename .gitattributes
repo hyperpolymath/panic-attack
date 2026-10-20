@@ -41,6 +41,7 @@
 *.json  text eol=lf
 *.yaml  text eol=lf
 *.yml   text eol=lf
+*.kyaml text eol=lf linguist-language=YAML
 *.toml  text eol=lf
 
 

@@ -76,4 +76,17 @@ mod tests {
         );
         assert_eq!(profile.probe_mode, Some(ProbeMode::Always));
     }
+
+    #[test]
+    fn shipped_example_profiles_agree() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("profiles");
+        let json = AttackProfile::load(&dir.join("attack-profile.example.json"))
+            .expect("JSON example should load");
+        let kyaml = AttackProfile::load(&dir.join("attack-profile.example.kyaml"))
+            .expect("KYAML example should load");
+        assert_eq!(json.common_args, kyaml.common_args);
+        assert_eq!(json.axes, kyaml.axes);
+        assert_eq!(json.probe_mode, kyaml.probe_mode);
+        assert!(!json.axes.is_empty(), "example should exercise axis args");
+    }
 }
