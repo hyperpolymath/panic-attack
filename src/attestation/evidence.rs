@@ -142,7 +142,7 @@ impl EvidenceAccumulator {
         }
 
         // Emit checkpoint every CHECKPOINT_INTERVAL files
-        if self.files_read % CHECKPOINT_INTERVAL == 0 {
+        if self.files_read.is_multiple_of(CHECKPOINT_INTERVAL) {
             let snapshot = self.rolling_hasher.clone().finalize();
             self.checkpoints.push(EvidenceCheckpoint {
                 files_at_checkpoint: self.files_read,
