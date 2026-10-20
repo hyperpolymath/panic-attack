@@ -489,7 +489,7 @@ impl WeakPointCategory {
     /// consumer reads (SARIF `ruleId`, VeriSimDB hexads, the query DSL,
     /// proof coverage `rule:` annotations, the verdict grid). IDs are a
     /// public contract: never renumber an existing category; a new category
-    /// takes a new ID. `tests::rule_ids_are_stable` locks the table.
+    /// takes a new ID. `rule_id_tests::rule_ids_are_stable` locks the table.
     pub const fn rule_id(self) -> &'static str {
         match self {
             WeakPointCategory::UncheckedAllocation => "PA001",

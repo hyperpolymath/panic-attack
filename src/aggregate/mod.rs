@@ -708,6 +708,13 @@ fn count_matching(findings: &[FindingLite], cov: &Coverage) -> usize {
         .count()
 }
 
+/// Return whether a finding falls within the declared coverage, ignoring its claim.
+///
+/// Category names and canonical rule IDs match case-insensitively, ignoring
+/// non-alphanumeric characters. File coverage uses a case-sensitive substring
+/// match against the finding's file text before the first `:`; an empty value
+/// matches any present file. File coverage without file text and free-form
+/// coverage never match.
 fn matches_coverage(f: &FindingLite, cov: &Coverage) -> bool {
     match cov.kind {
         CoverageKind::Category => eq_loose(&category_name(&f.category), &cov.value),
