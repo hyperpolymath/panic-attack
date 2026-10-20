@@ -1,8 +1,10 @@
 == Attack Profiles
 
 Attack profiles let you pass custom arguments to target programs during
-assaults. Profiles are JSON or YAML and can supply common arguments,
-axis-specific arguments, and probe mode.
+assaults. Profiles are JSON, KYAML or YAML and can supply common
+arguments, axis-specific arguments, and probe mode. The loader picks the
+format from the extension: `+.json+`, or `+.kyaml+`, `+.yaml+` or `+.yml+`.
+KYAML is the estate YAML dialect and a strict subset of YAML.
 
 Ambush runs also accept profiles. The arguments are forwarded to the
 target program while the ambient stressors run in parallel.
@@ -29,26 +31,36 @@ Axis keys: `+cpu+`, `+memory+`, `+disk+`, `+network+`, `+concurrency+`,
 }
 ....
 
-=== YAML example
+=== KYAML example
+
+The same profile in KYAML, as written by `+yq -o kyaml+`. Plain block-style
+YAML is also accepted.
 
 ....
-common_args:
-  - --config
-  - cfg.toml
-axes:
-  cpu:
-    - --iterations
-    - "5000"
-  memory:
-    - --allocate-mb
-    - "512"
-probe_mode: always
+{
+  common_args: [
+    "--config",
+    "cfg.toml",
+  ],
+  axes: {
+    cpu: [
+      "--iterations",
+      "5000",
+    ],
+    memory: [
+      "--allocate-mb",
+      "512",
+    ],
+  },
+  probe_mode: "always",
+}
 ....
 
 === CLI usage
 
 ....
 panic-attack assault ./my-program --profile profiles/attack-profile.example.json
+panic-attack assault ./my-program --profile profiles/attack-profile.example.kyaml
 panic-attack assault ./my-program --arg --config --arg cfg.toml
 panic-attack assault ./my-program --axis-arg cpu=--iterations --axis-arg cpu=5000
 panic-attack assault ./my-program --probe always

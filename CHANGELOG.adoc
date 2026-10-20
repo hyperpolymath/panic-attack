@@ -10,6 +10,10 @@ a2ml bundles now accept the `+.kyaml+` extension alongside `+.yaml+` and
 The extension list lives in one place, `+crate::yaml::EXTENSIONS+`.
 * `+assemblyline+` fingerprints `+.kyaml+` files, so editing one triggers a
 rescan.
+* The example attack profiles are in estate formats:
+`+profiles/attack-profile.example.kyaml+` (KYAML, renamed from `+.yaml+`)
+and `+profiles/attack-profile.example.json+` (I-JSON/JCS). A test keeps the two
+in agreement.
 
 ==== Fixed — YAML parser replaced with safe Rust (RUSTSEC-2024-0449)
 
