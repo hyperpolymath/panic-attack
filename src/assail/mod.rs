@@ -402,21 +402,22 @@ pub fn apply_suppression(report: &mut AssailReport) {
     report.suppressed_count = count;
 }
 
-/// v2.5.5 context-aware FP suppression pass — applies four checks per
+/// v2.5.5 context-aware FP suppression pass — applies three checks per
 /// finding:
 ///   1. Inline `panic-attack: accepted` marker on the same or
-///      preceding line ([[comment_marker]]).
+///      preceding line, when `wp.line` is known ([[comment_marker]]).
 ///   2. PanicPath finding in a TestOnly or Doc test_context
 ///      ([[test_context]]).
 ///   3. UnsafeFFI finding where the file's [[ffi_kind]] is
 ///      `BuildSystem` or `TestMock` (audit-accepted by default).
-///   4. (jit_context wire-up handled inline in analyzer.rs:1117..1129
-///      already; not duplicated here.)
 ///
-/// Sets `wp.test_context` for every finding with a known file path so
+/// JIT context handling remains inline in analyzer.rs:1117..1129.
+///
+/// Fills missing `wp.test_context` for findings with a known file path so
 /// downstream audit consumers can render it. Returns the number of
 /// findings newly flipped from `suppressed=false` to `suppressed=true`
 /// (already-suppressed findings are NOT re-counted).
+/// File read errors disable marker checks and use path-only context classification.
 pub fn apply_v255_context_suppression(report: &mut AssailReport) -> usize {
     use crate::comment_marker;
     use crate::ffi_kind::FfiKind;
@@ -432,7 +433,9 @@ pub fn apply_v255_context_suppression(report: &mut AssailReport) -> usize {
         // fall back to parsing `location` ("path:line").
         let file_path: Option<String> = wp.file.clone().or_else(|| {
             wp.location.as_ref().and_then(|loc| {
-                loc.rsplit_once(':').map(|(p, _)| p.to_string()).or_else(|| Some(loc.clone()))
+                loc.rsplit_once(':')
+                    .map(|(p, _)| p.to_string())
+                    .or_else(|| Some(loc.clone()))
             })
         });
 
@@ -708,7 +711,7 @@ mod classifications_tests {
                     description: "8 unsafe blocks".to_string(),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 },
                 WeakPoint {
                     file: None,
@@ -719,7 +722,7 @@ mod classifications_tests {
                     description: "unsafe block".to_string(),
                     recommended_attack: vec![AttackAxis::Memory],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 },
             ],
             statistics: ProgramStatistics {
@@ -758,8 +761,8 @@ mod classifications_tests {
 mod v255_context_suppression_tests {
     use super::apply_v255_context_suppression;
     use crate::types::{
-        AssailReport, AttackAxis, ProgramStatistics, Severity, TestContext,
-        WeakPoint, WeakPointCategory,
+        AssailReport, AttackAxis, ProgramStatistics, Severity, TestContext, WeakPoint,
+        WeakPointCategory,
     };
     use std::fs;
     use tempfile::TempDir;
@@ -798,10 +801,7 @@ mod v255_context_suppression_tests {
 
     #[test]
     fn panic_path_in_test_file_is_suppressed() {
-        let mut report = report_with(vec![wp(
-            WeakPointCategory::PanicPath,
-            "tests/foo.rs:42",
-        )]);
+        let mut report = report_with(vec![wp(WeakPointCategory::PanicPath, "tests/foo.rs:42")]);
         let n = apply_v255_context_suppression(&mut report);
         assert_eq!(n, 1);
         assert!(report.weak_points[0].suppressed);
@@ -813,10 +813,7 @@ mod v255_context_suppression_tests {
 
     #[test]
     fn panic_path_in_prod_file_not_suppressed() {
-        let mut report = report_with(vec![wp(
-            WeakPointCategory::PanicPath,
-            "src/main.rs:42",
-        )]);
+        let mut report = report_with(vec![wp(WeakPointCategory::PanicPath, "src/main.rs:42")]);
         let n = apply_v255_context_suppression(&mut report);
         assert_eq!(n, 0);
         assert!(!report.weak_points[0].suppressed);
@@ -828,8 +825,7 @@ mod v255_context_suppression_tests {
 
     #[test]
     fn unsafe_ffi_in_build_zig_is_suppressed() {
-        let mut report =
-            report_with(vec![wp(WeakPointCategory::UnsafeFFI, "build.zig:5")]);
+        let mut report = report_with(vec![wp(WeakPointCategory::UnsafeFFI, "build.zig:5")]);
         let n = apply_v255_context_suppression(&mut report);
         assert_eq!(n, 1);
         assert!(report.weak_points[0].suppressed);
@@ -851,7 +847,11 @@ mod v255_context_suppression_tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("foo.rs");
         // Line 2 has an unwrap; line 1 has the marker.
-        fs::write(&path, "// panic-attack: accepted - test\nlet x = foo.unwrap();\n").unwrap();
+        fs::write(
+            &path,
+            "// panic-attack: accepted - test\nlet x = foo.unwrap();\n",
+        )
+        .unwrap();
 
         let mut report = report_with(vec![wp(
             WeakPointCategory::UnsafeCode,

@@ -87,13 +87,16 @@ fn is_build_system_path(p: &str) -> bool {
         || p.contains("build.cargo/")
 }
 
+/// Recognise test mock paths by case-sensitive test-scope and mock/stub substrings.
 fn is_test_mock_path(p: &str) -> bool {
     // Test mocks live under tests/ AND have "mock" or "stub" in the
     // path. Plain test files are still RuntimeAbi if they call the
     // real FFI surface (they exercise it).
     let has_test_scope = p.contains("tests/") || p.contains("test/");
-    let has_mock_indicator =
-        p.contains("/mocks/") || p.contains("_mock.") || p.contains("/stubs/") || p.contains("_stub.");
+    let has_mock_indicator = p.contains("/mocks/")
+        || p.contains("_mock.")
+        || p.contains("/stubs/")
+        || p.contains("_stub.");
     has_test_scope && has_mock_indicator
 }
 
@@ -118,9 +121,11 @@ fn is_runtime_abi_path(p: &str) -> bool {
 /// project's pre-approved FFI boundary audit (typically
 /// `audits/audit-ffi-unsafe.md`).
 ///
-/// Implementation note: this is a placeholder that parses the audit
-/// file when present and returns false otherwise. Wire-in to the
-/// analyzer happens in the follow-up PR.
+/// Reads the supplied `audit_text` without accessing the filesystem. Section
+/// headings `Approved boundaries`, `Approved FFI boundaries` and `Pre-approved
+/// boundaries` are recognised case-insensitively at Markdown level two. Within
+/// them, the first token after an optional list marker is compared exactly with
+/// `file_path`, ignoring surrounding backticks. Returns false if no token matches.
 pub fn is_audited_boundary(audit_text: &str, file_path: &str) -> bool {
     // The audit file's convention is a `## Approved boundaries` section
     // with a markdown list of `- file/path/here.zig — rationale` lines.
@@ -128,10 +133,9 @@ pub fn is_audited_boundary(audit_text: &str, file_path: &str) -> bool {
     for line in audit_text.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("## ") {
-            in_approved_section =
-                trimmed.eq_ignore_ascii_case("## Approved boundaries")
-                    || trimmed.eq_ignore_ascii_case("## Approved FFI boundaries")
-                    || trimmed.eq_ignore_ascii_case("## Pre-approved boundaries");
+            in_approved_section = trimmed.eq_ignore_ascii_case("## Approved boundaries")
+                || trimmed.eq_ignore_ascii_case("## Approved FFI boundaries")
+                || trimmed.eq_ignore_ascii_case("## Pre-approved boundaries");
             continue;
         }
         if !in_approved_section {
@@ -160,10 +164,7 @@ mod tests {
 
     #[test]
     fn build_zig_classified_build_system() {
-        assert_eq!(
-            FfiKind::classify_by_path("build.zig"),
-            FfiKind::BuildSystem
-        );
+        assert_eq!(FfiKind::classify_by_path("build.zig"), FfiKind::BuildSystem);
         assert_eq!(
             FfiKind::classify_by_path("src/foo/build.zig"),
             FfiKind::BuildSystem
@@ -209,10 +210,7 @@ mod tests {
 
     #[test]
     fn unrecognised_path_is_unknown() {
-        assert_eq!(
-            FfiKind::classify_by_path("src/main.rs"),
-            FfiKind::Unknown
-        );
+        assert_eq!(FfiKind::classify_by_path("src/main.rs"), FfiKind::Unknown);
         assert_eq!(
             FfiKind::classify_by_path("examples/hello.zig"),
             FfiKind::Unknown

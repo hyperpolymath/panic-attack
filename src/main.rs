@@ -22,12 +22,9 @@ mod axial;
 #[cfg(feature = "http")]
 mod bridge;
 mod campaign;
-mod comment_marker;
 mod diagnostics;
-mod ffi_kind;
 mod groove;
 mod i18n;
-mod jit_context;
 mod kanren;
 mod kin;
 mod mass_panic;
@@ -60,6 +57,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use clap_complete_nushell::Nushell;
+use panic_attack::{comment_marker, ffi_kind};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
@@ -1370,6 +1368,13 @@ fn main() -> Result<()> {
     result
 }
 
+/// Parse process arguments and execute the selected command, including its output
+/// and requested persistence. Default manifest settings are used if loading fails.
+/// Argument parsing exits the process for help or invalid CLI syntax.
+///
+/// # Errors
+/// Returns command validation errors and propagates I/O, serialisation and
+/// operation errors that are not handled by a command-specific fallback.
 fn run_main() -> Result<()> {
     let cli = Cli::parse();
     let manifest = match Manifest::load_default() {
@@ -2734,9 +2739,8 @@ fn run_main() -> Result<()> {
                 PanicAttackHexad,
             };
 
-            let json = std::fs::read_to_string(&hexad).with_context(|| {
-                format!("reading hexad file {}", hexad.display())
-            })?;
+            let json = std::fs::read_to_string(&hexad)
+                .with_context(|| format!("reading hexad file {}", hexad.display()))?;
             let hexad_value: PanicAttackHexad = serde_json::from_str(&json)
                 .with_context(|| format!("parsing hexad JSON at {}", hexad.display()))?;
 

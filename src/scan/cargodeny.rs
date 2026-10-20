@@ -8,7 +8,7 @@
 // feedback_no_automated_licence_edits.
 
 use crate::types::{Severity, WeakPoint, WeakPointCategory};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -112,10 +112,18 @@ fn code_to_category(code: &str) -> WeakPointCategory {
     }
 }
 
-/// Run cargo-deny check and parse output
+/// Run `cargo deny check` in the configured workspace and return its diagnostic findings.
+///
+/// Standard output must be UTF-8 JSON matching `DenyOutput`, regardless of
+/// `config.format`. A non-zero exit status still yields findings if parsing succeeds.
+/// Missing severity and code fields default to Medium and Advisory respectively.
+/// `config.deny_toml` is currently ignored.
+///
+/// # Errors
+/// Returns process execution errors, invalid UTF-8 errors and JSON deserialisation errors.
 pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
     let workspace_root = &config.workspace_root;
-    
+
     // Build cargo deny command
     let mut cmd = Command::new("cargo");
     cmd.arg("deny")
@@ -123,17 +131,17 @@ pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
         .arg("--format")
         .arg(&config.format)
         .current_dir(workspace_root);
-    
+
     // Add optional flags
     if config.fail_on_warnings {
         cmd.arg("--fail-on-warnings");
     }
-    
+
     // Add extra args
     for arg in &config.extra_args {
         cmd.arg(arg);
     }
-    
+
     // Execute command
     let output = cmd.output().with_context(|| {
         format!(
@@ -141,7 +149,7 @@ pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
             workspace_root.display()
         )
     })?;
-    
+
     // Check exit status - cargo-deny returns non-zero on failures
     // but we still want to parse the output
     if !output.status.success() {
@@ -152,35 +160,34 @@ pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
             workspace_root.display()
         );
     }
-    
+
     // Parse JSON output
-    let stdout = String::from_utf8(output.stdout)
-        .with_context(|| "cargo deny output is not valid UTF-8")?;
-    
-    let deny_output: DenyOutput = serde_json::from_str(&stdout)
-        .with_context(|| "failed to parse cargo deny JSON output")?;
-    
+    let stdout =
+        String::from_utf8(output.stdout).with_context(|| "cargo deny output is not valid UTF-8")?;
+
+    let deny_output: DenyOutput =
+        serde_json::from_str(&stdout).with_context(|| "failed to parse cargo deny JSON output")?;
+
     // Convert diagnostics to WeakPoints
     let mut weak_points = Vec::new();
     for diagnostic in deny_output.diagnostics {
-        let severity = diagnostic.severity
+        let severity = diagnostic
+            .severity
             .map(|s| parse_deny_severity(&s).into())
             .unwrap_or(Severity::Medium);
-        
-        let category = diagnostic.code
+
+        let category = diagnostic
+            .code
             .map(|c| code_to_category(&c))
             .unwrap_or(WeakPointCategory::Advisory);
-        
-        let location = diagnostic.location.map(|loc| {
-            if let (Some(ref file), Some(line)) = (&loc.file, loc.line) {
-                Some(format!("{}:{}", file, line))
-            } else if let Some(ref file) = loc.file {
-                Some(file.clone())
-            } else {
-                None
-            }
-        }).flatten();
-        
+
+        let location = diagnostic.location.and_then(|loc| {
+            loc.file.map(|file| match loc.line {
+                Some(line) => format!("{}:{}", file, line),
+                None => file,
+            })
+        });
+
         // Parse file and line from location string
         let (file, line) = if let Some(ref loc) = location {
             if let Some((f, l)) = loc.rsplit_once(':') {
@@ -195,7 +202,7 @@ pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
         } else {
             (None, None)
         };
-        
+
         let weak_point = WeakPoint {
             category,
             location: location.clone(),
@@ -207,10 +214,10 @@ pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
             suppressed: false,
             test_context: None,
         };
-        
+
         weak_points.push(weak_point);
     }
-    
+
     Ok(weak_points)
 }
 
@@ -257,44 +264,60 @@ impl From<WeakPoint> for CargoDenyWeakPoint {
     }
 }
 
-/// Parse cargo-deny SARIF output (alternative to JSON)
+/// Convert cargo-deny SARIF results into findings, using only the first location
+/// of each result. Missing levels default to Medium severity; missing or
+/// unrecognised rule IDs default to Advisory.
+///
+/// # Errors
+/// Returns JSON parsing errors, or an error if `runs` or any run's `results` is
+/// absent or is not an array. Empty `runs` and `results` arrays are valid.
 #[cfg(feature = "sarif")]
 pub fn parse_sarif_output(sarif_json: &str) -> Result<Vec<WeakPoint>> {
     use serde_json::Value;
-    
+
     let v: Value = serde_json::from_str(sarif_json)?;
-    
+
     // SARIF structure: { runs: [{ results: [{ ... }] }] }
-    let runs = v["runs"].as_array().ok_or_else(|| anyhow!("no runs in SARIF"))?;
+    let runs = v["runs"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("no runs in SARIF"))?;
     let mut weak_points = Vec::new();
-    
+
     for run in runs {
-        let results = run["results"].as_array().ok_or_else(|| anyhow!("no results in SARIF run"))?;
+        let results = run["results"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("no results in SARIF run"))?;
         for result in results {
-            let message = result["message"]["text"].as_str()
+            let message = result["message"]["text"]
+                .as_str()
                 .or_else(|| result["message"].as_str())
-                .unwrap_or("Unknown cargo-deny finding").to_string();
-            
+                .unwrap_or("Unknown cargo-deny finding")
+                .to_string();
+
             let severity_str = result["level"].as_str().unwrap_or("warning");
             let severity = parse_deny_severity(severity_str).into();
-            
+
             let rule_id = result["ruleId"].as_str().map(|s| s.to_string());
             let category = rule_id
                 .as_ref()
                 .map(|c| code_to_category(c))
                 .unwrap_or(WeakPointCategory::Advisory);
-            
+
             let locations = result["locations"].as_array();
             let (location, file, line) = if let Some(locs) = locations {
                 if !locs.is_empty() {
                     let loc = &locs[0];
                     let physical_loc = &loc["physicalLocation"];
-                    let file_path = physical_loc["artifactLocation"]["uri"].as_str()
+                    let file_path = physical_loc["artifactLocation"]["uri"]
+                        .as_str()
                         .or_else(|| physical_loc["artifactLocation"]["uriBaseId"].as_str())
                         .or_else(|| loc["physicalLocation"]["artifactLocation"]["uri"].as_str());
-                    let line_num = physical_loc["region"]["startLine"].as_u64()
-                        .or_else(|| physical_loc["region"]["startLine"].as_i64().map(|n| n as u64));
-                    
+                    let line_num = physical_loc["region"]["startLine"].as_u64().or_else(|| {
+                        physical_loc["region"]["startLine"]
+                            .as_i64()
+                            .map(|n| n as u64)
+                    });
+
                     let location = file_path.map(|f| {
                         if let Some(ln) = line_num {
                             format!("{}:{}", f, ln)
@@ -302,15 +325,19 @@ pub fn parse_sarif_output(sarif_json: &str) -> Result<Vec<WeakPoint>> {
                             f.to_string()
                         }
                     });
-                    
-                    (location, file_path.map(|s| s.to_string()), line_num.map(|n| n as u32))
+
+                    (
+                        location,
+                        file_path.map(|s| s.to_string()),
+                        line_num.map(|n| n as u32),
+                    )
                 } else {
                     (None, None, None)
                 }
             } else {
                 (None, None, None)
             };
-            
+
             let wp = WeakPoint {
                 category,
                 location: location.clone(),
@@ -322,19 +349,21 @@ pub fn parse_sarif_output(sarif_json: &str) -> Result<Vec<WeakPoint>> {
                 suppressed: false,
                 test_context: None,
             };
-            
+
             weak_points.push(wp);
         }
     }
-    
+
     Ok(weak_points)
 }
 
-/// High-level function to scan a workspace and emit cargo-deny weak points
-pub fn scan_workspace(
-    workspace_root: &Path,
-    deny_toml: Option<&Path>,
-) -> Result<Vec<WeakPoint>> {
+/// Scan a workspace with cargo-deny's JSON defaults and return diagnostic findings.
+/// The `deny_toml` argument currently has no effect.
+///
+/// # Errors
+/// Propagates execution, UTF-8 decoding and JSON deserialisation errors from
+/// [`run_cargo_deny`]. A non-zero cargo-deny exit status alone is not an error.
+pub fn scan_workspace(workspace_root: &Path, deny_toml: Option<&Path>) -> Result<Vec<WeakPoint>> {
     let config = CargoDenyConfig {
         workspace_root: workspace_root.to_path_buf(),
         deny_toml: deny_toml.map(|p| p.to_path_buf()),
@@ -342,30 +371,42 @@ pub fn scan_workspace(
         fail_on_warnings: false,
         extra_args: Vec::new(),
     };
-    
+
     run_cargo_deny(&config)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_severity_mapping() {
         assert_eq!(Severity::from(DenySeverity::Error), Severity::High);
         assert_eq!(Severity::from(DenySeverity::Warning), Severity::Medium);
         assert_eq!(Severity::from(DenySeverity::Note), Severity::Low);
     }
-    
+
     #[test]
     fn test_code_to_category() {
-        assert_eq!(code_to_category("RUSTSEC-2021-0001"), WeakPointCategory::Advisory);
-        assert_eq!(code_to_category("CVE-2021-12345"), WeakPointCategory::Advisory);
+        assert_eq!(
+            code_to_category("RUSTSEC-2021-0001"),
+            WeakPointCategory::Advisory
+        );
+        assert_eq!(
+            code_to_category("CVE-2021-12345"),
+            WeakPointCategory::Advisory
+        );
         assert_eq!(code_to_category("banned"), WeakPointCategory::BannedDep);
-        assert_eq!(code_to_category("license"), WeakPointCategory::LicensePolicy);
-        assert_eq!(code_to_category("unknown-source"), WeakPointCategory::UnknownSource);
+        assert_eq!(
+            code_to_category("license"),
+            WeakPointCategory::LicensePolicy
+        );
+        assert_eq!(
+            code_to_category("unknown-source"),
+            WeakPointCategory::UnknownSource
+        );
     }
-    
+
     #[test]
     fn test_parse_severity() {
         assert_eq!(parse_deny_severity("error"), DenySeverity::Error);
@@ -412,11 +453,14 @@ mod tests {
         }"#;
 
         let deny_output: DenyOutput = serde_json::from_str(json_output).unwrap();
-        
+
         // Verify the parsing logic works
         assert_eq!(deny_output.diagnostics.len(), 3);
         assert_eq!(deny_output.diagnostics[0].code, Some("license".to_string()));
         assert_eq!(deny_output.diagnostics[1].code, Some("banned".to_string()));
-        assert_eq!(deny_output.diagnostics[2].code, Some("RUSTSEC-2021-0001".to_string()));
+        assert_eq!(
+            deny_output.diagnostics[2].code,
+            Some("RUSTSEC-2021-0001".to_string())
+        );
     }
 }

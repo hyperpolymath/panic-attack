@@ -229,10 +229,7 @@ mod tests {
         assert_eq!(classify_path("src/foo.ts"), TestContext::Production);
         assert_eq!(classify_path("src/foo.test.ts"), TestContext::TestOnly);
         assert_eq!(classify_path("src/foo.spec.js"), TestContext::TestOnly);
-        assert_eq!(
-            classify_path("__tests__/foo.tsx"),
-            TestContext::TestOnly
-        );
+        assert_eq!(classify_path("__tests__/foo.tsx"), TestContext::TestOnly);
     }
 
     #[test]
@@ -251,10 +248,7 @@ mod tests {
 
     #[test]
     fn doc_paths_win_over_test() {
-        assert_eq!(
-            classify_path("docs/examples/hello.rs"),
-            TestContext::Doc
-        );
+        assert_eq!(classify_path("docs/examples/hello.rs"), TestContext::Doc);
         assert_eq!(classify_path("foo.example.py"), TestContext::Doc);
     }
 

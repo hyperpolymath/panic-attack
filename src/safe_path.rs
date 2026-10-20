@@ -62,7 +62,7 @@ const SAFE_PUNCT: &[char] = &['-', '_', '.', '~'];
 /// assert!(!has_traversal("foo..bar")); // .. inside a name is not a segment
 /// ```
 pub fn has_traversal(path: &str) -> bool {
-    for segment in path.split(|c| c == '/' || c == '\\') {
+    for segment in path.split(['/', '\\']) {
         if segment == ".." {
             return true;
         }
@@ -100,21 +100,16 @@ pub fn sanitize_filename(filename: &str) -> String {
     }
 }
 
-/// Returns true if `c` is a character `sanitize_filename` would keep.
-fn is_safe_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || SAFE_PUNCT.contains(&c)
-}
-
-/// Returns true if every character in `s` is safe. Used by the
-/// idempotence + non-empty proptest invariants.
-fn all_chars_safe(s: &str) -> bool {
-    s.chars().all(is_safe_char)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// Property-test predicate kept separate from the sanitizer implementation.
+    fn all_chars_safe(s: &str) -> bool {
+        s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || SAFE_PUNCT.contains(&c))
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // has_traversal — concrete cases
@@ -191,7 +186,10 @@ mod tests {
 
     #[test]
     fn sanitize_keeps_safe_punct() {
-        assert_eq!(sanitize_filename("my-file_2026.06.02"), "my-file_2026.06.02");
+        assert_eq!(
+            sanitize_filename("my-file_2026.06.02"),
+            "my-file_2026.06.02"
+        );
         assert_eq!(sanitize_filename("config~"), "config~");
     }
 
@@ -285,7 +283,7 @@ mod tests {
         #[test]
         fn prop_has_traversal_operational(s in ".*") {
             let split_says: bool = s
-                .split(|c| c == '/' || c == '\\')
+                .split(['/', '\\'])
                 .any(|seg| seg == "..");
             prop_assert_eq!(
                 has_traversal(&s),

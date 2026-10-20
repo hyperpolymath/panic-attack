@@ -41,11 +41,11 @@ pub fn run_self_diagnostics(manifest: &Manifest) -> Result<()> {
     checks.push(check_verisimdb(Path::new("verisimdb-data/verisimdb")));
     checks.push(check_file(
         "ambush timeline spec",
-        Path::new("docs/ambush-timeline.md"),
+        Path::new("docs/ambush-timeline.adoc"),
     ));
     checks.push(check_file(
         "panll export guide",
-        Path::new("docs/panll-export.md"),
+        Path::new("docs/panll-export.adoc"),
     ));
 
     checks.push(check_watcher("Hypatia scanner", HYPATIA_ENV));
@@ -193,8 +193,11 @@ fn check_watcher(label: &'static str, env_key: &str) -> Diagnostic {
 /// Verifies:
 ///   1. Bot directives file exists at `.machine_readable/bot_directives/panicbot.scm`
 ///   2. JSON output contract: AssailReport serialises with the fields panicbot expects
-///      (`program_path`, `weak_points`, `language`, `statistics`)
+///      (`program_path`, `weak_points`, `language`)
 ///   3. WeakPointCategory and Severity serialise in PascalCase (no serde rename_all)
+///
+/// Failed JSON checks, including serialisation errors, yield an error diagnostic;
+/// missing directives alone yield a warning.
 fn check_panicbot_readiness() -> Diagnostic {
     let directive_path = Path::new(PANICBOT_DIRECTIVE_PATH);
     let has_directives = directive_path.is_file();
@@ -214,7 +217,7 @@ fn check_panicbot_readiness() -> Diagnostic {
             description: "test".to_string(),
             recommended_attack: vec![],
             suppressed: false,
-                test_context: None,
+            test_context: None,
         }],
         statistics: crate::types::ProgramStatistics::default(),
         file_statistics: vec![],

@@ -15,5 +15,12 @@ permissions:
 
 jobs:
   mirror:
-    uses: hyperpolymath/standards/.github/workflows/mirror-reusable.yml@84355587cb2a1f86e6882de83514a32db2646e7a
-    secrets: inherit
+    uses: hyperpolymath/standards/.github/workflows/mirror-reusable.yml@333b06a01db1874ffedb2de1bfabb195640927c7
+    secrets:
+      GITLAB_SSH_KEY: ${{ secrets.GITLAB_SSH_KEY }}
+      BITBUCKET_SSH_KEY: ${{ secrets.BITBUCKET_SSH_KEY }}
+      CODEBERG_SSH_KEY: ${{ secrets.CODEBERG_SSH_KEY }}
+      SOURCEHUT_SSH_KEY: ${{ secrets.SOURCEHUT_SSH_KEY }}
+      DISROOT_SSH_KEY: ${{ secrets.DISROOT_SSH_KEY }}
+      GITEA_SSH_KEY: ${{ secrets.GITEA_SSH_KEY }}
+      RADICLE_KEY: ${{ secrets.RADICLE_KEY }}

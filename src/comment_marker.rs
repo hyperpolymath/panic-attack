@@ -229,10 +229,7 @@ mod tests {
         let m = parse_accepted_marker_in_line(
             "// panic-attack: accepted (PA005 — manual audit 2026-06-02)",
         );
-        assert_eq!(
-            m,
-            Some("(PA005 — manual audit 2026-06-02)".to_string())
-        );
+        assert_eq!(m, Some("(PA005 — manual audit 2026-06-02)".to_string()));
     }
 
     #[test]

@@ -18,4 +18,4 @@ permissions:
 
 jobs:
   rust-ci:
-    uses: hyperpolymath/standards/.github/workflows/rust-ci-reusable.yml@84355587cb2a1f86e6882de83514a32db2646e7a # re-pinned 2026-07-01: toolchain-required-input fix (standards#439)
+    uses: hyperpolymath/standards/.github/workflows/rust-ci-reusable.yml@333b06a01db1874ffedb2de1bfabb195640927c7 # re-pinned 2026-07-01: toolchain-required-input fix (standards#439)

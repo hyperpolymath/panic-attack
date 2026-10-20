@@ -277,11 +277,15 @@ pub fn run(config: AssayConfig) -> Result<AssayReport> {
     })
 }
 
+/// Write the assay report as pretty-printed JSON, creating parent directories
+/// and replacing any existing file at `path`.
+///
+/// # Errors
+/// Returns directory creation, JSON serialisation and file write errors.
 pub fn write_report(report: &AssayReport, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
+            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
     }
     let json = serde_json::to_string_pretty(report).context("serializing assay report")?;
@@ -349,6 +353,20 @@ pub struct AssimilateConfig {
     pub dry_run: bool,
 }
 
+/// Apply selected proven-module substitutions and return provenance records and notes.
+///
+/// `apply_all` selects offered candidates; otherwise `candidate_id` is required.
+/// Already-applied candidates are skipped. The `from` override requires exactly
+/// one selected candidate. Call sites are returned for manual rewiring.
+///
+/// Unless `dry_run` is set, copy replacement files, preserve existing `.orig`
+/// backups and write provenance under the target's `.assimilated/` directory.
+/// Dry runs still resolve and hash sources and existing destination files.
+///
+/// # Errors
+/// Returns survey errors, invalid candidate or source selection errors, and errors
+/// from hashing, directory creation, file copying or provenance serialisation/writing.
+/// Earlier file changes remain in place if a later operation fails.
 pub fn assimilate(config: AssimilateConfig) -> Result<AssimilationOutcome> {
     let assay = run(AssayConfig {
         target: config.target.clone(),
@@ -479,8 +497,9 @@ pub fn assimilate(config: AssimilateConfig) -> Result<AssimilationOutcome> {
             if let Some(bak) = &backup {
                 // Never clobber a pre-existing .orig backup.
                 if !bak.exists() {
-                    fs::copy(&dest, bak)
-                        .with_context(|| format!("backing up {} -> {}", dest.display(), bak.display()))?;
+                    fs::copy(&dest, bak).with_context(|| {
+                        format!("backing up {} -> {}", dest.display(), bak.display())
+                    })?;
                 }
             }
             fs::copy(&source, &dest)
@@ -684,7 +703,9 @@ mod tests {
 
         // Destination now holds the proven content.
         let dest = target.path().join("src/safe_url.rs");
-        assert!(fs::read_to_string(&dest).unwrap().contains("PROVEN SafeUrl"));
+        assert!(fs::read_to_string(&dest)
+            .unwrap()
+            .contains("PROVEN SafeUrl"));
         // Backup holds the old content.
         let bak = rec.backup.as_ref().unwrap();
         assert!(fs::read_to_string(bak).unwrap().contains("OLD placeholder"));
@@ -698,11 +719,7 @@ mod tests {
         let proven = TempDir::new().unwrap();
         let tsrc = target.path().join("src");
         fs::create_dir_all(&tsrc).unwrap();
-        fs::write(
-            tsrc.join("storage.rs"),
-            "VERISIMDB_URL env access here\n",
-        )
-        .unwrap();
+        fs::write(tsrc.join("storage.rs"), "VERISIMDB_URL env access here\n").unwrap();
         let psrc = proven.path().join("ports");
         fs::create_dir_all(&psrc).unwrap();
         fs::write(psrc.join("safe_url.rs"), "// PROVEN\n").unwrap();
