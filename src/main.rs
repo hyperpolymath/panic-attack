@@ -7,36 +7,34 @@
 //! concurrency) and detecting bug signatures using logic programming techniques inspired by
 //! Mozart/Oz and Datalog.
 
-mod a2ml;
-mod abduct;
-mod adjudicate;
-mod aggregate;
-mod ambush;
-mod amuck;
-mod assail;
-mod assay;
-mod assemblyline;
-mod attack;
-mod attestation;
-mod axial;
+use panic_attack::a2ml;
+use panic_attack::abduct;
+use panic_attack::adjudicate;
+use panic_attack::aggregate;
+use panic_attack::ambush;
+use panic_attack::amuck;
+use panic_attack::assail;
+use panic_attack::assay;
+use panic_attack::assemblyline;
+use panic_attack::attack;
+use panic_attack::attestation;
+use panic_attack::axial;
 #[cfg(feature = "http")]
-mod bridge;
-mod campaign;
+use panic_attack::bridge;
+use panic_attack::campaign;
 mod diagnostics;
 mod groove;
-mod i18n;
-mod kanren;
+use panic_attack::i18n;
 mod kin;
-mod mass_panic;
-mod notify;
-mod panll;
-mod query;
-mod report;
-mod signatures;
-mod storage;
-mod sweep_tracker;
-mod test_context;
-mod types;
+use panic_attack::mass_panic;
+use panic_attack::notify;
+use panic_attack::panll;
+use panic_attack::query;
+use panic_attack::report;
+use panic_attack::signatures;
+use panic_attack::storage;
+use panic_attack::sweep_tracker;
+use panic_attack::types;
 
 extern crate walkdir;
 
@@ -57,7 +55,6 @@ use anyhow::{anyhow, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
 use clap_complete_nushell::Nushell;
-use panic_attack::{comment_marker, ffi_kind};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};

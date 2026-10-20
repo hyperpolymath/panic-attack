@@ -82,7 +82,7 @@ jobs:
           echo "k9_count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "config_count=$CONFIG_COUNT" >> "$GITHUB_OUTPUT"
           if [ "$COUNT" -eq 0 ] && [ "$CONFIG_COUNT" -gt 0 ]; then
-            echo "::warning::Found $CONFIG_COUNT config files but no K9 contracts. Run k9iser to generate contracts."
+            echo "::warning::Found $CONFIG_COUNT config files but no K9 contracts. See standards 1-formats/k9/spec/K9-CONTRACT-SPEC.adoc."
           fi
 
       - name: Validate K9 contracts
@@ -98,7 +98,7 @@ jobs:
 
           :warning: **No .a2ml/.deed manifest files found.** Every RSR-compliant repo should have a repo deed (`<reponame>_chora.deed`) at its root.
 
-          Generate contracts with: `k9iser generate .`
+          Author them per hyperpolymath/standards `1-formats/k9/spec/K9-CONTRACT-SPEC.adoc` (D173).
           EOF
           else
             echo "## K9 Contract Validation" >> "$GITHUB_STEP_SUMMARY"
