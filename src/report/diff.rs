@@ -6,7 +6,6 @@
 use crate::types::*;
 use anyhow::{Context, Result};
 use serde_json;
-use serde_yaml;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::Read;
@@ -30,7 +29,7 @@ pub fn load_report(path: &Path) -> Result<AssaultReport> {
     };
     // Diff loader accepts JSON/YAML to match report export formats.
     match path.extension().and_then(|ext| ext.to_str()) {
-        Some("yaml") | Some("yml") => serde_yaml::from_str(&content)
+        Some("yaml") | Some("yml") => crate::yaml::from_report_str(&content)
             .with_context(|| format!("parsing yaml report {}", path.display())),
         _ => serde_json::from_str(&content)
             .with_context(|| format!("parsing json report {}", path.display())),

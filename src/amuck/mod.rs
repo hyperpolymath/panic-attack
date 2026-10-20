@@ -320,19 +320,19 @@ fn load_spec(path: &Path) -> Result<MutationSpecFile> {
             .with_context(|| format!("reading spec {}", path.display()))?;
         buf
     };
-    let spec =
-        match path.extension().and_then(|ext| ext.to_str()) {
-            Some("json") => serde_json::from_str(&content)
-                .with_context(|| format!("parsing {}", path.display()))?,
-            Some("yaml") | Some("yml") => serde_yaml::from_str(&content)
-                .with_context(|| format!("parsing {}", path.display()))?,
-            _ => {
-                return Err(anyhow!(
-                    "spec {} must be json/yaml/yml",
-                    path.to_string_lossy()
-                ));
-            }
-        };
+    let spec = match path.extension().and_then(|ext| ext.to_str()) {
+        Some("json") => {
+            serde_json::from_str(&content).with_context(|| format!("parsing {}", path.display()))?
+        }
+        Some("yaml") | Some("yml") => crate::yaml::from_str(&content)
+            .with_context(|| format!("parsing {}", path.display()))?,
+        _ => {
+            return Err(anyhow!(
+                "spec {} must be json/yaml/yml",
+                path.to_string_lossy()
+            ));
+        }
+    };
     Ok(spec)
 }
 

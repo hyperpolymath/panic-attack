@@ -72,7 +72,7 @@ pub fn load_timeline_with_default(
     let spec: TimelineSpec = if path.extension().and_then(|s| s.to_str()) == Some("yaml")
         || path.extension().and_then(|s| s.to_str()) == Some("yml")
     {
-        serde_yaml::from_str(&content)
+        crate::yaml::from_str(&content)
             .with_context(|| format!("parsing yaml timeline {}", path.display()))?
     } else {
         serde_json::from_str(&content)

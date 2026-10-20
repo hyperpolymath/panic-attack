@@ -401,9 +401,8 @@ fn load_payload_for_kind(kind: ReportBundleKind, input: &Path) -> Result<ReportB
 fn load_json_or_yaml<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     match path.extension().and_then(|e| e.to_str()) {
-        Some("yaml") | Some("yml") => {
-            serde_yaml::from_str::<T>(&raw).with_context(|| format!("parsing {}", path.display()))
-        }
+        Some("yaml") | Some("yml") => crate::yaml::from_report_str::<T>(&raw)
+            .with_context(|| format!("parsing {}", path.display())),
         _ => serde_json::from_str::<T>(&raw).with_context(|| format!("parsing {}", path.display())),
     }
 }
@@ -421,10 +420,10 @@ fn load_attack_results(path: &Path) -> Result<Vec<AttackResult>> {
     if let Ok(wrapper) = serde_json::from_str::<AttackWrapper>(&raw) {
         return Ok(wrapper.attack_results);
     }
-    if let Ok(results) = serde_yaml::from_str::<Vec<AttackResult>>(&raw) {
+    if let Ok(results) = crate::yaml::from_report_str::<Vec<AttackResult>>(&raw) {
         return Ok(results);
     }
-    if let Ok(wrapper) = serde_yaml::from_str::<AttackWrapper>(&raw) {
+    if let Ok(wrapper) = crate::yaml::from_report_str::<AttackWrapper>(&raw) {
         return Ok(wrapper.attack_results);
     }
     Err(anyhow!(

@@ -218,7 +218,7 @@ fn e2e_report_yaml_serialization() {
     let report = assail::analyze(&example).expect("analysis should succeed");
 
     // Must be serializable to YAML
-    let yaml = serde_yaml::to_string(&report).expect("report must be YAML-serializable");
+    let yaml = panic_attack::yaml::to_string(&report).expect("report must be YAML-serializable");
 
     assert!(!yaml.is_empty());
 }

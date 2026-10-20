@@ -54,7 +54,7 @@ K9!
     # Build configuration
     build = {
       edition = "2021",
-      msrv = "1.85.0",
+      msrv = "1.89",
     },
 
     # Language policy

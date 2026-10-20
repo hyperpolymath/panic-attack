@@ -8,7 +8,6 @@ use crate::types::AssaultReport;
 use anyhow::Result;
 use clap::ValueEnum;
 use serde_json;
-use serde_yaml;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ReportOutputFormat {
@@ -41,7 +40,7 @@ impl ReportOutputFormat {
     pub fn serialize(&self, report: &AssaultReport) -> Result<String> {
         match self {
             ReportOutputFormat::Json => Ok(serde_json::to_string_pretty(report)?),
-            ReportOutputFormat::Yaml => Ok(serde_yaml::to_string(report)?),
+            ReportOutputFormat::Yaml => Ok(crate::yaml::to_string(report)?),
             // Nickel output is a compact projection for config-centric consumers.
             ReportOutputFormat::Nickel => Ok(format_report_as_nickel(report)),
             // SARIF output targets GitHub Security tab and other SARIF consumers.
