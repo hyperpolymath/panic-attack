@@ -7,7 +7,7 @@
 //! `gui` feature flag) so the readiness test `readiness_d_gui_headless_runs`
 //! and CI integrations keep working in MSRV-clean default builds. The
 //! windowed renderer in [`crate::report::gui`] is feature-gated because eframe
-//! raises MSRV above 1.85.0.
+//! raises MSRV above 1.89.
 
 use crate::report::formatter::ReportFormatter;
 use crate::types::AssaultReport;

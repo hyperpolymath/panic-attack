@@ -82,7 +82,7 @@
     (build-system "cargo")
     (package-manager "cargo")
     (language "rust")
-    (msrv "1.85.0")
+    (msrv "1.89")
     (edition "2021"))
 
   (lifecycle

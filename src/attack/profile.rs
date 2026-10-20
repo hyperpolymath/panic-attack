@@ -7,7 +7,6 @@ use crate::types::{AttackAxis, ProbeMode};
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use serde_json;
-use serde_yaml;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -43,7 +42,7 @@ impl AttackProfile {
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("json") => serde_json::from_str(&content)
                 .with_context(|| format!("parsing json attack profile {}", path.display())),
-            Some("yaml") | Some("yml") => serde_yaml::from_str(&content)
+            Some("yaml") | Some("yml") => crate::yaml::from_str(&content)
                 .with_context(|| format!("parsing yaml attack profile {}", path.display())),
             _ => Err(anyhow!(
                 "unsupported attack profile extension for {}",
