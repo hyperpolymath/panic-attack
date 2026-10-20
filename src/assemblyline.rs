@@ -534,7 +534,7 @@ pub fn write_report(report: &AssemblylineReport, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(report)?;
+    let json = crate::json::to_canonical_string(report)?;
     fs::write(path, json)?;
     Ok(())
 }

@@ -87,7 +87,7 @@ impl ReportFormatter {
 
     #[allow(dead_code)]
     pub fn save<P: AsRef<Path>>(&self, report: &AssaultReport, path: P) -> Result<()> {
-        let serialized = serde_json::to_string_pretty(report)?;
+        let serialized = crate::json::to_canonical_string(report)?;
         fs::write(path, serialized)?;
         Ok(())
     }

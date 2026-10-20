@@ -2129,6 +2129,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ijson-jcs"
+version = "0.1.0"
+source = "git+https://github.com/hyperpolymath/ijson-jcs?rev=3a9a4ee326a968a32b2f152b4faec243a2d00765#3a9a4ee326a968a32b2f152b4faec243a2d00765"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "image"
 version = "0.25.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2935,6 +2945,7 @@ dependencies = [
  "filetime",
  "getrandom 0.4.3",
  "hex",
+ "ijson-jcs",
  "log",
  "proptest",
  "rayon",
