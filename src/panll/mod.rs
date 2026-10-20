@@ -689,7 +689,7 @@ mod tests {
                     description: "unwrap on None".to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 },
                 WeakPoint {
                     category: WeakPointCategory::UnsafeCode,
@@ -700,7 +700,7 @@ mod tests {
                     description: "unsafe block".to_string(),
                     recommended_attack: vec![],
                     suppressed: false,
-                test_context: None,
+                    test_context: None,
                 },
             ],
             vec![],

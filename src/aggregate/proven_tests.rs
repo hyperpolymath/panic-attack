@@ -27,6 +27,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::str::FromStr;
 
 /// A cited proof step (only Actually-Proven entries carry these).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,9 +116,14 @@ impl ReportTier {
     }
 }
 
-impl ProvenTestsReport {
-    /// Parse a run report from JSON text.
-    pub fn from_str(text: &str) -> Result<Self> {
+impl FromStr for ProvenTestsReport {
+    type Err = anyhow::Error;
+
+    /// Parse a run report from JSON text, requiring schema version 1.
+    ///
+    /// # Errors
+    /// Returns JSON deserialisation errors or an error if `schema_version` is not 1.
+    fn from_str(text: &str) -> Result<Self> {
         let report: ProvenTestsReport =
             serde_json::from_str(text).context("parsing proven-tests run report")?;
         if report.schema_version != 1 {
@@ -128,11 +134,17 @@ impl ProvenTestsReport {
         }
         Ok(report)
     }
+}
 
-    /// Parse a run report from a file path.
+impl ProvenTestsReport {
+    /// Read a UTF-8 JSON run report from `path` and parse it as schema version 1.
+    ///
+    /// # Errors
+    /// Returns file read errors (including invalid UTF-8), JSON deserialisation
+    /// errors or an error if `schema_version` is not 1.
     pub fn from_path(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         Self::from_str(&text)
     }
 
@@ -163,12 +175,21 @@ impl ProvenTestsReport {
                     e.proof_ladder.len()
                 ),
                 Some(ReportTier::ProvisionallyProven) => {
-                    format!("{}: Provisionally-Proven → informational (no proof artifact)", e.test_id)
+                    format!(
+                        "{}: Provisionally-Proven → informational (no proof artifact)",
+                        e.test_id
+                    )
                 }
                 Some(ReportTier::Unproven) => {
-                    format!("{}: Unproven → informational (no proof artifact)", e.test_id)
+                    format!(
+                        "{}: Unproven → informational (no proof artifact)",
+                        e.test_id
+                    )
                 }
-                None => format!("{}: unrecognised provenance tier {:?}", e.test_id, e.provenance),
+                None => format!(
+                    "{}: unrecognised provenance tier {:?}",
+                    e.test_id, e.provenance
+                ),
             })
             .collect()
     }
@@ -201,7 +222,7 @@ mod tests {
 
     #[test]
     fn parses_schema_v1() {
-        let r = ProvenTestsReport::from_str(SAMPLE).expect("parse");
+        let r: ProvenTestsReport = SAMPLE.parse().expect("parse");
         assert_eq!(r.schema_version, 1);
         assert_eq!(r.entries.len(), 3);
         assert_eq!(r.summary.actually_proven, 1);
@@ -240,6 +261,9 @@ mod tests {
         let weird = SAMPLE.replace("\"Unproven\"", "\"Sorta-Proven\"");
         let r = ProvenTestsReport::from_str(&weird).unwrap();
         // notes() surfaces the unrecognised tier rather than crashing
-        assert!(r.notes().iter().any(|n| n.contains("unrecognised provenance tier")));
+        assert!(r
+            .notes()
+            .iter()
+            .any(|n| n.contains("unrecognised provenance tier")));
     }
 }

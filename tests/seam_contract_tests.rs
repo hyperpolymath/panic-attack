@@ -46,7 +46,7 @@ fn minimal_assail_report() -> AssailReport {
             description: "unwrap calls".to_string(),
             recommended_attack: vec![AttackAxis::Memory],
             suppressed: false,
-        test_context: None,
+            test_context: None,
         }],
         statistics: ProgramStatistics {
             total_lines: 100,
