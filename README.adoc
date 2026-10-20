@@ -183,13 +183,13 @@ Consult `man/panic-attack.1` or `panic-attack help` for every command, and use `
 
 === Automation readiness
 
-`panic-attack diagnostics` validates AI manifests, VeriSimDB caches, Hypatia and gitbot-fleet watchers, and the docs PanLL expects (`docs/ambush-timeline.md`, `docs/panll-export.md`). `docs/patch-bridge-design.md` details how the patch-bridge subcommands plug into BoJ cartridges, CVE workflows, and the PanLL panel.
+`panic-attack diagnostics` validates AI manifests, VeriSimDB caches, Hypatia and gitbot-fleet watchers, and the docs PanLL expects (`docs/ambush-timeline.adoc`, `docs/panll-export.adoc`). `docs/patch-bridge-design.adoc` details how the patch-bridge subcommands plug into BoJ cartridges, CVE workflows, and the PanLL panel.
 
 `just test-elixir` runs the Elixir harnesses that cover the CLI surface so documentation, help text, and automation flags stay aligned.
 
 == Integration & Groove
 
-panic-attack can emit PanLL-friendly exports (event chains, system images, temporal diffs) per `docs/panll-export.md`, and it also advertises its static-analysis capability via the Gossamer groove protocol. Start the discovery endpoint with `panic-attack groove --port 7600` and check the JSON manifest by curling `http://localhost:7600/.well-known/groove` (the health endpoint sits at `/health`).
+panic-attack can emit PanLL-friendly exports (event chains, system images, temporal diffs) per `docs/panll-export.adoc`, and it also advertises its static-analysis capability via the Gossamer groove protocol. Start the discovery endpoint with `panic-attack groove --port 7600` and check the JSON manifest by curling `http://localhost:7600/.well-known/groove` (the health endpoint sits at `/health`).
 
 The manifest follows the Idris-aligned semantics that live in `boj-server/src/interface/abi/Groove.idr` and the `gossamer` schema references. As a result, any groove-aware consumer—PanLL event-chain panels, the Burble voice platform, Hypatia, or other automation fabrics—sees the same capability vocabulary and can attach its own UI (Groove + Burble PanLL) confidently.
 

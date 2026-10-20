@@ -7,7 +7,7 @@
 //! Phase 2 will add VeriSimDB hexad persistence and SCM format.
 //!
 //! Lifecycle: Applied → Active → Retiring → Retired
-//! See docs/patch-bridge-design.md Section 8 for full lifecycle specification.
+//! See docs/patch-bridge-design.adoc Section 8 for full lifecycle specification.
 
 use super::{AssessedCve, Classification};
 use anyhow::{Context, Result};

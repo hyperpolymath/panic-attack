@@ -182,10 +182,11 @@ pub fn run_cargo_deny(config: &CargoDenyConfig) -> Result<Vec<WeakPoint>> {
             .unwrap_or(WeakPointCategory::Advisory);
 
         let location = diagnostic.location.and_then(|loc| {
-            loc.file.map(|file| match loc.line {
-                Some(line) => format!("{}:{}", file, line),
-                None => file,
-            })
+            if let (Some(ref file), Some(line)) = (&loc.file, loc.line) {
+                Some(format!("{}:{}", file, line))
+            } else {
+                loc.file.clone()
+            }
         });
 
         // Parse file and line from location string

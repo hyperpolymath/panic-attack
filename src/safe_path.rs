@@ -101,15 +101,22 @@ pub fn sanitize_filename(filename: &str) -> String {
 }
 
 #[cfg(test)]
+/// Returns true if `c` is a character `sanitize_filename` would keep.
+fn is_safe_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || SAFE_PUNCT.contains(&c)
+}
+
+#[cfg(test)]
+/// Returns true if every character in `s` is safe. Used by the
+/// idempotence + non-empty proptest invariants.
+fn all_chars_safe(s: &str) -> bool {
+    s.chars().all(is_safe_char)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
-
-    /// Property-test predicate kept separate from the sanitizer implementation.
-    fn all_chars_safe(s: &str) -> bool {
-        s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || SAFE_PUNCT.contains(&c))
-    }
 
     // ─────────────────────────────────────────────────────────────────
     // has_traversal — concrete cases
