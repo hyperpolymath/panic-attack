@@ -401,7 +401,7 @@ fn load_payload_for_kind(kind: ReportBundleKind, input: &Path) -> Result<ReportB
 fn load_json_or_yaml<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     match path.extension().and_then(|e| e.to_str()) {
-        Some("yaml") | Some("yml") => crate::yaml::from_report_str::<T>(&raw)
+        Some(ext) if crate::yaml::is_extension(ext) => crate::yaml::from_report_str::<T>(&raw)
             .with_context(|| format!("parsing {}", path.display())),
         _ => serde_json::from_str::<T>(&raw).with_context(|| format!("parsing {}", path.display())),
     }

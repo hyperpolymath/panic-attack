@@ -69,9 +69,7 @@ pub fn load_timeline_with_default(
             .with_context(|| format!("reading timeline {}", path.display()))?;
         buf
     };
-    let spec: TimelineSpec = if path.extension().and_then(|s| s.to_str()) == Some("yaml")
-        || path.extension().and_then(|s| s.to_str()) == Some("yml")
-    {
+    let spec: TimelineSpec = if crate::yaml::has_extension(path) {
         crate::yaml::from_str(&content)
             .with_context(|| format!("parsing yaml timeline {}", path.display()))?
     } else {
@@ -298,6 +296,24 @@ mod tests {
         std::fs::write(
             &path,
             "duration: '15s'\ntracks:\n  - axis: memory\n    events:\n      - at: '2s'\n        for: '8s'\n        intensity: heavy\n",
+        )
+        .unwrap();
+
+        let plan = load_timeline_with_default(&path, None).unwrap();
+        assert_eq!(plan.duration, Duration::from_secs(15));
+        assert_eq!(plan.events.len(), 1);
+        assert_eq!(plan.events[0].axis, AttackAxis::Memory);
+        assert_eq!(plan.events[0].intensity, IntensityLevel::Heavy);
+    }
+
+    #[test]
+    fn test_load_timeline_kyaml() {
+        // Output of `yq -o kyaml` for the YAML timeline above.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("timeline.kyaml");
+        std::fs::write(
+            &path,
+            "{\n  duration: \"15s\",\n  tracks: [\n    {\n      axis: \"memory\",\n      events: [\n        {\n          at: \"2s\",\n          for: \"8s\",\n          intensity: \"heavy\",\n        },\n      ],\n    },\n  ],\n}\n",
         )
         .unwrap();
 

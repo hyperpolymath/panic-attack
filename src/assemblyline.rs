@@ -291,6 +291,7 @@ fn is_source_file(path: &Path) -> bool {
             | "toml"
             | "yaml"
             | "yml"
+            | "kyaml"
             | "json"
             | "aff"
             | "affine"

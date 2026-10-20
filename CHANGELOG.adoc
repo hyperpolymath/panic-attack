@@ -2,19 +2,14 @@
 
 === [Unreleased]
 
-==== Changed — JSON report artefacts are I-JSON/JCS (JSON-POLICY rule J-1)
+==== Added — `.kyaml` input (estate YAML policy D280/D307)
 
-* Every JSON report panic-attack writes is now canonical: I-JSON (RFC 7493)
-serialised as JCS (RFC 8785) with one final line feed, through
-`+crate::json::to_canonical_string+` and the estate tool `+ijson-jcs+`. This
-covers `+--output-format json+`, `+assail --output+` and its stdout form, the
-assault, amuck, abduct, axial, adjudicate, assay, aggregate and assemblyline
-reports, and the patch-bridge triage report and registry. Output is compact:
-pipe it through `+jq .+` to read it.
-* The `+assail --attest+` seal hashes these canonical bytes, so the report hash
-is reproducible by any JCS implementation.
-* A report that is not I-JSON (for example an integer beyond ±(2^53−1)) now
-fails to serialise instead of being written.
+* Attack profiles, ambush timelines, amuck specs, `+diff+` reports and
+a2ml bundles now accept the `+.kyaml+` extension alongside `+.yaml+` and
+`+.yml+`. KYAML is a strict subset of YAML, so the same parser reads it.
+The extension list lives in one place, `+crate::yaml::EXTENSIONS+`.
+* `+assemblyline+` fingerprints `+.kyaml+` files, so editing one triggers a
+rescan.
 
 ==== Fixed — YAML parser replaced with safe Rust (RUSTSEC-2024-0449)
 

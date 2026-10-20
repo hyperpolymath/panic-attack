@@ -29,7 +29,7 @@ pub fn load_report(path: &Path) -> Result<AssaultReport> {
     };
     // Diff loader accepts JSON/YAML to match report export formats.
     match path.extension().and_then(|ext| ext.to_str()) {
-        Some("yaml") | Some("yml") => crate::yaml::from_report_str(&content)
+        Some(ext) if crate::yaml::is_extension(ext) => crate::yaml::from_report_str(&content)
             .with_context(|| format!("parsing yaml report {}", path.display())),
         _ => serde_json::from_str(&content)
             .with_context(|| format!("parsing json report {}", path.display())),
