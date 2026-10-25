@@ -1498,6 +1498,10 @@ fn run_main() -> Result<()> {
             }
             if fail_on_incomplete && report.coverage.incomplete() {
                 eprintln!("assail: incomplete coverage ({})", report.coverage.status);
+                let _ = kin::write_error_heartbeat(format!(
+                    "assail: incomplete coverage ({})",
+                    report.coverage.status
+                ));
                 std::process::exit(2);
             }
         }
