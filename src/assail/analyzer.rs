@@ -850,9 +850,8 @@ impl Analyzer {
         let (files, _) = super::coverage::discover(dir)?;
         let mut counts = std::collections::HashMap::new();
         for path in files {
-            *counts
-                .entry(Language::detect_path(path))
-                .or_insert(0usize) += 1;
+            let language = Language::detect_path(&path);
+            *counts.entry(language).or_insert(0usize) += 1;
         }
         Ok(counts
             .into_iter()
@@ -5437,7 +5436,7 @@ impl Analyzer {
         // scanning .rs files for `use` lines produces false positives from
         // string literals in tests and analyzer patterns.
         for file in files {
-            let file_lang = Language::detect_path(file);
+            let file_lang = Language::detect_path(&file);
             let content = match read_bounded(file, SOURCE_FILE_READ_LIMIT) {
                 Some(c) => c,
                 None => continue,

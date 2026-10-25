@@ -13,27 +13,49 @@ annotation, no check run**. Nothing in the GitHub UI said why, and the only
 diagnosis available was to read the estate's settings canon and compare it with
 our own workflow files.
 
-Two causes, both policy-level, neither visible from the code:
+Three causes, all policy-level, none visible from the code:
 
-`uses:` a reusable workflow from `metadatastician/standards`::
-The canonical allowlist -
-`rhodium-standard-repositories/actions-allowlist/allowed-actions.json` in
-`hyperpolymath/standards` - permits `hyperpolymath/*`. It does not permit
-`metadatastician/*`. `hyperpolymath/standards` and `metadatastician/standards`
-are the *same repository* (a rename; the lockfile records one `repo_id`), so the
-correct spelling is the one the allowlist covers. Six thin wrappers had been
-re-pointed at the new owner, and every one of them died before its first job.
+tag-pinned `uses:`, e.g. `actions/checkout@v7.0.1`:: The estate posture is
+`sha_pinning_required = true`. Under it a tag-pinned `uses:` is refused **at
+startup** — the same opaque death. The control is worth having, so the fix is to
+pin properly: every `uses:` in this repository now names a 40-hex commit with a
+`# <version>` comment, and `ci-integrity.yml` refuses a regression.
 
-tag-pinned `uses:`, e.g. `actions/checkout@v7.0.1`::
-The estate posture is `sha_pinning_required = true`. Under it, a tag-pinned
-`uses:` is refused **at startup** - the same opaque death. The pin is a security
-control, so the fix is to pin properly, not to turn the control off.
+a `uses:` whose repository has been RENAMED:: `hyperpolymath/standards` is now
+`metadatastician/standards` (same `repo_id`; the API 301s). Allowlist patterns
+match the repository's **canonical** name, so `hyperpolymath/standards/...` is
+refused *and* the new spelling is refused too, because
+`rhodium-standard-repositories/actions-allowlist/allowed-actions.json` lists
+`hyperpolymath/*` and not `metadatastician/*`. Re-pointing the wrappers — the
+obvious first fix, which this repository tried — changed nothing. Six wrappers
+(`rust-ci`, `governance`, `hypatia-scan`, `secret-scanner`, `scorecard`,
+`mirror`) are queued behind a one-line canon change plus a settings apply, both
+of which need repository administration this repository does not have.
+See `docs/ci/PROMPT-standards-allowlist.md`.
+
+a `uses:` pinned to a commit that no longer exists upstream:: The caller dies
+before its first job, exactly like the other two. Cheap to check, so it is.
+
+The signature that distinguishes all three from an ordinary build failure is in
+the runs API: `jobs: []` and `referenced_workflows: []` on a run whose workflow
+has a job at all. `scripts/ci/triage-startup-failure.sh` (run by
+`ci-integrity.yml`, strict on `workflow_dispatch`) resolves every referenced
+repository's canonical name and every reusable pin, so the next occurrence is one
+command away from a sentence:
+
+[source,sh]
+----
+scripts/ci/triage-startup-failure.sh
+# hyperpolymath/standards is now metadatastician/standards — allowlist patterns
+# match the canonical name, so a `uses:` written with the old owner is refused at
+# startup (signature: startup_failure with referenced_workflows: []).
+----
 
 The lesson generalises and is the reason this document exists: *a run that never
 starts is invisible to every gate that watches runs*. It produces no check run,
-so a required context silently stops arriving and the branch looks
-**healthier** than a broken one. Both causes are now gated before they can bite
-(see <<integrity>>).
+so a required context silently stops arriving and the branch looks **healthier**
+than a broken one. Two of the three causes are now gated before they can bite
+(see <<integrity>>); the third is named, tracked, and evidenced.
 
 == The shape of the pipeline
 
@@ -69,7 +91,9 @@ so a required context silently stops arriving and the branch looks
 | `rust-ci.yml`, `governance.yml`, `hypatia-scan.yml`, `secret-scanner.yml`,
   `scorecard.yml`, `mirror.yml`
 | The estate's richer reusable gates (audit, coverage upload, Hypatia SARIF,
-  governance, secret scanning).
+  governance, secret scanning). **Blocked at the time of writing** by the
+  renamed-upstream allowlist gap (see above, and
+  `docs/ci/PROMPT-standards-allowlist.md`), not by anything in this repository.
 | per estate canon
 
 | `e2e.yml`, `codecov`, `cargo-audit`, `chapel-ci`, `dogfood-gate`,
@@ -104,6 +128,10 @@ vendored `.github/actions-allowlist.json`. No API, no admin: it lists exactly
 which `uses:` the estate policy does not cover.
 YAML parseability:: every workflow parses *and* declares a `jobs:` map. A file
 whose quoting swallowed the document parses to a scalar and never runs.
+Renamed upstreams:: `scripts/ci/triage-startup-failure.sh` resolves the
+canonical name of every repository named by a `uses:` and checks that every
+reusable pin still exists. Report-only on a pull request (the finding is an
+owner action, not a code change) and strict on `workflow_dispatch`.
 
 Maintenance: after changing any `uses:`, run
 

@@ -89,7 +89,11 @@ jobs:
       matrix:
         include:
           - features: ''                    # default: offline, zero-network build
+            cache-suffix: default
           - features: http,sarif             # Patch Bridge + SARIF
+            # A cache key may not contain a comma (Swatinem/rust-cache rejects
+            # it at startup of the step), so the matrix carries its own label.
+            cache-suffix: http-sarif
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -99,7 +103,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
-          key: features-${{ matrix.features }}
+          key: features-${{ matrix.cache-suffix }}
       # `--locked` is a gate in itself: the lockfile must agree with Cargo.toml
       # in the commit under test, or the artefact CI verified is not the
       # artefact released.
