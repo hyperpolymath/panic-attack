@@ -82,7 +82,7 @@ fn non_utf8_input_paths_serialize_without_losing_index_lookups() {
     assert_eq!(report.coverage.inputs[0].path, path);
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn colliding_lossy_paths_round_trip_with_distinct_bytes() {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
