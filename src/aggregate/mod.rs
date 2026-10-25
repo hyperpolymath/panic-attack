@@ -51,9 +51,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Ingest a `proven-tests` JSON run report as an aggregate input kind.
-// This public library API is also compiled into the binary's private aggregate
-// module, whose CLI does not yet consume proven-tests reports.
-#[allow(dead_code)]
+///
+/// Reached from the CLI as `panic-attack aggregate --proven-tests <report.json>`;
+/// see that repository's `docs/INTEROP-PANIC-ATTACK.adoc` for the mapping this
+/// implements, and `ProvenTestsRecord::defects` for what it
+/// refuses to take on trust.
 pub mod proven_tests;
 
 /// Upper bound on the text we scan for verdict / coverage classification.
@@ -265,6 +267,10 @@ pub struct AggregateReport {
     pub trust_disclaimer: String,
     #[serde(default)]
     pub notes: Vec<String>,
+    /// Proven-tests run reports folded in, with their defects. Omitted from
+    /// reports that ingested none, so existing consumers see no new field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proven_tests: Vec<proven_tests::ProvenTestsRecord>,
 }
 
 /// One proof input with optional CLI-side overrides.
@@ -275,10 +281,25 @@ pub struct ProofInput {
     pub covers: Vec<Coverage>,
 }
 
+/// How `aggregate` is invoked.
+///
+/// `proven_tests` reports are ingested and *not* treated as proofs: they are
+/// evidence about a test suite's provenance, hashed and recorded, whose own
+/// internal contradictions are reported as defects. Set `fail_on_defect` when
+/// the caller wants a defect to fail the build rather than merely appear in
+/// the report.
 #[derive(Debug, Clone)]
 pub struct AggregateConfig {
     pub proofs: Vec<ProofInput>,
     pub base_report: Option<PathBuf>,
+    /// `proven-tests` JSON run reports (schema_version 1) to fold in.
+    pub proven_tests: Vec<PathBuf>,
+    /// Directory cited `proof_file` paths resolve against; the report's own
+    /// parent directory when `None`.
+    pub proven_tests_root: Option<PathBuf>,
+    /// Fail the run when an ingested report makes a claim its contents do not
+    /// support.
+    pub fail_on_defect: bool,
 }
 
 const TRUST_DISCLAIMER: &str = "Aggregated verdicts rest on the trustworthiness of the named proof \
@@ -287,11 +308,40 @@ BLAKE3 hash. If this assessment is later challenged, the hash identifies the exa
 — a different file will not reproduce it.";
 
 pub fn run(config: AggregateConfig) -> Result<AggregateReport> {
-    if config.proofs.is_empty() {
-        return Err(anyhow!("provide at least one --proof"));
+    if config.proofs.is_empty() && config.proven_tests.is_empty() {
+        return Err(anyhow!(
+            "provide at least one --proof or --proven-tests report"
+        ));
     }
 
     let mut notes = Vec::new();
+
+    // Proven-tests run reports: hashed, mapped through the tier->verdict
+    // table, and checked for claims their own contents do not support.
+    let mut proven_tests = Vec::new();
+    let mut defect_lines = Vec::new();
+    for path in &config.proven_tests {
+        let record = proven_tests::ingest(path, config.proven_tests_root.as_deref())?;
+        for defect in &record.defects {
+            defect_lines.push(format!("{}: {}", path.display(), defect));
+        }
+        notes.push(format!(
+            "proven-tests report {} ({} bytes, blake3 {}…) recorded with {} defect(s)",
+            path.display(),
+            record.bytes,
+            &record.hash.hex[..record.hash.hex.len().min(12)],
+            record.defects.len()
+        ));
+        proven_tests.push(record);
+    }
+    if config.fail_on_defect && !defect_lines.is_empty() {
+        let mut msg = String::from("proven-tests report(s) make unsupported claims:");
+        for line in &defect_lines {
+            msg.push_str("\n  - ");
+            msg.push_str(line);
+        }
+        return Err(anyhow!(msg));
+    }
 
     // Load base findings (optional).
     let (findings, finding_summary, base_loaded) = match &config.base_report {
@@ -394,6 +444,7 @@ pub fn run(config: AggregateConfig) -> Result<AggregateReport> {
         finding_summary,
         trust_disclaimer: TRUST_DISCLAIMER.to_string(),
         notes,
+        proven_tests,
     })
 }
 
@@ -986,6 +1037,9 @@ mod tests {
                 covers: Vec::new(),
             }],
             base_report: Some(base),
+            proven_tests: Vec::new(),
+            proven_tests_root: None,
+            fail_on_defect: false,
         })
         .unwrap();
 

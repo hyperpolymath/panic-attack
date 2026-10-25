@@ -214,6 +214,7 @@ fn weak_point_category_serializes() -> Result<(), serde_json::Error> {
 #[test]
 fn assail_report_serializes_to_json() -> Result<(), serde_json::Error> {
     let report = AssailReport {
+        coverage: Default::default(),
         schema_version: "2.5".to_string(),
         program_path: std::path::PathBuf::from("test/target"),
         language: Language::Rust,

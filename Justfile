@@ -268,3 +268,89 @@ crg-badge:
       D) color="orange" ;; E) color="red" ;; F) color="critical" ;; \
       *) color="lightgrey" ;; esac; \
     echo "[![CRG $$grade](https://img.shields.io/badge/CRG-$$grade-$$color?style=flat-square)](https://github.com/hyperpolymath/standards/tree/main/component-readiness-grades)"
+
+# ── CI/CD foundation ─────────────────────────────────────────────────────────
+# These mirror the workflows in .github/workflows/ so a contributor can run the
+# same gates locally. A gate you can only run in CI is a gate you debug by
+# pushing.
+
+# Everything that must pass before a PR: format, lint, test, docs, integrity.
+ci: fmt-check lint test-local integrity
+
+# cargo fmt in check mode (never rewrites a contributor's tree)
+fmt-check:
+    cargo fmt --all -- --check
+
+test-local:
+    cargo test --locked
+
+# CI integrity: SHA pins, lockfile coverage, allowlist coverage, YAML parse.
+# Needs `yq` (mikefarah) and `python3`; see scripts/ci/.
+integrity:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v yq >/dev/null || { echo "integrity: yq not found (mikefarah/yq)"; exit 2; }
+    bash .githooks/validate-sha-pins.sh
+    python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json --check
+    bash .githooks/validate-actions-lock.sh
+    bash scripts/ci/check-allowed-actions.sh .github/actions-allowlist.json .github/workflows
+    for f in .github/workflows/*.yml; do
+      case "$f" in *.lock) continue ;; esac
+      [ "$(yq -r '.jobs | tag' "$f")" = '!!map' ] || { echo "integrity: $f has no jobs map"; exit 1; }
+    done
+    echo "integrity: OK"
+
+# After changing any `uses:`: re-resolve tag -> commit and rewrite the lockfile.
+pins:
+    bash scripts/ci/resolve-action-shas.sh
+    python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json
+
+# ── Evidence-graded testing (proven-tests-and-benches) ───────────────────────
+
+# Derive a run report from tests that actually exist, then fold it through
+# aggregate. Fails on a cell with no test, a test with no cell, or a claim the
+# report does not support.
+proven:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build --locked --release
+    bash scripts/proven/inventory.sh /tmp/panic-attack-tests.json
+    python3 scripts/proven/verify-ledger.py \
+      --inventory /tmp/panic-attack-tests.json \
+      --ledger proven/ledger.json \
+      --root . \
+      --out /tmp/proven-report.json
+    ./target/release/panic-attack aggregate \
+      --proven-tests /tmp/proven-report.json \
+      --proven-tests-root . \
+      --fail-on-defect \
+      --output /tmp/proven-aggregate.json
+
+# ── Recon ────────────────────────────────────────────────────────────────────
+
+# Scan this repository with its own analyser and compare with the debt baseline.
+recon:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p recon-out
+    cargo run --release --quiet -- assail . --output recon-out/assail.json --quiet
+    python3 scripts/recon/compare.py \
+      --baseline recon/baseline.json \
+      --assail recon-out/assail.json \
+      --pons /dev/null \
+      --no-fail
+
+# ── Squabbling ───────────────────────────────────────────────────────────────
+
+# Diagnose a stuck gate for PR <pr> with the estate's CI fighter.
+# Build it once: cargo install --git https://github.com/hyperpolymath/cicd-squabbler \
+#   --rev 14f853fde902ab2d7631070d87a9dc9122e01013 squabble-cli
+squabble pr:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    squabble fetch hyperpolymath/panic-attack {{pr}} > /tmp/gate.json
+    squabble diagnose /tmp/gate.json
+
+# Cross-repo CI chains for this repository (read-only; exit 4 = blocking finding).
+squabble-chains:
+    squabble chains . gh:hyperpolymath/standards --follow 1

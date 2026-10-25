@@ -606,6 +606,7 @@ mod tests {
         AssaultReport {
             schema_version: "2.5".to_string(),
             assail_report: AssailReport {
+                coverage: Default::default(),
                 schema_version: "2.5".to_string(),
                 program_path: PathBuf::from("/tmp/test-target"),
                 language: Language::Rust,

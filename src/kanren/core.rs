@@ -1310,6 +1310,7 @@ mod tests {
         weak_points: Vec<WeakPoint>,
     ) -> AssailReport {
         AssailReport {
+            coverage: Default::default(),
             schema_version: "2.5".to_string(),
             program_path: PathBuf::from("/tmp/test"),
             language: Language::Rust,

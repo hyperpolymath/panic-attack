@@ -1,0 +1,202 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# proven-tests.yml — the estate's evidence-graded test framework, wired.
+#
+# THE TWO JOBS DO DIFFERENT THINGS AND NEITHER PRETENDS TO BE THE OTHER
+# ---------------------------------------------------------------------
+# `ledger` (every PR, blocking, minutes): derives a proven-tests run report from
+#   THIS repo's suite — from a test inventory the runner emitted in the same
+#   commit — and then feeds that report to `panic-attack aggregate
+#   --proven-tests --fail-on-defect`, which applies the tier->verdict mapping and
+#   refuses claims the report's own contents do not support (an Actually-Proven
+#   entry with no ladder, a ladder step citing a file that is not there, a
+#   summary that disagrees with the entries). A cell with no executed test is a
+#   gate failure, not a rounding error.
+#
+# `framework` (schedule and dispatch only, tens of minutes): builds the
+#   `proven-tests-and-benches` framework itself from a pinned commit with its
+#   own Idris2 toolchain and runs its suite, so the *grader* is exercised rather
+#   than trusted. This is deliberately off the PR path: bootstrapping Idris2 for
+#   every pull request buys nothing that the ledger job does not already prove,
+#   and it would make every contributor wait on a compiler that cannot change
+#   for them.
+#
+# WHY THE REPORT IS A FILE, NOT A PARAGRAPH: docs/INTEROP-PANIC-ATTACK.adoc in
+# proven-tests-and-benches fixes the mapping in prose; a report plus a verifier
+# is the same mapping with something at stake.
+
+name: Proven Tests
+
+on:
+  pull_request:
+    branches: ['**']
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '41 4 * * 1'   # Mondays, off the hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proven-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned: the framework commit this repo's ledger was written against.
+  PROVEN_TESTS_PIN: eca682bcd419554f6779e72969902e6faef4fd9d
+  IDRIS2_VERSION: '0.7.0'
+
+jobs:
+  ledger:
+    name: Ledger — coverage derived from executed tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: proven-ledger
+
+      # The suite must PASS before a report may claim anything about it: a
+      # `result: passed` field written by a job that never ran the tests is
+      # exactly the dishonesty this framework exists to remove.
+      - name: Run the suite
+        run: bash scripts/ci/annotate.sh "proven:suite" -- cargo test --locked --no-fail-fast
+
+      - name: Inventory the tests that exist
+        run: bash scripts/proven/inventory.sh /tmp/inventory.json
+
+      - name: Derive the run report (cells must select real tests)
+        run: |
+          bash scripts/ci/annotate.sh "proven:ledger" -- \
+          python3 scripts/proven/verify-ledger.py \
+            --inventory /tmp/inventory.json \
+            --ledger proven/ledger.json \
+            --root . \
+            --out /tmp/proven-report.json
+
+      - name: Build panic-attack
+        run: cargo build --locked --release
+
+      # The interop, actually executed: our own tool reads the framework's
+      # report, applies the mapping in code, and fails on an unsupported claim.
+      - name: Fold the report through aggregate --fail-on-defect
+        run: |
+          set -euo pipefail
+          bash scripts/ci/annotate.sh "proven:aggregate" -- \
+          ./target/release/panic-attack aggregate \
+            --proven-tests /tmp/proven-report.json \
+            --proven-tests-root . \
+            --fail-on-defect \
+            --output /tmp/proven-aggregate.json
+          python3 - <<'PY'
+          import json
+          agg = json.load(open('/tmp/proven-aggregate.json'))
+          records = agg['proven_tests']
+          assert len(records) == 1, records
+          record = records[0]
+          assert record['defects'] == [], record['defects']
+          summary = record['summary']
+          assert summary['total'] > 0, summary
+          print(f"proven-tests: {summary['passed']}/{summary['total']} passed, "
+                f"{summary['covered_cells']}/{summary['cat_aspect_cells']} cells, "
+                f"{summary['actually_proven']} actually-proven")
+          PY
+
+      - name: Publish to the job summary
+        if: always()
+        run: |
+          {
+            echo "## Proven-tests ledger"
+            echo ""
+            if [ -f /tmp/proven-report.json ]; then
+              python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open('/tmp/proven-report.json'))
+          s = r['summary']
+          print(f"**{s['passed']}/{s['total']}** executed tests, "
+                f"**{s['covered_cells']}/{s['cat_aspect_cells']}** category×aspect cells")
+          print("")
+          print(f"| tier | tests |\n|---|---|")
+          print(f"| Actually-Proven | {s['actually_proven']} |")
+          print(f"| Provisionally-Proven | {s['provisionally_proven']} |")
+          print(f"| Unproven | {s['unproven']} |")
+          print("")
+          print("Cells declared absent, with the command that would test them, are in")
+          print("`proven/ledger.json` — a to-do list, not a silencer.")
+          PY
+            else
+              echo "_the report was not produced; see the failed step above_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the run report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: proven-report
+          path: |
+            /tmp/proven-report.json
+            /tmp/proven-aggregate.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  framework:
+    name: Framework — the grader is exercised (scheduled)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout proven-tests-and-benches at the pinned commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: hyperpolymath/proven-tests-and-benches
+          ref: ${{ env.PROVEN_TESTS_PIN }}
+          path: .proven-tests
+          persist-credentials: false
+
+      - name: Cache the Idris2 toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.idris2
+          key: idris2-v${{ env.IDRIS2_VERSION }}-${{ runner.os }}
+
+      - name: Install Idris2 (chez backend)
+        working-directory: .proven-tests
+        env:
+          IDRIS2_VERSION: ${{ env.IDRIS2_VERSION }}
+        run: bash scripts/install-idris2.sh
+
+      - name: Build and run the framework's suite
+        working-directory: .proven-tests
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.idris2/bin:$PATH"
+          idris2 --version
+          bash scripts/ci-build.sh
+
+      - name: Upload the framework's own run report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: proven-framework-report
+          path: .proven-tests/build/report/*.json
+          retention-days: 30
+          if-no-files-found: warn

@@ -13,6 +13,7 @@ use std::path::Path;
 
 fn make_test_report() -> AssailReport {
     AssailReport {
+        coverage: Default::default(),
         schema_version: "2.5".to_string(),
         program_path: ".".into(),
         language: Language::Rust,
@@ -147,6 +148,7 @@ fn test_sarif_rules_deduplicated() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_sarif_empty_report() -> Result<(), Box<dyn std::error::Error>> {
     let report = AssailReport {
+        coverage: Default::default(),
         schema_version: "2.5".to_string(),
         program_path: ".".into(),
         language: Language::Unknown,
@@ -200,4 +202,71 @@ fn test_sarif_from_real_analysis() -> Result<(), Box<dyn std::error::Error>> {
         assert!(!locs.is_empty(), "result missing locations");
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn coverage_paths_preserve_relative_bytes_in_sarif() {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir
+        .path()
+        .join(std::ffi::OsString::from_vec(b"root-\xff".to_vec()));
+    std::fs::create_dir(&root).unwrap();
+    let names = [b"input-\xfe.php", b"input-\xff.php"];
+    for name in names {
+        std::fs::write(
+            root.join(std::ffi::OsString::from_vec(name.to_vec())),
+            "<?php echo 'ok';",
+        )
+        .unwrap();
+    }
+    std::fs::write(root.join("clean.php"), "<?php echo 'ok';").unwrap();
+    let report = assail::analyze(&root).unwrap();
+    // A non-UTF-8 root and non-UTF-8 stems must not cost us the analysis: all
+    // three files are known-extension PHP and all three must be analysed.
+    assert_eq!(report.coverage.analyzed_files, 3);
+    let mut coverage =
+        sarif::to_sarif(&report).unwrap().runs.remove(0).properties["coverage"].clone();
+    let inputs = coverage["inputs"].as_array().unwrap();
+    assert_eq!(inputs.len(), 3);
+    let clean = inputs
+        .iter()
+        .find(|input| input["path"] == "clean.php")
+        .unwrap();
+    assert!(clean.get("path_bytes_hex").is_none());
+    for name in names {
+        let input = inputs
+            .iter()
+            .find(|input| input["path_bytes_hex"] == hex::encode(name))
+            .unwrap();
+        assert_eq!(input["path"], String::from_utf8_lossy(name).as_ref());
+    }
+
+    // Paths outside the scan root keep both their display and original bytes.
+    let outside = dir
+        .path()
+        .join(std::ffi::OsString::from_vec(b"outside-\xff.php".to_vec()));
+    let mut outside_report = report.clone();
+    outside_report.coverage.inputs[0].path = outside.clone();
+    coverage = sarif::to_sarif(&outside_report)
+        .unwrap()
+        .runs
+        .remove(0)
+        .properties["coverage"]
+        .clone();
+    assert_eq!(
+        coverage["inputs"][0]["path"],
+        outside.to_string_lossy().as_ref()
+    );
+    assert_eq!(
+        coverage["inputs"][0]["path_bytes_hex"],
+        hex::encode(outside.as_os_str().as_bytes())
+    );
+    assert!(report
+        .coverage
+        .inputs
+        .iter()
+        .all(|input| input.path.starts_with(&root)));
 }

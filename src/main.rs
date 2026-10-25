@@ -151,6 +151,10 @@ enum Commands {
         /// Headless mode: emit JSON to stdout, suppress interactive prompts (CI-safe)
         #[arg(long, default_value_t = false)]
         headless: bool,
+
+        /// Exit 2 if the declared source/config scan is incomplete or empty.
+        #[arg(long)]
+        fail_on_incomplete: bool,
     },
 
     /// Execute a single attack on a target program
@@ -515,8 +519,13 @@ enum Commands {
     /// existing report's findings (backed / corroborated / contradicted).
     /// Verdicts are explicitly conditioned on the named checker's trust.
     Aggregate {
-        /// External prover output file(s) to fold in (repeatable)
-        #[arg(long = "proof", value_name = "PATH", action = clap::ArgAction::Append, required = true)]
+        /// External prover output file(s) to fold in (repeatable).
+        ///
+        /// At least one `--proof` or `--proven-tests` is required; that is
+        /// checked in the engine so the two input kinds share one error path
+        /// (clap cannot express "one of these two" without a group, and a
+        /// group would have to be declared on the same struct as both).
+        #[arg(long = "proof", value_name = "PATH", action = clap::ArgAction::Append)]
         proofs: Vec<PathBuf>,
 
         /// Friendly-name override(s): PATH=NAME (repeatable)
@@ -530,6 +539,27 @@ enum Commands {
         /// Base assail/assault report to reconcile against (optional)
         #[arg(long = "report", value_name = "PATH")]
         report: Option<PathBuf>,
+
+        /// `proven-tests` JSON run report(s) to fold in (repeatable).
+        ///
+        /// Applies the tier->verdict mapping fixed in that repository's
+        /// docs/INTEROP-PANIC-ATTACK.adoc: only Actually-Proven ladders name a
+        /// proof artifact, and only those are read as `Closed`. Provisionally-
+        /// Proven and Unproven entries are recorded as informational — absence
+        /// of a proof is not presence of a hole.
+        #[arg(long = "proven-tests", value_name = "PATH", action = clap::ArgAction::Append)]
+        proven_tests: Vec<PathBuf>,
+
+        /// Directory cited `proof_file` paths resolve against
+        /// (default: the report's own directory).
+        #[arg(long = "proven-tests-root", value_name = "DIR")]
+        proven_tests_root: Option<PathBuf>,
+
+        /// Fail when an ingested proven-tests report makes a claim its own
+        /// contents do not support (empty ladder, missing cited file,
+        /// unrecognised tier, summary disagreeing with entries).
+        #[arg(long = "fail-on-defect", default_value_t = false)]
+        fail_on_defect: bool,
 
         /// Output report to file (JSON; default: reports/aggregate-<ts>.json)
         #[arg(short, long)]
@@ -565,7 +595,7 @@ enum Commands {
     ///
     /// `--headless` always works (text panel summaries to stdout). The
     /// windowed renderer requires `--features gui` at build time because
-    /// eframe/egui raise MSRV above 1.89.
+    /// eframe/egui raise MSRV above 1.90.
     Gui {
         /// Assault report JSON file
         #[arg(value_name = "REPORT")]
@@ -1368,6 +1398,8 @@ fn main() -> Result<()> {
 /// Parse process arguments and execute the selected command, including its output
 /// and requested persistence. Default manifest settings are used if loading fails.
 /// Argument parsing exits the process for help or invalid CLI syntax.
+/// For assail with `--fail-on-incomplete`, exits with status 2 when coverage is
+/// not `complete`, after report output and any requested attestation are written.
 ///
 /// # Errors
 /// Returns command validation errors and propagates I/O, serialisation and
@@ -1393,9 +1425,10 @@ fn run_main() -> Result<()> {
             signing_key,
             browser_extension,
             headless,
+            fail_on_incomplete,
         } => {
             qprintln!(
-                cli.quiet,
+                cli.quiet || headless,
                 "Running assail analysis on: {}",
                 target.display()
             );
@@ -1405,7 +1438,7 @@ fn run_main() -> Result<()> {
 
             // Optionally start attestation chain before scanning
             let mut chain_builder = if attest {
-                qprintln!(cli.quiet, "Attestation enabled");
+                qprintln!(cli.quiet || headless, "Attestation enabled");
                 Some(attestation::AttestationChainBuilder::begin(
                     &target, &cli_args,
                 )?)
@@ -1449,13 +1482,23 @@ fn run_main() -> Result<()> {
 
             if let Some(output_path) = &output {
                 fs::write(output_path, &report_json)?;
-                qprintln!(cli.quiet, "Report saved to: {}", output_path.display());
+                qprintln!(
+                    cli.quiet || headless,
+                    "Report saved to: {}",
+                    output_path.display()
+                );
             } else if cli.quiet || headless {
                 // Machine-readable mode: emit JSON to stdout for pipeline consumers.
                 // `--headless` makes this explicit for CI callers that cannot pass --quiet.
                 print!("{report_json}");
             } else {
                 println!("\nAssail Summary:");
+                println!(
+                    "  Coverage: {} ({} analysed / {} candidate files)",
+                    report.coverage.status,
+                    report.coverage.analyzed_files,
+                    report.coverage.candidate_files
+                );
                 println!("  Language: {:?}", report.language);
                 println!("  Weak points: {}", report.weak_points.len());
                 println!("  Recommended attacks: {:?}", report.recommended_attacks);
@@ -1476,10 +1519,18 @@ fn run_main() -> Result<()> {
 
                 fs::write(&sidecar_path, attestation_json)?;
                 qprintln!(
-                    cli.quiet,
+                    cli.quiet || headless,
                     "Attestation written to: {}",
                     sidecar_path.display()
                 );
+            }
+            if fail_on_incomplete && report.coverage.incomplete() {
+                eprintln!("assail: incomplete coverage ({})", report.coverage.status);
+                let _ = kin::write_error_heartbeat(format!(
+                    "assail: incomplete coverage ({})",
+                    report.coverage.status
+                ));
+                std::process::exit(2);
             }
         }
 
@@ -2705,15 +2756,15 @@ fn run_main() -> Result<()> {
                 .map(|a| a.get_id().to_string())
                 .collect();
             global_flags.sort();
-            // Report-schema version mirrors types.rs::assail_schema_version
-            // and types.rs::assault_schema_version (both "2.5" in v2.5.0).
-            // The chapel-cli-contract CI gate catches drift between this
-            // string and the serialiser defaults.
+            // The compatibility field tracks assail, consumed by Chapel.
+            // Other report families retain their existing schema versions;
+            // deserialize defaults preserve legacy inputs rather than upgrading them.
             let contract = serde_json::json!({
                 "schema_version": "1",
                 "tool": "panic-attack",
                 "cli_version": env!("CARGO_PKG_VERSION"),
-                "report_schema_version": "2.5",
+                "report_schema_version": "2.6",
+                "report_schema_versions": {"assail": "2.6", "assault": "2.5"},
                 "detachability": {
                     "standalone": true,
                     "orchestrator_agnostic": true,
@@ -3072,6 +3123,9 @@ fn run_main() -> Result<()> {
             proofs,
             labels,
             covers,
+            proven_tests,
+            proven_tests_root,
+            fail_on_defect,
             report,
             output,
         } => {
@@ -3101,6 +3155,9 @@ fn run_main() -> Result<()> {
             let agg = aggregate::run(AggregateConfig {
                 proofs: proof_inputs,
                 base_report: report,
+                proven_tests,
+                proven_tests_root,
+                fail_on_defect,
             })?;
             let path = output.unwrap_or_else(default_aggregate_report_path);
             aggregate::write_report(&agg, &path)?;
@@ -3123,6 +3180,21 @@ fn run_main() -> Result<()> {
                             "    {:?}: {} ({} finding(s)) — {}",
                             r.effect, r.subject, r.affected_findings, r.detail
                         );
+                    }
+                }
+                for record in &agg.proven_tests {
+                    println!(
+                        "  proven-tests {} [{}]: {} passed / {} total, {} Actually-Proven, {} covered cells of {}",
+                        record.path.display(),
+                        record.suite,
+                        record.summary.passed,
+                        record.summary.total,
+                        record.summary.actually_proven,
+                        record.summary.covered_cells,
+                        record.summary.cat_aspect_cells
+                    );
+                    for defect in &record.defects {
+                        println!("    DEFECT: {defect}");
                     }
                 }
                 println!("  TRUST: {}", agg.trust_disclaimer);

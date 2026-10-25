@@ -55,7 +55,7 @@ pub fn check_reachability(project_dir: &Path, crate_name: &str) -> Result<Reacha
 /// When no `use` site is found, classification splits:
 ///
 /// - `declared_deps` contains the crate (lookup against root + workspace
-///   Cargo.toml [dependencies] sections) → [`ReachabilityStatus::PhantomDeclared`]
+///   Cargo.toml `[dependencies]` sections) → [`ReachabilityStatus::PhantomDeclared`]
 /// - Not in `declared_deps` → [`ReachabilityStatus::PhantomTransitive`] and
 ///   `parent_dep` is populated from `parent_map` if known.
 ///

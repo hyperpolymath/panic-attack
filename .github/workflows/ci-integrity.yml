@@ -1,0 +1,134 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# ci-integrity.yml — gates on the CI *system* itself, not on the code.
+#
+# WHY THIS WORKFLOW EXISTS
+# ------------------------
+# On 2026-10-25 this repository's CI went dark for four hours and the red was
+# unreadable: 12 of 12 pull_request workflows concluded `startup_failure` with
+# zero jobs and no log. The cause was not code. It was two policy mismatches
+# between this repo and the estate's own settings canon:
+#
+#   1. `uses: metadatastician/standards/...` — the canonical allowlist
+#      (rhodium-standard-repositories/actions-allowlist/allowed-actions.json)
+#      permits `hyperpolymath/*` and does NOT permit `metadatastician/*`.
+#   2. tag-pinned `uses:` (actions/checkout@v7.0.1) while the estate posture is
+#      `sha_pinning_required = true`.
+#
+# A run that never starts cannot be diagnosed from its log, cannot be
+# satisfyingly re-run, and does not report a check at all — so a required
+# context silently stops arriving and the branch looks healthier than it is.
+# These four gates make each cause of that failure legible *before* it happens:
+#
+#   sha-pins      every third-party `uses:` names a 40-hex commit
+#   lock-coverage every SHA-pinned action is keyed in .github/workflows/actions.lock
+#   allowlist     every `uses:` is covered by the estate allowlist
+#   yaml-parse    every workflow actually parses, and has a jobs: map
+#
+# NO `paths:` FILTER, deliberately: this check is meant to be REQUIRED, and a
+# required check that filters itself off never reports (see standards
+# required-contexts.yml). It is a checkout plus a few seconds of bash.
+
+name: CI Integrity
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '17 5 * * 1'   # Mondays, off the hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-integrity-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned: this is the parser the canon validators require (YAML-POLICY Y-1).
+  YQ_VERSION: v4.54.1
+
+jobs:
+  integrity:
+    name: CI integrity (pins, lock, allowlist, YAML)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install yq
+        run: |
+          set -euo pipefail
+          url="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          curl -fsSL "$url" -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: SHA pins (canon rule 10)
+        run: bash .githooks/validate-sha-pins.sh
+
+      - name: Lockfile is derived from the workflows
+        run: python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json --check
+
+      - name: Lockfile covers every SHA-pinned action
+        run: bash .githooks/validate-actions-lock.sh
+
+      - name: Actions allowlist (would this run start?)
+        run: bash scripts/ci/check-allowed-actions.sh .github/actions-allowlist.json .github/workflows
+
+      # The cause no file scan can see: a `uses:` that is well-formed, correctly
+      # pinned, and still refused at startup (`referenced_workflows: []`, zero
+      # jobs, no log) because the repository's allowed-actions policy does not
+      # cover it — or because the referenced repository was renamed and nothing
+      # covers the new owner. Both are named here, with the evidence.
+      - name: Startup-failure triage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            bash scripts/ci/triage-startup-failure.sh
+          else
+            bash scripts/ci/triage-startup-failure.sh --report
+          fi
+
+      - name: Every workflow parses and has a jobs map
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -e "$f" ] || continue
+            case "$f" in *.lock) continue ;; esac
+            if ! yq -e '.' "$f" >/dev/null 2>&1; then
+              echo "::error file=$f::does not parse as YAML"
+              fail=1
+              continue
+            fi
+            # A file that parses to a scalar (unclosed quote swallowing the
+            # document) has no jobs at all and dies at startup. Refuse it.
+            if [ "$(yq -r '.jobs | tag' "$f" 2>/dev/null)" != '!!map' ]; then
+              echo "::error file=$f::parses but declares no jobs: map"
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## CI integrity"
+            echo ""
+            echo "| Gate | What it prevents |"
+            echo "|------|------------------|"
+            echo "| SHA pins | tag-pinned \`uses:\` refused at startup under \`sha_pinning_required\` |"
+            echo "| Lockfile | a reusable caller dying with \`failure\`, 0 jobs, no reason |"
+            echo "| Allowlist | \`startup_failure\` from an action outside the estate allowlist |"
+            echo "| YAML parse | a workflow that parses to nothing and never runs |"
+            echo "| Startup triage | \`startup_failure\` with zero jobs: unpinned, renamed, missing pin, or refused by the repo's actions policy |"
+          } >> "$GITHUB_STEP_SUMMARY"

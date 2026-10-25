@@ -4,7 +4,7 @@
 //! SARIF 2.1.0 output for GitHub Security tab integration
 //!
 //! Converts AssailReport weak points into OASIS SARIF format.
-//! See: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
+//! See: <https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html>
 
 use crate::types::{AssailReport, Severity, WeakPointCategory};
 use anyhow::Result;
@@ -27,6 +27,7 @@ pub struct SarifLog {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SarifRun {
+    pub properties: serde_json::Value,
     pub tool: SarifTool,
     pub results: Vec<SarifResult>,
 }
@@ -176,8 +177,31 @@ fn parse_location(loc: &str) -> (&str, Option<u32>) {
     (loc, None)
 }
 
-/// Convert an AssailReport to SARIF JSON
+/// Convert findings to a SARIF 2.1.0 log with coverage in the run's properties.
+/// Coverage paths are made relative to the target directory (or the parent
+/// of a file target) when that prefix matches; other paths are retained.
+///
+/// # Errors
+/// Propagates errors serialising coverage to a JSON value.
 pub fn to_sarif(report: &AssailReport) -> Result<SarifLog> {
+    let mut coverage = report.coverage.clone();
+    let root = if report.program_path.is_dir() {
+        report.program_path.as_path()
+    } else {
+        report
+            .program_path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+    };
+    for input in &mut coverage.inputs {
+        input.path = input
+            .path
+            .strip_prefix(root)
+            .unwrap_or(&input.path)
+            .to_path_buf();
+    }
+    let coverage = serde_json::to_value(&coverage)?;
+
     // Collect unique rules
     let mut seen_categories = std::collections::HashSet::new();
     let mut rules = Vec::new();
@@ -227,6 +251,7 @@ pub fn to_sarif(report: &AssailReport) -> Result<SarifLog> {
         schema: SARIF_SCHEMA.to_string(),
         version: SARIF_VERSION.to_string(),
         runs: vec![SarifRun {
+            properties: serde_json::json!({"coverage": coverage}),
             tool: SarifTool {
                 driver: SarifToolComponent {
                     name: "panic-attack".to_string(),

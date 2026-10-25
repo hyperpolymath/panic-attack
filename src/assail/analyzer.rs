@@ -343,7 +343,7 @@ impl Analyzer {
         }
 
         let language = if target.is_file() {
-            Language::detect(target.to_str().unwrap_or(""))
+            Language::detect_path(target)
         } else {
             Self::detect_directory_language(target)?
         };
@@ -361,7 +361,7 @@ impl Analyzer {
     /// When `accumulator` is `Some`, each successfully read file and each
     /// traversed directory are recorded into the accumulator for the
     /// attestation chain. When `None`, this behaves identically to
-    /// [`analyze()`].
+    /// `analyze`.
     pub fn analyze_with_accumulator(
         &self,
         accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,
@@ -373,6 +373,15 @@ impl Analyzer {
         self.analyze_inner(None)
     }
 
+    /// Analyse discovered source files and return findings, statistics and coverage.
+    /// UTF-8 decoding falls back to Windows-1252. Files larger than 16 MiB, read
+    /// or decoding failures, and PHP parser failures are skipped and remain
+    /// coverage gaps in a successful report.
+    /// If supplied, `accumulator` records candidate parent directories and files
+    /// that were read and decoded, including PHP files that subsequently fail parsing.
+    ///
+    /// # Errors
+    /// Propagates root metadata errors and symlink-root rejection from discovery.
     fn analyze_inner(
         &self,
         mut accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,
@@ -395,7 +404,7 @@ impl Analyzer {
         let mut all_weak_points = Vec::new();
         let mut file_statistics = Vec::new();
 
-        let files = self.collect_source_files()?;
+        let (files, mut coverage) = super::coverage::discover(&self.target)?;
 
         let base = if self.target.is_dir() {
             self.target.clone()
@@ -418,9 +427,23 @@ impl Analyzer {
 
         // Each source file is analyzed independently; this keeps weak-point attribution precise.
         for file in &files {
-            let raw_bytes = match fs::read(file) {
+            let raw_bytes = match (|| -> std::io::Result<Vec<u8>> {
+                use std::io::Read as _;
+                const MAX_BYTES: u64 = 16 * 1024 * 1024;
+                let mut bytes = Vec::new();
+                fs::File::open(file)?
+                    .take(MAX_BYTES + 1)
+                    .read_to_end(&mut bytes)?;
+                if bytes.len() as u64 > MAX_BYTES {
+                    return Err(std::io::Error::other(
+                        "source exceeds 16 MiB analysis limit",
+                    ));
+                }
+                Ok(bytes)
+            })() {
                 Ok(b) => b,
                 Err(e) => {
+                    coverage.mark(file, "unreadable", Some(e.to_string()), None);
                     if self.verbose {
                         log::debug!("Skipping unreadable file: {} ({})", file.display(), e);
                     }
@@ -435,6 +458,12 @@ impl Analyzer {
                 Err(_) => {
                     let (cow, _, had_errors) = encoding_rs::WINDOWS_1252.decode(&raw_bytes);
                     if had_errors {
+                        coverage.mark(
+                            file,
+                            "decode_error",
+                            Some("text decoding failed".into()),
+                            Some(&raw_bytes),
+                        );
                         if self.verbose {
                             log::debug!(
                                 "Skipping non-text file: {} (neither UTF-8 nor Latin-1)",
@@ -469,7 +498,7 @@ impl Analyzer {
             let mut file_weak_points = Vec::new();
 
             // Dispatch to language-specific analyzer
-            let file_lang = Language::detect(file.to_str().unwrap_or(""));
+            let file_lang = Language::detect_path(file);
 
             // Record this file into the attestation accumulator (zero-cost when None)
             if let Some(ref mut acc) = accumulator {
@@ -477,6 +506,18 @@ impl Analyzer {
             }
 
             match file_lang {
+                Language::Php => match super::php::analyze(&content, &rel_path) {
+                    Ok(findings) => file_weak_points.extend(findings),
+                    Err(error) => {
+                        coverage.mark(
+                            file,
+                            "parse_error",
+                            Some(error.to_string()),
+                            Some(&raw_bytes),
+                        );
+                        continue;
+                    }
+                },
                 Language::Rust => {
                     self.analyze_rust(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
@@ -696,6 +737,7 @@ impl Analyzer {
             // Cross-language security checks (run on all files)
             self.analyze_cross_language(&content, &mut file_weak_points, &rel_path)?;
 
+            coverage.mark(file, "analyzed", None, Some(&raw_bytes));
             // Accumulate global stats
             global_stats.total_lines += file_stats.total_lines;
             global_stats.unsafe_blocks += file_stats.unsafe_blocks;
@@ -765,8 +807,10 @@ impl Analyzer {
             .map(|wp| wp.with_parsed_location())
             .collect();
 
+        coverage.finish();
         let mut report = AssailReport {
-            schema_version: "2.5".to_string(),
+            coverage: Box::new(coverage),
+            schema_version: "2.6".to_string(),
             program_path: self.target.clone(),
             language: self.language,
             frameworks,
@@ -796,153 +840,26 @@ impl Analyzer {
         Ok(report)
     }
 
-    fn collect_source_files(&self) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-
-        if self.target.is_file() {
-            files.push(self.target.clone());
-        } else {
-            // Directory mode performs a conservative recursive walk with language filtering.
-            self.walk_directory(&self.target, &mut files)?;
-        }
-
-        Ok(files)
-    }
-
-    fn walk_directory(&self, dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_dir() {
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                // Skip build artifacts, hidden dirs, dependency dirs, and
-                // generated runtime artifacts (e.g. amuck mutation runs).
-                if ![
-                    "target",
-                    "build",
-                    "node_modules",
-                    ".git",
-                    "vendor",
-                    "_build",
-                    "_opam",
-                    ".stack-work",
-                    "dist-newstyle",
-                    "deps",
-                    "_deps",
-                    "zig-cache",
-                    ".zig-cache",
-                    "zig-out",
-                    ".elixir_ls",
-                    ".lexical",
-                    "__pycache__",
-                    "ebin",
-                    "_checkouts",
-                    ".fetch",
-                    ".hex",
-                    ".nimble",
-                    ".dub",
-                    "obj",
-                    "runtime",
-                    // Vendored upstream snapshots — analysing these flags
-                    // findings against code the project does not own.
-                    ".yarn",
-                    "idaptik-rescript13-staging",
-                    "rescript-ecosystem",
-                ]
-                .contains(&name)
-                {
-                    self.walk_directory(&path, files)?;
-                }
-            } else if path.is_file() {
-                let lang = Language::detect(path.to_str().unwrap_or(""));
-                if lang != Language::Unknown {
-                    files.push(path);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
+    /// Choose the most common language among discovered source files, or `Unknown`
+    /// if none are found. Ties favour the lexicographically greatest debug name.
+    ///
+    /// # Errors
+    /// Propagates root metadata errors and symlink-root rejection from discovery;
+    /// later traversal errors are recorded there and do not prevent a result.
     fn detect_directory_language(dir: &Path) -> Result<Language> {
+        let (files, _) = super::coverage::discover(dir)?;
         let mut counts = std::collections::HashMap::new();
-
-        // Cap recursion depth for responsiveness on very large trees.
-        Self::count_languages_recursive(dir, &mut counts, 0)?;
-
-        counts.remove(&Language::Unknown);
-
-        counts
+        for path in files {
+            let language = Language::detect_path(&path);
+            *counts.entry(language).or_insert(0usize) += 1;
+        }
+        Ok(counts
             .into_iter()
-            .max_by_key(|(_, count)| *count)
+            .max_by_key(|(lang, count)| (*count, format!("{lang:?}")))
             .map(|(lang, _)| lang)
-            .ok_or_else(|| anyhow::anyhow!("Could not detect language"))
+            .unwrap_or(Language::Unknown))
     }
 
-    fn count_languages_recursive(
-        dir: &Path,
-        counts: &mut std::collections::HashMap<Language, usize>,
-        depth: usize,
-    ) -> Result<()> {
-        if depth > 10 {
-            return Ok(());
-        }
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            let name = entry.file_name();
-            let name_str = name.to_str().unwrap_or("");
-
-            if path.is_dir() {
-                if name_str.starts_with('.')
-                    || [
-                        "target",
-                        "node_modules",
-                        "vendor",
-                        "build",
-                        "_build",
-                        "_opam",
-                        ".stack-work",
-                        "dist-newstyle",
-                        "deps",
-                        "zig-cache",
-                        ".zig-cache",
-                        "zig-out",
-                        "ebin",
-                        "external_corpora",
-                        "third_party",
-                        "testdata",
-                        "test_fixtures",
-                        "fixtures",
-                        "corpus",
-                        "corpora",
-                        "runtime",
-                        // Vendored upstream snapshots — see walk_directory.
-                        "idaptik-rescript13-staging",
-                        "rescript-ecosystem",
-                    ]
-                    .contains(&name_str)
-                {
-                    continue;
-                }
-                Self::count_languages_recursive(&path, counts, depth + 1)?;
-            } else if path.is_file() {
-                let lang = Language::detect(path.to_str().unwrap_or(""));
-                *counts.entry(lang).or_insert(0) += 1;
-            }
-        }
-        Ok(())
-    }
-
-    // ============================================================
-    // Original language analyzers
-    // ============================================================
-
-    /// Accumulate Rust statistics and append heuristic findings for `file_path`.
-    /// Dangerous-pattern checks exclude string contents, comments, `cfg`-selected
-    /// test bodies and `should_panic` bodies. Panic counts and findings also exclude
-    /// test paths and build scripts.
     fn analyze_rust(
         &self,
         content: &str,
@@ -5519,7 +5436,7 @@ impl Analyzer {
         // scanning .rs files for `use` lines produces false positives from
         // string literals in tests and analyzer patterns.
         for file in files {
-            let file_lang = Language::detect(file.to_str().unwrap_or(""));
+            let file_lang = Language::detect_path(file);
             let content = match read_bounded(file, SOURCE_FILE_READ_LIMIT) {
                 Some(c) => c,
                 None => continue,
@@ -8205,10 +8122,7 @@ pub fn safe_get_x() -> Option<String> {
     // ---------------------------------------------------------------
 
     fn walk_collects(root: &std::path::Path) -> Vec<std::path::PathBuf> {
-        let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
-        let mut files = Vec::new();
-        analyzer.walk_directory(root, &mut files).expect("walk");
-        files
+        super::super::coverage::discover(root).expect("walk").0
     }
 
     #[test]

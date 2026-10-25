@@ -195,6 +195,142 @@ impl ProvenTestsReport {
     }
 }
 
+/// A `proven-tests` run report as folded into an [`crate::aggregate::AggregateReport`].
+///
+/// This is the reciprocal of the framework's `scripts/emit-aggregate-inputs.sh`
+/// (documented in `docs/INTEROP-PANIC-ATTACK.adoc` in that repository): instead
+/// of exporting proof files to panic-attack, panic-attack reads the run report.
+/// Both directions apply the same tier->verdict mapping, which lives in
+/// [`ReportTier::to_verdict`].
+///
+/// `defects` is the honest part. A report can *say* anything; these are the
+/// claims it makes that its own contents do not support — an Actually-Proven
+/// entry with no ladder, a ladder step naming no file, a cited file that is not
+/// present under the root, an unrecognised tier, a summary that disagrees with
+/// the entries, or a report with no entries at all. An empty `defects` list is
+/// therefore a positive claim, not a default.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProvenTestsRecord {
+    /// Path of the report that was ingested.
+    pub path: std::path::PathBuf,
+    /// BLAKE3 of the exact bytes ingested: a different report will not match.
+    pub hash: super::HashRecord,
+    /// Size of the report in bytes.
+    pub bytes: u64,
+    /// The report's own `suite` field.
+    pub suite: String,
+    /// Tier and coverage counts as the report stated them.
+    pub summary: Summary,
+    /// Distinct `.idr` files cited by Actually-Proven ladders.
+    pub ladder_files: Vec<String>,
+    /// One honest line per entry, applying the tier->verdict mapping.
+    pub readings: Vec<String>,
+    /// Unsupported claims; empty only when the report is self-consistent.
+    pub defects: Vec<String>,
+}
+
+/// Read a run report, hash it, and check that its claims are backed by its own
+/// contents.
+///
+/// `root` is the directory cited `proof_file` paths are resolved against — for
+/// the framework's own reports that is the `proven-tests-and-benches` checkout.
+/// It defaults to the report's parent directory, so a report colocated with the
+/// sources it cites needs no extra configuration.
+///
+/// # Errors
+/// Returns file read, BLAKE3 hashing and JSON parsing errors (including an
+/// unsupported `schema_version`). Does *not* error on defects: it records them,
+/// so a caller may report first and fail afterwards with
+/// `AggregateConfig::fail_on_defect`.
+pub fn ingest(path: &Path, root: Option<&Path>) -> Result<ProvenTestsRecord> {
+    let report = ProvenTestsReport::from_path(path)?;
+    let (hash, bytes) = super::hash_file(path)?;
+    let base = root.map(Path::to_path_buf).unwrap_or_else(|| {
+        path.parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()
+    });
+
+    let mut defects = Vec::new();
+    let mut ladder_files: Vec<String> = Vec::new();
+    let mut counted_actually_proven = 0usize;
+
+    if report.entries.is_empty() {
+        defects.push("report contains no entries: an empty run proves nothing".to_string());
+    }
+
+    for entry in &report.entries {
+        match ReportTier::parse(&entry.provenance) {
+            None => defects.push(format!(
+                "{}: unrecognised provenance tier {:?} (expected Actually-Proven, Provisionally-Proven or Unproven)",
+                entry.test_id, entry.provenance
+            )),
+            Some(ReportTier::ActuallyProven) => {
+                counted_actually_proven += 1;
+                if entry.proof_ladder.is_empty() {
+                    defects.push(format!(
+                        "{}: claims Actually-Proven with an empty proof ladder",
+                        entry.test_id
+                    ));
+                }
+                for step in &entry.proof_ladder {
+                    match &step.proof_file {
+                        None => defects.push(format!(
+                            "{}: ladder step {:?} cites no proof file",
+                            entry.test_id, step.description
+                        )),
+                        Some(file) => {
+                            let candidate = base.join(file);
+                            if !candidate.is_file() {
+                                defects.push(format!(
+                                    "{}: cited proof file {} was not found under {}",
+                                    entry.test_id,
+                                    file,
+                                    base.display()
+                                ));
+                            }
+                            if !ladder_files.iter().any(|f| f == file) {
+                                ladder_files.push(file.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            Some(ReportTier::ProvisionallyProven | ReportTier::Unproven) => {}
+        }
+    }
+
+    if report.summary.actually_proven != counted_actually_proven {
+        defects.push(format!(
+            "summary claims {} Actually-Proven entr{}, entries carry {}",
+            report.summary.actually_proven,
+            if report.summary.actually_proven == 1 {
+                "y"
+            } else {
+                "ies"
+            },
+            counted_actually_proven
+        ));
+    }
+    if report.summary.covered_cells > report.summary.cat_aspect_cells {
+        defects.push(format!(
+            "summary claims {} covered cells of a {} cell lattice",
+            report.summary.covered_cells, report.summary.cat_aspect_cells
+        ));
+    }
+
+    Ok(ProvenTestsRecord {
+        path: path.to_path_buf(),
+        hash,
+        bytes,
+        suite: report.suite.clone(),
+        summary: report.summary.clone(),
+        ladder_files,
+        readings: report.notes(),
+        defects,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +401,94 @@ mod tests {
             .notes()
             .iter()
             .any(|n| n.contains("unrecognised provenance tier")));
+    }
+
+    #[test]
+    fn ingest_flags_an_actually_proven_claim_with_no_ladder() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = dir.path().join("report.json");
+        std::fs::write(
+            &report,
+            r#"{"schema_version":1,"suite":"proven-tests","summary":{"actually_proven":1},
+                "entries":[{"test_id":"claims-proof","provenance":"Actually-Proven",
+                            "proof_ladder":[],"result":"passed"}]}"#,
+        )
+        .unwrap();
+        let record = ingest(&report, None).expect("ingest");
+        assert!(record
+            .defects
+            .iter()
+            .any(|d| d.contains("empty proof ladder")));
+        assert!(record.ladder_files.is_empty());
+    }
+
+    #[test]
+    fn ingest_flags_a_cited_proof_file_that_is_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = dir.path().join("report.json");
+        std::fs::write(
+            &report,
+            r#"{"schema_version":1,"suite":"proven-tests",
+                "summary":{"actually_proven":1,"covered_cells":1,"cat_aspect_cells":238},
+                "entries":[{"test_id":"cites-proof","provenance":"Actually-Proven",
+                            "proof_ladder":[{"description":"comm","proof_file":"src/ProvenTests/Tropical.idr"}],
+                            "result":"passed"}]}"#,
+        )
+        .unwrap();
+        let record = ingest(&report, None).expect("ingest");
+        assert!(
+            record
+                .defects
+                .iter()
+                .any(|d| d.contains("was not found under")),
+            "{:?}",
+            record.defects
+        );
+        assert_eq!(
+            record.ladder_files,
+            vec!["src/ProvenTests/Tropical.idr".to_string()]
+        );
+    }
+
+    #[test]
+    fn ingest_accepts_a_self_consistent_report() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/Tropical.idr"), "-- proof\n").unwrap();
+        let report = dir.path().join("report.json");
+        std::fs::write(
+            &report,
+            r#"{"schema_version":1,"suite":"proven-tests",
+                "summary":{"passed":2,"total":2,"actually_proven":1,"provisionally_proven":1,
+                           "covered_cells":3,"cat_aspect_cells":238,"lattice_covered":3},
+                "entries":[{"test_id":"tropical-laws","provenance":"Actually-Proven",
+                            "proof_ladder":[{"description":"comm","proof_file":"src/Tropical.idr",
+                                             "theorem":"oplusComm"}],"result":"passed"},
+                           {"test_id":"smoke","provenance":"Unproven","proof_ladder":[],
+                            "result":"passed"}]}"#,
+        )
+        .unwrap();
+        let record = ingest(&report, Some(dir.path())).expect("ingest");
+        assert!(record.defects.is_empty(), "{:?}", record.defects);
+        assert_eq!(record.suite, "proven-tests");
+        assert_eq!(record.summary.passed, 2);
+        assert!(record.hash.hex.len() == 64);
+    }
+
+    #[test]
+    fn ingest_flags_a_summary_that_disagrees_with_the_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = dir.path().join("report.json");
+        std::fs::write(
+            &report,
+            r#"{"schema_version":1,"summary":{"actually_proven":2},
+                "entries":[{"test_id":"one","provenance":"Provisionally-Proven","proof_ladder":[]}]}"#,
+        )
+        .unwrap();
+        let record = ingest(&report, None).expect("ingest");
+        assert!(record
+            .defects
+            .iter()
+            .any(|d| d.contains("summary claims 2")));
     }
 }

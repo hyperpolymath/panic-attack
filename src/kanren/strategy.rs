@@ -289,6 +289,7 @@ mod tests {
     #[test]
     fn test_strategy_auto_select() {
         let report = AssailReport {
+            coverage: Default::default(),
             schema_version: "2.5".to_string(),
             program_path: ".".into(),
             language: Language::Rust,
@@ -322,6 +323,7 @@ mod tests {
     #[test]
     fn test_risk_weighted_ordering() {
         let report = AssailReport {
+            coverage: Default::default(),
             schema_version: "2.5".to_string(),
             program_path: ".".into(),
             language: Language::Rust,

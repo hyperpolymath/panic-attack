@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= PHP and scan coverage
+:toc:
+
+== Assail schema 2.6
+
+New assail reports include coverage independently of file_statistics.
+The latter contains files with nonzero counters; it has never been a reliable
+inventory. Legacy reports deserialize with coverage status unknown.
+
+Coverage status is complete, partial, failed, no_applicable_input or unknown.
+Complete means every candidate in the declared traversal scope was analysed by
+its stated adapter. It does not mean the code is secure, that every adapter
+parses its language, or that dynamic attacks ran.
+
+Each input records its path, kind, language, outcome, analysis depth, exclusion
+or failure reason, and a BLAKE3 content digest when read. Named build/vendor
+directories are recorded as pruned roots; their contents are not enumerated.
+Symlinks are recorded and never followed. A symlink scan root is rejected.
+Unrecognised source/config formats are gaps; other extensions are explicitly
+outside scope. The extension classifier is bounded and does not claim universal
+recognition of extensionless or custom-language source.
+
+Coverage `path` strings use lossy UTF-8 for readability. On Unix, non-UTF-8
+paths additionally include `path_bytes_hex`, the hex-encoded original path
+bytes; Unix readers use these bytes to restore the exact path. Older reports
+without this field still load. In SARIF, both representations refer to the
+path relative to the scan root when that prefix matches.
+
+A source read is bounded to 16 MiB. Read/decode/parse failures retain the other
+results and leave incomplete coverage. There is not yet a global analysis
+deadline or an interprocedural PHP dataflow engine.
+
+== CLI and report compatibility
+
+panic-attack assail PATH --headless --fail-on-incomplete emits the report and
+exits 2 for incomplete or empty analysis. The flag does not impose a severity
+threshold. Without it, exploratory scans keep their previous exit behavior;
+consumers must inspect coverage. Other operational failures retain the CLI's
+existing error behavior.
+
+Headless stdout is JSON when no output file is selected. Attestation, when
+requested, seals the emitted report including coverage; that binds the evidence,
+not a claim that the target passed a security audit.
+
+The CLI contract's report_schema_version tracks assail at 2.6. The additive
+report_schema_versions map distinguishes assail 2.6 from assault 2.5.
+Legacy deserialize defaults remain 2.5 rather than upgrading historical reports.
+SARIF run properties carry coverage too.
+
+== PHP vertical slice
+
+Pinned dependencies: tree-sitter 0.27.0 and tree-sitter-php 0.25.1. The native
+mixed PHP/template grammar parses namespaces, classes, traits and closures.
+Recovered syntax-error trees are not analysed. PHP, versioned PHP extensions,
+PHTML and INC files enter this adapter.
+
+Three local, explicitly heuristic checks are implemented:
+
+* PHP-EMPTY-CALLABLE: concrete functions/methods with comment-only or empty bodies.
+  Intentional no-op hooks can be valid.
+* PHP-ALGORITHM-SUBSTITUTION: a callable named blake3 invokes the sodium BLAKE2b
+  primitive. This is a contract-review signal, not a proven execution path.
+* PHP-UNSERIALIZE: a call omits its object-instantiation options. Input trust and
+  allowed-class policy require review; no taint flow is claimed.
+
+Comments and string literals are not PHP calls. Abstract declarations are not
+empty concrete functions. Cross-language heuristics still run separately;
+their results are not upgraded to AST/dataflow evidence by PHP's parser.
+
+== Portfolio evidence and remaining work
+
+The fixtures reproduce empty WordPress crypto implementations and the Aegis
+algorithm-substitution pattern from the 25 October 2026 audit. CLI tests cover
+clean PHP without finding counters, malformed PHP, unsupported config input,
+empty roots, symlink cycles and legacy report decoding.
+
+Next: contextual PHP taint, Composer/WordPress bootstrap and symbol resolution,
+typed graph edges and stable per-rule fingerprints, resource/time budgets across
+all rules, externally verified runtime/build/provenance evidence, and protocol
+conformance harnesses. Haskell/Elixir retain their existing heuristic adapters;
+this change does not claim native parsing for them.
+
+Do not infer PHP engine patch status from these source checks. Runtime provenance,
+startup configuration and deployment isolation require independent evidence.
+

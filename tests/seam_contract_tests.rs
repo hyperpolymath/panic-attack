@@ -33,6 +33,7 @@ use serde_json::Value;
 
 fn minimal_assail_report() -> AssailReport {
     AssailReport {
+        coverage: Default::default(),
         schema_version: "2.5".to_string(),
         program_path: std::path::PathBuf::from("/tmp/test"),
         language: Language::Rust,

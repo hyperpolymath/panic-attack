@@ -1,0 +1,181 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# squabble-gate.yml — the estate's CI/CD fighter, wired to this repository.
+#
+# WHY: on 2026-10-25 this repository's CI went dark and the failure was
+# *unreadable* — twelve `startup_failure` runs, zero jobs, no logs. `cicd-squabbler`
+# exists for exactly that shape: it turns a stuck gate into a legible one and
+# proposes only moves that SATISFY the gate (SPARK-proved invariant: green ⇔ a
+# required check actually ran and passed — an admin override or a dropped
+# required context are provably not paths to green).
+#
+# WHAT IT RUNS, against the tool's real surface:
+#   squabble fetch  <owner>/<repo> <pr>   → the live gate as JSON
+#   squabble diagnose <gate.json>         → state + proposed legitimate moves
+#   squabble chains . --follow 1          → which repos this CI depends on, and
+#                                           whether an upstream is dead (a dead
+#                                           upstream produces no check run at
+#                                           all, so the board reads green)
+#
+# WHAT IT IS NOT: a code fixer. Red→green *code* work is out of scope by design;
+# "fixing" a failing test by weakening it is squabble ≠ bypass.
+#
+# TRIGGERS: weekly (drift), dispatch (diagnose a specific PR), and on a PR only
+# when it carries the `ci-squabble` label — the cost is paid when someone is
+# actually stuck, not on every push.
+#
+# `squabble diagnose` reads a gate JSON that `fetch` produced; it takes no `--pr`
+# flag. An earlier draft of this file invented one, which is exactly the kind of
+# gate that looks right and never runs.
+
+name: CI Squabbler
+
+on:
+  schedule:
+    - cron: '23 6 * * 3'   # Wednesdays, off the hour
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to diagnose (blank = run only the chains sweep)'
+        required: false
+        type: string
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: squabble-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned: the squabbler commit this gate was validated against. A floating
+  # `--branch main` would mean the gate changes underneath the fix.
+  SQUABBLER_PIN: 14f853fde902ab2d7631070d87a9dc9122e01013
+  SQUABBLER_REPO: https://github.com/hyperpolymath/cicd-squabbler
+
+jobs:
+  squabble:
+    name: Squabble — required contexts vs what actually ran
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # The label trigger fires for every label; only `ci-squabble` is interesting.
+    if: >
+      github.event_name != 'pull_request' ||
+      github.event.label.name == 'ci-squabble'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: cicd-squabbler
+
+      # Built from the pinned commit rather than `cargo install --git … --branch`
+      # so the gate cannot change between the run that validated it and the run
+      # that reports on it.
+      - name: Build the squabbler at the pinned commit
+        run: |
+          set -euo pipefail
+          git init "$RUNNER_TEMP/squabbler"
+          git -C "$RUNNER_TEMP/squabbler" remote add origin "$SQUABBLER_REPO"
+          git -C "$RUNNER_TEMP/squabbler" fetch --depth 1 origin "$SQUABBLER_PIN"
+          git -C "$RUNNER_TEMP/squabbler" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/squabbler" rev-parse HEAD)" = "$SQUABBLER_PIN"
+          cargo install --locked --path "$RUNNER_TEMP/squabbler/crates/squabble-cli"
+          squabble --version
+
+      - name: Fetch the live gate
+        id: fetch
+        if: inputs.pr != '' || github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ inputs.pr || github.event.pull_request.number }}
+        run: |
+          set +e
+          squabble fetch "$GITHUB_REPOSITORY" "$PR" > gate.json 2> fetch.err
+          code=$?
+          set -e
+          cat fetch.err >&2 || true
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) ;;
+            # Not a tool failure: the base branch carries no
+            # `required_status_checks` rule, so nothing can be proven green.
+            3) echo "::notice::no required-status-check rule on the base branch — nothing is required, so nothing can be provably green" ;;
+            *) echo "::error::squabble fetch failed (exit $code)"; exit "$code" ;;
+          esac
+
+      - name: Diagnose the live gate
+        if: steps.fetch.outputs.exit == '0'
+        run: |
+          set -euo pipefail
+          squabble diagnose gate.json 2>&1 | tee diagnose.txt
+          # `diagnose` reports; it does not decide. A gate that is red for a
+          # legitimate reason must not fail this job — the required check that is
+          # red already does that. Its job is to say which move would satisfy it.
+
+      - name: Map the CI chains this repository depends on
+        run: |
+          set +e
+          squabble chains . --follow 1 2>&1 | tee chains.txt
+          code=$?
+          set -e
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          id=chains
+          case "$code" in
+            0) ;;
+            # 4 = blocking: a cycle or a dead upstream. That IS a finding about
+            # this repository's CI, so it is reported loudly and the job is left
+            # green only because it is not on a PR's critical path.
+            4) echo "::warning::squabble chains found a blocking dependency finding (dead upstream or cycle)" ;;
+            *) echo "::warning::squabble chains exited $code" ;;
+          esac
+        id: chains
+
+      - name: Publish
+        if: always()
+        run: |
+          {
+            echo "## Squabble"
+            echo ""
+            echo "| signal | result |"
+            echo "|---|---|"
+            echo "| fetch | exit \`${{ steps.fetch.outputs.exit || 'not run' }}\` (0 ok · 2 tool failure · 3 no required-status-check rule) |"
+            echo "| chains | exit \`${{ steps.chains.outputs.exit || 'not run' }}\` (0 ok · 4 dead upstream or cycle) |"
+            echo ""
+            for f in gate.json diagnose.txt chains.txt; do
+              if [ -s "$f" ]; then
+                echo "<details><summary><code>$f</code></summary>"
+                echo ""
+                echo '```'
+                head -120 "$f"
+                echo '```'
+                echo ""
+                echo "</details>"
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the diagnosis
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: squabble-diagnosis
+          path: |
+            gate.json
+            diagnose.txt
+            chains.txt
+          retention-days: 30
+          if-no-files-found: warn

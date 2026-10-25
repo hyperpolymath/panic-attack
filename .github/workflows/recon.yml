@@ -1,0 +1,167 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# recon.yml — deep recon: this repository, scanned by two independent analysers.
+#
+# WHY TWO
+# -------
+# `panic-attack assail` answers "what here is weak?" — panic sites, unsafe
+# blocks, injection sinks, deserialisation, FFI boundaries. `pons-asinorum`
+# answers a different question: "what here is wasted, self-contradictory, or
+# missing an escape hatch?" Its findings carry an evidence class, and its
+# SPECULATIVE tier never gates a build by design.
+#
+# The two are design companions (pons's docs/adr/0004-companion-to-panic-attack
+# .adoc) and they exchange versioned evidence while keeping independent
+# analyses. Running both in one place is the only way to notice the case where
+# one is blind: a finding that exists in both is corroborated evidence, a
+# finding in exactly one is a prompt to look, and a finding in neither after a
+# real defect is a hole in the scanners themselves.
+#
+# WHY IT DOES NOT FAIL ON FINDINGS
+# --------------------------------
+# This repo is the scanner. A scan of its own source WILL report the things it
+# is built to report (there are `unwrap`s, there is `unsafe`, there is regex).
+# Failing on them would create pressure to suppress them, which is the failure
+# mode the estate keeps paying for. Instead:
+#
+#   * a new category, or a count that rises above `recon/baseline.json`, fails
+#     the job — regressions gate, the standing debt does not;
+#   * the full reports are uploaded and published as SARIF for the security tab;
+#   * the numbers are printed in the job summary so the debt is visible.
+#
+# Runs on schedule and dispatch: it is a deep scan, not a per-push cost.
+
+name: Recon
+
+on:
+  schedule:
+    - cron: '13 3 * * 2'   # Tuesdays, off the hour
+  workflow_dispatch:
+    inputs:
+      fail_on_new:
+        description: 'Fail when a category exceeds the baseline'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  security-events: write   # SARIF upload
+
+concurrency:
+  group: recon-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned: a scanner that changes under you cannot baseline anything.
+  PONS_PIN: 51b8920f541782ceb9465ea3f0d33c96104fc1fb
+  PONS_REPO: hyperpolymath/pons-asinorum
+  SARIF_DIR: recon-out
+
+jobs:
+  recon:
+    name: Deep recon (panic-attack + pons-asinorum)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: recon
+
+      - name: Build panic-attack
+        run: cargo build --locked --release
+
+      - name: Assail this repository (self-scan)
+        run: |
+          set -euo pipefail
+          mkdir -p "$SARIF_DIR"
+          ./target/release/panic-attack assail . \
+            --output "$SARIF_DIR/assail.json" --quiet
+          ./target/release/panic-attack --output-format sarif assail . \
+            --output "$SARIF_DIR/assail.sarif" --quiet || true
+
+      - name: Checkout pons-asinorum at the pinned commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: ${{ env.PONS_REPO }}
+          ref: ${{ env.PONS_PIN }}
+          path: .pons
+          persist-credentials: false
+
+      - name: Build pons-asinorum
+        run: cargo build --release --locked --manifest-path .pons/Cargo.toml -p pons-cli
+
+      - name: Locate the pons binary
+        id: pons
+        run: |
+          set -euo pipefail
+          bin="$(find .pons/target/release -maxdepth 1 -type f -name 'pons' -perm -u+x | head -1)"
+          [ -n "$bin" ] || { echo "::error::pons binary not found after build"; exit 1; }
+          echo "path=$bin" >> "$GITHUB_OUTPUT"
+          "$bin" --version || true
+          "$bin" catalogue > "$SARIF_DIR/pons-catalogue.txt" || true
+
+      - name: Pons scan (SARIF + JSON), self-validated
+        id: pons_scan
+        env:
+          PONS: ${{ steps.pons.outputs.path }}
+        run: |
+          set +e
+          "$PONS" scan . --format sarif > "$SARIF_DIR/pons.sarif" 2> "$SARIF_DIR/pons.err"
+          code=$?
+          set -e
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          cat "$SARIF_DIR/pons.err" || true
+          # 0 below threshold, 1 threshold reached: both are a completed scan.
+          # 2 is invalid/incomplete input — a fact about the scan, not a pass.
+          case "$code" in
+            0|1) echo "pons: scan completed (exit $code)" ;;
+            *) echo "::warning::pons exited $code — see pons.err (2 = invalid or incomplete input)" ;;
+          esac
+          "$PONS" scan . --format json > "$SARIF_DIR/pons.json" 2>/dev/null || true
+          if [ -s "$SARIF_DIR/pons.json" ]; then
+            "$PONS" validate-report "$SARIF_DIR/pons.json" || echo "::warning::pons report failed its own validator"
+          fi
+
+      - name: Compare both scans against the baseline
+        id: compare
+        run: |
+          set -euo pipefail
+          args=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.fail_on_new }}" = "false" ]; then
+            args="--no-fail"
+          fi
+          python3 scripts/recon/compare.py \
+            --baseline recon/baseline.json \
+            --assail "$SARIF_DIR/assail.json" \
+            --pons "$SARIF_DIR/pons.json" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            $args
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
+        continue-on-error: true
+        with:
+          sarif_file: ${{ env.SARIF_DIR }}
+          category: recon
+
+      - name: Upload recon artefacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: recon
+          path: ${{ env.SARIF_DIR }}
+          retention-days: 30
+          if-no-files-found: warn
