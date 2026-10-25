@@ -1,0 +1,32 @@
+;; SPDX-License-Identifier: CC-BY-SA-4.0
+;; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+; Repository deed for hyperpolymath/panic-attack.
+;
+; Grammar: hyperpolymath/standards 1-formats/deed/spec/abnf/deed.abnf (v1.2.0).
+; Vocabulary: 1-formats/deed/vocabulary/*.adoc.
+;
+; This file is why `dogfood-gate.yml`'s "no .deed found" warning is gone: every
+; RSR repository carries a repo deed at its root, and a warning that never fails
+; is a warning nobody reads.
+(repo-deed
+  :schema-version "1.0.0"
+  :canonical-name "panic-attack"
+  :repo-uuid #u5"hyperpolymath/panic-attack"
+  :beholding-chora #u5"estate/chora"
+  (status
+    :phase active
+    :note "static analysis, stress testing and logic-based bug signature detection")
+  (maturity
+    :level stable
+    :since "2026-02-08")
+  (lineage
+    :type hub
+    :parent ""
+    :previous-names ("panic-attacker")
+    :note "renamed 2026-02-08: binary panic-attacker -> panic-attack, xray -> assail, XRayReport -> AssailReport")
+  (obligation
+    :name "evidence-not-proof"
+    :note "T0 syntax heuristics are labelled T0. A finding is never dressed up as a parser or dataflow proof; see docs/RECON-AND-EVIDENCE.adoc")
+  (obligation
+    :name "no-self-suppression"
+    :note "suppressions live in a separate registry file (audits/assail-classifications.a2ml) so one hand cannot both add a defect and hide it"))

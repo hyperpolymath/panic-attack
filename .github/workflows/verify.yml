@@ -1,0 +1,210 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# verify.yml — the foundation CI that CANNOT be taken out by another repository.
+#
+# WHY THIS EXISTS
+# ---------------
+# `rust-ci.yml`, `governance.yml`, `hypatia-scan.yml` and `secret-scanner.yml`
+# are thin wrappers over reusable workflows in `hyperpolymath/standards`. That
+# is the estate's intended shape, and it stays. But every one of those gates is
+# only as available as the callee's Actions "Access" setting and this repo's
+# allowlist permit at that instant. On 2026-10-25 all four died before their
+# first job (`failure`, zero jobs, no log), and with them went the only
+# build/test signal that did not depend on a foreign repository.
+#
+# So the guarantees that must never be absent live here, on actions this repo
+# pins itself:
+#
+#   fmt        formatting is not a matter of taste in review
+#   clippy     `-D warnings` — the repo's zero-warning policy, enforced
+#   test       the suite, with the feature matrix that ships
+#   doc        every public item is documented and the docs build
+#   coverage-self-scan   the tool's own coverage ledger is honest
+#
+# The reusable-wrapper gates stay as the estate's richer checks (audit,
+# coverage upload, Hypatia SARIF). This one is the floor.
+
+name: Verify
+
+on:
+  pull_request:
+    branches: ['**']
+  push:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  RUST_BACKTRACE: '1'
+
+jobs:
+  fmt:
+    name: cargo fmt --check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: cargo clippy -D warnings
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+      # `gui` is deliberately excluded: eframe/egui needs system libraries this
+      # job does not install, and the GUI is opt-in. Everything else is checked.
+      - run: cargo clippy --locked --all-targets --features http,sarif,signing -- -D warnings
+
+  test:
+    name: cargo test (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - features: ''                    # default: offline, zero-network build
+          - features: http,sarif             # Patch Bridge + SARIF
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: features-${{ matrix.features }}
+      # `--locked` is a gate in itself: the lockfile must agree with Cargo.toml
+      # in the commit under test, or the artefact CI verified is not the
+      # artefact released.
+      - name: Test
+        run: |
+          set -euo pipefail
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo test --locked --features "${{ matrix.features }}"
+          else
+            cargo test --locked
+          fi
+
+  msrv:
+    name: MSRV (rust-version in Cargo.toml)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read rust-version
+        id: msrv
+        run: |
+          set -euo pipefail
+          msrv="$(sed -n 's/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
+          [ -n "$msrv" ] || { echo "::error::Cargo.toml declares no rust-version"; exit 1; }
+          echo "toolchain=$msrv" >> "$GITHUB_OUTPUT"
+          echo "MSRV declared: $msrv"
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: ${{ steps.msrv.outputs.toolchain }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: msrv
+      - run: cargo check --locked --all-targets
+
+  docs:
+    name: cargo doc (no broken intra-doc links)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: docs
+      - run: cargo doc --locked --no-deps --features http,sarif,signing
+
+  coverage-ledger:
+    name: Coverage ledger is honest (--fail-on-incomplete)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: coverage-ledger
+      - name: Build
+        run: cargo build --locked --release
+      # A scan of a tree whose every file has an adapter must be `complete`.
+      # This is the CI use of --fail-on-incomplete: a green here means the
+      # declared inventory was actually analysed, not that no file was found.
+      - name: Complete-coverage fixture must scan complete
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ph-ok/src
+          printf '<?php\nfunction f($x) { return strlen($x); }\n' > /tmp/ph-ok/src/a.php
+          printf 'fn main() { let s = "x"; println!("{}", s); }\n' > /tmp/ph-ok/src/main.rs
+          ./target/release/panic-attack assail /tmp/ph-ok \
+            --output /tmp/ph-ok.json --fail-on-incomplete --quiet
+          python3 - <<'PY'
+          import json
+          report = json.load(open('/tmp/ph-ok.json'))
+          coverage = report['coverage']
+          assert coverage['status'] == 'complete', coverage['status']
+          assert coverage['analyzed_files'] == coverage['candidate_files'] >= 2, coverage
+          print(f"coverage={coverage['status']} files={coverage['analyzed_files']}")
+          PY
+      # An unparseable PHP file is a coverage GAP, not a silent pass, and the
+      # process must say so with exit 2 after writing the report.
+      - name: Malformed input must exit 2 with a written report
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ph-bad/src
+          printf '<?php function broken( {\n' > /tmp/ph-bad/src/broken.php
+          set +e
+          ./target/release/panic-attack assail /tmp/ph-bad \
+            --output /tmp/ph-bad.json --fail-on-incomplete --quiet
+          code=$?
+          set -e
+          [ "$code" -eq 2 ] || { echo "::error::expected exit 2 for incomplete coverage, got $code"; exit 1; }
+          [ -s /tmp/ph-bad.json ] || { echo "::error::report was not written before exit"; exit 1; }
+          python3 - <<'PY'
+          import json
+          coverage = json.load(open('/tmp/ph-bad.json'))['coverage']
+          assert coverage['status'] != 'complete', coverage['status']
+          assert any(i.get('status') not in ('analyzed', 'excluded') for i in coverage['inputs']), coverage
+          print(f"coverage={coverage['status']} (gap recorded)")
+          PY

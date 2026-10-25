@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "Recon baseline: what this repository's own scanners currently report about it.",
+    "An empty map means 'no frozen baseline yet': the recon job reports and does not",
+    "fail, and its summary prints the JSON block to commit here. Freezing is a",
+    "deliberate, reviewable act — the baseline is debt, not a target.",
+    "A category that appears after the baseline is frozen, or a count above it, fails",
+    "the job. A count below it is reported as debt paid and should be tightened in the",
+    "same PR that fixed it."
+  ],
+  "assail": {},
+  "pons": {}
+}

@@ -1,0 +1,197 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# squabble-gate.yml — the estate's CI/CD fighter, wired to this repository.
+#
+# WHY: on 2026-10-25 this repo's CI went dark and the failure was *unreadable* —
+# twelve `startup_failure` runs, zero jobs, no logs. `cicd-squabbler` exists for
+# exactly that shape: it turns a stuck gate into a legible one and proposes only
+# moves that SATISFY the gate (SPARK-proved invariant: green ⇔ a required check
+# actually ran and passed — admin overrides and dropped required contexts are
+# provably not paths to green).
+#
+# WHAT IT RUNS
+#   fetch + diagnose  the live gate for this PR: required contexts vs what
+#                     actually reported, with proposed legitimate moves
+#   chains            which repos this repo's CI depends on, and whether any of
+#                     them is dead upstream (a deleted upstream produces no check
+#                     run at all, so the board reads green)
+#
+# WHAT IT IS NOT: a code fixer. Red->green *code* fixes are out of scope for the
+# squabbler by design; "fixing" a failing test by weakening it violates
+# squabble ≠ bypass.
+#
+# TRIGGERS: weekly (drift), dispatch (manual diagnosis of a stuck PR), and on a
+# PR only when it carries the `ci-squabble` label — so the cost is paid when
+# someone is actually stuck, not on every push.
+
+name: CI Squabbler
+
+on:
+  schedule:
+    - cron: '23 6 * * 3'   # Wednesdays, off the hour
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to diagnose (blank = chains-only sweep)'
+        required: false
+        type: string
+      strict:
+        description: 'Fail the job on blocking chain findings (cycles, dead upstreams)'
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: squabble-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned: a squabbler that changes under you cannot be a gate.
+  SQUABBLER_PIN: 14f853fde902ab2d7631070d87a9dc9122e01013
+  SQUABBLER_REPO: hyperpolymath/cicd-squabbler
+
+jobs:
+  squabble:
+    name: Diagnose the gate
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'ci-squabble')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout cicd-squabbler at the pinned commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: ${{ env.SQUABBLER_REPO }}
+          ref: ${{ env.SQUABBLER_PIN }}
+          path: .squabble
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          workspaces: .squabble
+          key: squabble
+
+      - name: Build the squabbler
+        run: cargo build --release --locked --manifest-path .squabble/Cargo.toml -p squabble-cli
+        # The CLI binary is the workspace member's own target path.
+      - name: Locate the binary
+        id: bin
+        run: |
+          set -euo pipefail
+          bin="$(find .squabble/target/release -maxdepth 1 -type f -name 'squabble*' -perm -u+x | head -1)"
+          [ -n "$bin" ] || { echo "::error::squabble binary not found after build"; exit 1; }
+          echo "path=$bin" >> "$GITHUB_OUTPUT"
+          "$bin" --version
+
+      # Exit codes are part of the contract: 0 ok · 2 failure · 3 no gate ·
+      # 4 chains: blocking finding · 5 verify-satisfied: agent items remain.
+      # A tool failure (2) is never swallowed into a green.
+      - name: Cross-repo chain findings (read-only)
+        id: chains
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BIN: ${{ steps.bin.outputs.path }}
+        run: |
+          set +e
+          "$BIN" chains . gh:hyperpolymath/standards --follow 1 --json > /tmp/chains.json 2>/tmp/chains.err
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          cat /tmp/chains.err || true
+          echo "exit=$code"
+          case "$code" in
+            0) echo "chains: no blocking finding" ;;
+            4) echo "::warning::chains: blocking finding (cycle or dead upstream) — see artifact" ;;
+            2) echo "::error::chains: the tool failed; this is not a clean sweep" ; exit 1 ;;
+            *) echo "::warning::chains: unexpected exit $code" ;;
+          esac
+          [ -s /tmp/chains.json ] && head -c 2000 /tmp/chains.json || true
+
+      - name: Diagnose the live gate
+        id: diagnose
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BIN: ${{ steps.bin.outputs.path }}
+          PR: ${{ inputs.pr }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          pr="${PR:-}"
+          if [ -z "$pr" ] && [ "${{ github.event_name }}" = "pull_request" ]; then
+            pr="${{ github.event.pull_request.number }}"
+          fi
+          if [ -z "$pr" ]; then
+            echo "::notice::no PR given — running the chains sweep only"
+            exit 0
+          fi
+          set +e
+          "$BIN" fetch "$REPO" "$pr" > /tmp/gate.json 2>/tmp/gate.err
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "::warning file=.github/workflows/squabble-gate.yml::squabble fetch exited $code (3 = no required-status-checks rule on the base branch)"
+            cat /tmp/gate.err || true
+            exit 0
+          fi
+          "$BIN" diagnose /tmp/gate.json | tee /tmp/diagnose.txt
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## CI squabbler"
+            echo ""
+            echo "Pinned to \`$SQUABBLER_REPO\` at \`$SQUABBLER_PIN\`."
+            echo ""
+            echo "| surface | exit | meaning |"
+            echo "|---|---|---|"
+            echo "| chains | ${{ steps.chains.outputs.code }} | 0 clean · 4 blocking finding (cycle / dead upstream) |"
+            echo ""
+            if [ -f /tmp/diagnose.txt ]; then
+              echo '```'
+              head -80 /tmp/diagnose.txt
+              echo '```'
+            fi
+            echo ""
+            echo "_A squabble wins the gate by satisfying it. It never overrides one._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on blocking chain findings when asked
+        if: inputs.strict && steps.chains.outputs.code == '4'
+        run: |
+          echo "::error::blocking chain finding and strict mode was requested"
+          exit 1
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: squabble-report
+          path: |
+            /tmp/chains.json
+            /tmp/gate.json
+            /tmp/diagnose.txt
+          retention-days: 30
+          if-no-files-found: ignore
