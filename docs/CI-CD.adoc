@@ -151,6 +151,16 @@ python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json
 on the day it was taken, so a reviewer can tell an intentional bump from a
 silent re-point.
 
+One hard-won rule about `actions.lock`: it is a **superset** of what `grep
+uses:` finds. `gh actions-lock` also records actions that composite actions
+resolve internally — `actions/upload-pages-artifact` runs
+`actions/upload-artifact@bbbca2dd…` itself — and GitHub validates the lockfile
+at *job setup*. A regenerator that rebuilds the file from the workflows deletes
+those entries, and the only symptom is `lockfile missing pin for …` in a job
+that never runs a step. `scripts/ci/pin-workflow-uses.py` therefore MERGES its
+`dependencies:` section instead of rebuilding it, and `--check` (which CI runs)
+is idempotent over the merged form.
+
 == Testing: evidence-graded, not declared
 
 `proven/ledger.json` grades this repository's suite on
