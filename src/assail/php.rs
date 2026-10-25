@@ -55,9 +55,14 @@ pub fn analyze(text: &str, path: &str) -> anyhow::Result<Vec<WeakPoint>> {
         if matches!(node.kind(), "function_definition" | "method_declaration") {
             if let Some(body) = node.child_by_field_name("body") {
                 let mut cursor = body.walk();
-                if body
-                    .named_children(&mut cursor)
-                    .all(|n| n.kind() == "comment")
+                let is_constructor = node
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(text.as_bytes()).ok())
+                    .is_some_and(|n| n.eq_ignore_ascii_case("__construct"));
+                if !is_constructor
+                    && body
+                        .named_children(&mut cursor)
+                        .all(|n| n.kind() == "comment")
                 {
                     findings.push(finding(path, node, WeakPointCategory::UncheckedError,
                         "PHP-EMPTY-CALLABLE: concrete callable has no executable body and may return null (T0 syntax heuristic; an intentional no-op may be valid)"));
