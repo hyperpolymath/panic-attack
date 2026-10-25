@@ -89,8 +89,9 @@ workflows:
         - 'swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0'
     '.github/workflows/scorecard.yml':
         - 'hyperpolymath/standards@333b06a01db1874ffedb2de1bfabb195640927c7'
-    '.github/workflows/secret-scanner.yml':
-        - 'hyperpolymath/standards@333b06a01db1874ffedb2de1bfabb195640927c7'
+    '.github/workflows/secret-scanner-vendored.yml':
+        - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+    '.github/workflows/secret-scanner.yml': []
     '.github/workflows/squabble-gate.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
         - 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
