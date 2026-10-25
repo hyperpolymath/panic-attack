@@ -361,7 +361,7 @@ impl Analyzer {
     /// When `accumulator` is `Some`, each successfully read file and each
     /// traversed directory are recorded into the accumulator for the
     /// attestation chain. When `None`, this behaves identically to
-    /// [`analyze()`].
+    /// `analyze`.
     pub fn analyze_with_accumulator(
         &self,
         accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,

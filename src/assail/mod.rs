@@ -407,10 +407,10 @@ pub fn apply_suppression(report: &mut AssailReport) {
 /// v2.5.5 context-aware FP suppression pass — applies three checks per
 /// finding:
 ///   1. Inline `panic-attack: accepted` marker on the same or
-///      preceding line, when `wp.line` is known ([[comment_marker]]).
+///      preceding line, when `wp.line` is known (`comment_marker`).
 ///   2. PanicPath finding in a TestOnly or Doc test_context
-///      ([[test_context]]).
-///   3. UnsafeFFI finding where the file's [[ffi_kind]] is
+///      (`test_context`).
+///   3. UnsafeFFI finding where the file's `ffi_kind` is
 ///      `BuildSystem` or `TestMock` (audit-accepted by default).
 ///
 /// JIT context handling remains in the transmute classification block of

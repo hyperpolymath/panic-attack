@@ -58,7 +58,7 @@ pub struct EvidenceAccumulator {
     start: Instant,
 }
 
-/// A snapshot of the rolling hash taken every [`CHECKPOINT_INTERVAL`] files.
+/// A snapshot of the rolling hash taken every `CHECKPOINT_INTERVAL` files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvidenceCheckpoint {
     /// How many files had been processed when this checkpoint was taken.
@@ -98,7 +98,7 @@ pub struct ExecutionEvidence {
     /// Peak resident set size in bytes (best-effort; 0 if unavailable).
     pub peak_rss: u64,
 
-    /// Periodic checkpoints taken every [`CHECKPOINT_INTERVAL`] files.
+    /// Periodic checkpoints taken every `CHECKPOINT_INTERVAL` files.
     pub checkpoints: Vec<EvidenceCheckpoint>,
 
     /// Unique programming languages detected.
@@ -127,7 +127,7 @@ impl EvidenceAccumulator {
     ///
     /// Updates the rolling hash with `path_bytes || content_hash`, increments
     /// counters, records the language, and emits a checkpoint every
-    /// [`CHECKPOINT_INTERVAL`] files.
+    /// `CHECKPOINT_INTERVAL` files.
     pub fn record_file(&mut self, path: &str, content: &[u8], language: &str) {
         // Rolling hash: incorporate path and content hash
         let content_hash = sha256_str(content);

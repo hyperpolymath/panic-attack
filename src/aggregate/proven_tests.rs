@@ -437,11 +437,17 @@ mod tests {
         .unwrap();
         let record = ingest(&report, None).expect("ingest");
         assert!(
-            record.defects.iter().any(|d| d.contains("was not found under")),
+            record
+                .defects
+                .iter()
+                .any(|d| d.contains("was not found under")),
             "{:?}",
             record.defects
         );
-        assert_eq!(record.ladder_files, vec!["src/ProvenTests/Tropical.idr".to_string()]);
+        assert_eq!(
+            record.ladder_files,
+            vec!["src/ProvenTests/Tropical.idr".to_string()]
+        );
     }
 
     #[test]
