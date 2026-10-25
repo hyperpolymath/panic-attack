@@ -304,7 +304,11 @@ pub fn ingest(path: &Path, root: Option<&Path>) -> Result<ProvenTestsRecord> {
         defects.push(format!(
             "summary claims {} Actually-Proven entr{}, entries carry {}",
             report.summary.actually_proven,
-            if report.summary.actually_proven == 1 { "y" } else { "ies" },
+            if report.summary.actually_proven == 1 {
+                "y"
+            } else {
+                "ies"
+            },
             counted_actually_proven
         ));
     }
