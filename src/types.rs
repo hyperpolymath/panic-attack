@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// Supported programming languages
@@ -100,10 +100,14 @@ impl Language {
     /// Infer the language from the final, case-sensitive extension without reading
     /// the file. Missing or unrecognised extensions yield `Unknown`.
     pub fn detect(path: &str) -> Self {
-        let ext = std::path::Path::new(path)
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        Self::detect_path(Path::new(path))
+    }
+
+    /// Infer the language from the final, case-sensitive extension, even when
+    /// other path components are not UTF-8. Missing, non-UTF-8, or unrecognised
+    /// extensions yield `Unknown`.
+    pub fn detect_path(path: &Path) -> Self {
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         match ext {
             // Original languages

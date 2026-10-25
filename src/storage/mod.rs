@@ -19,6 +19,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -822,12 +823,29 @@ pub fn write_campaign_hexad(hexad: &PanicAttackHexad, base_dir: &Path) -> Result
     Ok(path)
 }
 
+/// Per-file hexad read limit in bytes. Defaults to 64 MiB so aggregate
+/// reports with input ledgers larger than 16 MiB remain supported. Set a
+/// positive integer below `u64::MAX` to override; invalid values use the default.
+/// Oversized files are skipped by all `load_*_hexads` readers.
+pub const HEXAD_FILE_READ_LIMIT_ENV: &str = "PANIC_ATTACK_HEXAD_FILE_READ_LIMIT";
+const DEFAULT_HEXAD_FILE_READ_LIMIT: u64 = 64 * 1024 * 1024;
+
 /// Load every JSON hexad file from a directory.
 ///
-/// Files that fail to parse are silently skipped — this is a "best
-/// effort" reader used by status/query subcommands, not a validation
-/// pass. Returns hexads in filesystem-order (the caller sorts as needed).
+/// Files that fail to parse or exceed the configured size limit are silently
+/// skipped — this is a "best effort" reader used by status/query subcommands,
+/// not a validation pass. Returns hexads in filesystem-order (the caller sorts
+/// as needed).
 fn load_hexad_dir(dir: &Path) -> Result<Vec<PanicAttackHexad>> {
+    let limit = std::env::var(HEXAD_FILE_READ_LIMIT_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|&value| value > 0 && value < u64::MAX)
+        .unwrap_or(DEFAULT_HEXAD_FILE_READ_LIMIT);
+    load_hexad_dir_with_limit(dir, limit)
+}
+
+fn load_hexad_dir_with_limit(dir: &Path, limit: u64) -> Result<Vec<PanicAttackHexad>> {
     if !dir.exists() {
         return Ok(Vec::new());
     }
@@ -837,10 +855,22 @@ fn load_hexad_dir(dir: &Path) -> Result<Vec<PanicAttackHexad>> {
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        // Aggregate reports can include large input ledgers; read the whole document.
-        let Ok(content) = fs::read_to_string(&path) else {
+        let Ok(file) = fs::File::open(&path) else {
             continue;
         };
+        let Ok(metadata) = file.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() || metadata.len() > limit {
+            continue;
+        }
+        // Bound the read as well, in case the file grows after the metadata check.
+        let mut content = String::new();
+        if file.take(limit + 1).read_to_string(&mut content).is_err()
+            || content.len() as u64 > limit
+        {
+            continue;
+        }
         if let Ok(hexad) = serde_json::from_str::<PanicAttackHexad>(&content) {
             hexads.push(hexad);
         }
@@ -1389,6 +1419,50 @@ mod tests {
         assert_eq!(
             loaded[0].document["results"][0]["report"]["coverage"]["inputs"],
             inputs
+        );
+    }
+
+    #[test]
+    fn load_hexad_dir_enforces_configured_limit_without_truncating_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let hexad = build_assemblyline_hexad(&sample_assemblyline("demo", vec![])).unwrap();
+        let content = serde_json::to_vec(&hexad).unwrap();
+        fs::write(dir.path().join("valid.json"), &content).unwrap();
+        fs::write(dir.path().join("corrupt.json"), b"not json").unwrap();
+        let limit = content.len() as u64;
+        assert_eq!(
+            load_hexad_dir_with_limit(dir.path(), limit).unwrap().len(),
+            1
+        );
+        assert!(load_hexad_dir_with_limit(dir.path(), limit - 1)
+            .unwrap()
+            .is_empty());
+
+        // Whitespace is valid JSON padding: exceeding the limit must reject the
+        // entire file even when the prefix is a complete, valid hexad.
+        let mut padded = content;
+        padded.push(b' ');
+        fs::write(dir.path().join("valid.json"), padded).unwrap();
+        assert!(load_hexad_dir_with_limit(dir.path(), limit)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            load_hexad_dir_with_limit(dir.path(), limit + 1)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn load_hexad_dir_skips_oversized_sparse_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = fs::File::create(dir.path().join("oversized.json")).unwrap();
+        file.set_len(DEFAULT_HEXAD_FILE_READ_LIMIT * 16).unwrap();
+        assert!(
+            load_hexad_dir_with_limit(dir.path(), DEFAULT_HEXAD_FILE_READ_LIMIT)
+                .unwrap()
+                .is_empty()
         );
     }
 

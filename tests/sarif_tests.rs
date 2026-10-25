@@ -204,7 +204,7 @@ fn test_sarif_from_real_analysis() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn coverage_paths_preserve_relative_bytes_in_sarif() {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -224,6 +224,7 @@ fn coverage_paths_preserve_relative_bytes_in_sarif() {
     }
     std::fs::write(root.join("clean.php"), "<?php echo 'ok';").unwrap();
     let report = assail::analyze(&root).unwrap();
+    assert_eq!(report.coverage.analyzed_files, 3);
     let mut coverage =
         sarif::to_sarif(&report).unwrap().runs.remove(0).properties["coverage"].clone();
     let inputs = coverage["inputs"].as_array().unwrap();
