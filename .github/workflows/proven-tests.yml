@@ -73,13 +73,14 @@ jobs:
       # `result: passed` field written by a job that never ran the tests is
       # exactly the dishonesty this framework exists to remove.
       - name: Run the suite
-        run: cargo test --locked --no-fail-fast
+        run: bash scripts/ci/annotate.sh "proven:suite" -- cargo test --locked --no-fail-fast
 
       - name: Inventory the tests that exist
         run: bash scripts/proven/inventory.sh /tmp/inventory.json
 
       - name: Derive the run report (cells must select real tests)
         run: |
+          bash scripts/ci/annotate.sh "proven:ledger" -- \
           python3 scripts/proven/verify-ledger.py \
             --inventory /tmp/inventory.json \
             --ledger proven/ledger.json \
@@ -94,6 +95,7 @@ jobs:
       - name: Fold the report through aggregate --fail-on-defect
         run: |
           set -euo pipefail
+          bash scripts/ci/annotate.sh "proven:aggregate" -- \
           ./target/release/panic-attack aggregate \
             --proven-tests /tmp/proven-report.json \
             --proven-tests-root . \

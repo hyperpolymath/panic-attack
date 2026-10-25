@@ -850,7 +850,8 @@ impl Analyzer {
         let (files, _) = super::coverage::discover(dir)?;
         let mut counts = std::collections::HashMap::new();
         for path in files {
-            *counts.entry(Language::detect_path(&path)).or_insert(0usize) += 1;
+            let language = Language::detect_path(&path);
+            *counts.entry(language).or_insert(0usize) += 1;
         }
         Ok(counts
             .into_iter()

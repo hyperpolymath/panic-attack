@@ -78,6 +78,10 @@ if [ "$status" -ne 0 ]; then
       print "::error::" msg
       next
     }
+    # Python and shell failures: the exception line is the message.
+    /^[A-Za-z_][A-Za-z0-9_.]*(Error|Exception):/ { print "::error::" $0; next }
+    /^Traceback \(most recent call last\)/ { print "::error::" $0; next }
+
     # "... requires rustc 1.90" tells you what to raise the MSRV to, or which
     # dependency to pin back. It is the whole answer and it is on its own line.
     match($0, /requires rustc [0-9]/) {
