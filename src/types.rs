@@ -99,11 +99,23 @@ pub enum Language {
 impl Language {
     /// Infer the language from the final, case-sensitive extension without reading
     /// the file. Missing or unrecognised extensions yield `Unknown`.
+    ///
+    /// Prefer [`Language::detect_path`] when a `Path` is already in hand: this
+    /// convenience form round-trips the path through a `&str`, which loses
+    /// non-UTF-8 components.
     pub fn detect(path: &str) -> Self {
-        let ext = std::path::Path::new(path)
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        Self::detect_path(std::path::Path::new(path))
+    }
+
+    /// Infer the language from a path's final, case-sensitive extension.
+    ///
+    /// Only the extension is consulted, and an extension is ASCII in every
+    /// language this tool knows. A stem with non-UTF-8 bytes — legal on Linux
+    /// filesystems, illegal on APFS — therefore cannot turn a known `.php` file
+    /// into `Language::Unknown`, which would silently exclude it from analysis
+    /// and hide the exclusion behind a wrong "unsupported" reason.
+    pub fn detect_path(path: &std::path::Path) -> Self {
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         match ext {
             // Original languages
@@ -1120,5 +1132,33 @@ mod rule_id_tests {
         ];
         let actual: Vec<&str> = WeakPointCategory::ALL.iter().map(|c| c.rule_id()).collect();
         assert_eq!(actual, expected);
+    }
+}
+
+#[cfg(test)]
+mod language_detect_tests {
+    use super::Language;
+
+    #[test]
+    fn detect_reads_the_final_extension_case_sensitively() {
+        assert_eq!(Language::detect("src/main.rs"), Language::Rust);
+        assert_eq!(Language::detect("a.PHP"), Language::Unknown);
+        assert_eq!(Language::detect("Makefile"), Language::Unknown);
+        assert_eq!(
+            Language::detect_path(std::path::Path::new("x/spec.thy")),
+            Language::Isabelle
+        );
+    }
+
+    /// A stem may hold arbitrary bytes on a byte-transparent filesystem. The
+    /// extension is ASCII, and it is the only thing detection consults, so the
+    /// language must still be found.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn detect_path_ignores_non_utf8_stems() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::path::Path::new(std::ffi::OsStr::from_bytes(b"invalid-\xff.php"));
+        assert!(path.to_str().is_none());
+        assert_eq!(Language::detect_path(path), Language::Php);
     }
 }

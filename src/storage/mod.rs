@@ -19,6 +19,7 @@ use anyhow::{anyhow, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -827,6 +828,15 @@ pub fn write_campaign_hexad(hexad: &PanicAttackHexad, base_dir: &Path) -> Result
 /// Files that fail to parse are silently skipped — this is a "best
 /// effort" reader used by status/query subcommands, not a validation
 /// pass. Returns hexads in filesystem-order (the caller sorts as needed).
+/// Ceiling on a single hexad document read from disk.
+///
+/// Aggregate reports legitimately carry large input ledgers, so this is far
+/// above any realistic ledger; it exists because `fs::read_to_string` sizes its
+/// allocation from the file itself, which lets one malformed or hostile file in
+/// the selected VeriSimDB directory cost memory proportional to its size before
+/// parsing has a chance to reject it.
+pub const HEXAD_FILE_READ_LIMIT: u64 = 64 * 1024 * 1024;
+
 fn load_hexad_dir(dir: &Path) -> Result<Vec<PanicAttackHexad>> {
     if !dir.exists() {
         return Ok(Vec::new());
@@ -837,10 +847,40 @@ fn load_hexad_dir(dir: &Path) -> Result<Vec<PanicAttackHexad>> {
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        // Aggregate reports can include large input ledgers; read the whole document.
-        let Ok(content) = fs::read_to_string(&path) else {
+        // Refuse from metadata before opening: the point is to never allocate
+        // the oversized buffer at all.
+        if let Ok(meta) = entry.metadata() {
+            if meta.len() > HEXAD_FILE_READ_LIMIT {
+                eprintln!(
+                    "warning: skipping {} ({} bytes, over the {}-byte hexad limit)",
+                    path.display(),
+                    meta.len(),
+                    HEXAD_FILE_READ_LIMIT
+                );
+                continue;
+            }
+        }
+        // `take(+1)` so a file that grew after the metadata check is still
+        // detected as oversized instead of being silently half-read.
+        let Ok(file) = fs::File::open(&path) else {
             continue;
         };
+        let mut content = String::new();
+        if file
+            .take(HEXAD_FILE_READ_LIMIT + 1)
+            .read_to_string(&mut content)
+            .is_err()
+        {
+            continue;
+        }
+        if content.len() as u64 > HEXAD_FILE_READ_LIMIT {
+            eprintln!(
+                "warning: skipping {} (over the {}-byte hexad limit)",
+                path.display(),
+                HEXAD_FILE_READ_LIMIT
+            );
+            continue;
+        }
         if let Ok(hexad) = serde_json::from_str::<PanicAttackHexad>(&content) {
             hexads.push(hexad);
         }
@@ -1023,7 +1063,7 @@ fn hexad_to_octad_request(hexad: &PanicAttackHexad) -> serde_json::Value {
 
 /// Push a hexad to the verisim-api directly via REST.
 ///
-/// Endpoint: POST http://{verisimdb_url}/octads
+/// Endpoint: `POST http://{verisimdb_url}/octads`
 ///
 /// Requires the `http` feature flag: `cargo build --features http`
 #[cfg(feature = "http")]
@@ -1052,7 +1092,7 @@ pub fn push_hexad_http(hexad: &PanicAttackHexad, gateway_url: &str) -> Result<St
 
 /// Push a hexad via HTTP, falling back to filesystem if the API is unavailable.
 ///
-/// Uses VERISIMDB_URL env var (default: http://localhost:8080).
+/// Uses VERISIMDB_URL env var (default: `http://localhost:8080`).
 /// Checks API health (cached for 30s) before attempting HTTP push.
 /// Retries with exponential backoff (3 attempts: 1s, 2s, 4s) before falling back.
 #[cfg(feature = "http")]

@@ -343,7 +343,7 @@ impl Analyzer {
         }
 
         let language = if target.is_file() {
-            Language::detect(target.to_str().unwrap_or(""))
+            Language::detect_path(target)
         } else {
             Self::detect_directory_language(target)?
         };
@@ -498,7 +498,7 @@ impl Analyzer {
             let mut file_weak_points = Vec::new();
 
             // Dispatch to language-specific analyzer
-            let file_lang = Language::detect(file.to_str().unwrap_or(""));
+            let file_lang = Language::detect_path(file);
 
             // Record this file into the attestation accumulator (zero-cost when None)
             if let Some(ref mut acc) = accumulator {
@@ -851,7 +851,7 @@ impl Analyzer {
         let mut counts = std::collections::HashMap::new();
         for path in files {
             *counts
-                .entry(Language::detect(path.to_str().unwrap_or("")))
+                .entry(Language::detect_path(path))
                 .or_insert(0usize) += 1;
         }
         Ok(counts
@@ -5437,7 +5437,7 @@ impl Analyzer {
         // scanning .rs files for `use` lines produces false positives from
         // string literals in tests and analyzer patterns.
         for file in files {
-            let file_lang = Language::detect(file.to_str().unwrap_or(""));
+            let file_lang = Language::detect_path(file);
             let content = match read_bounded(file, SOURCE_FILE_READ_LIMIT) {
                 Some(c) => c,
                 None => continue,
