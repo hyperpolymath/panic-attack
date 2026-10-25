@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "suite": "panic-attack",
+  "framework": "proven-tests-and-benches",
+  "framework_pin": "eca682bcd419554f6779e72969902e6faef4fd9d",
+  "taxonomy": {
+    "categories": [
+      "UnitTest",
+      "PointToPoint",
+      "EndToEnd",
+      "BuildTest",
+      "ExecutionRuntime",
+      "ReflexiveTest",
+      "LifecycleTest",
+      "SmokeTest",
+      "PropertyBasedTest",
+      "MutationTest",
+      "FuzzTest",
+      "ContractInvariantTest",
+      "RegressionTest",
+      "ChaosResilienceTest",
+      "CompatibilityTest",
+      "ProofRegressionTest",
+      "TypeSafeTest"
+    ],
+    "aspects": [
+      "Dependability",
+      "Security",
+      "Usability",
+      "Interoperability",
+      "Safety",
+      "Performance",
+      "Functionality",
+      "Versability",
+      "Accessibility",
+      "Maintainability",
+      "Privacy",
+      "Observability",
+      "Reproducibility",
+      "Portability"
+    ]
+  },
+  "doctrine": [
+    "A cell is covered only when a test that actually ran selected it. Nothing",
+    "here declares coverage; scripts/proven/verify-ledger.py derives it from a",
+    "test inventory produced by `cargo test -- --list` in the same commit.",
+    "Tiers are the framework's three: Actually-Proven (a machine-checked proof",
+    "ladder exists), Provisionally-Proven (typed assertions, example/property",
+    "evidence, no proof object), Unproven (no type-safety warranty). This repo",
+    "has no proof-carrying Rust tests, so almost everything is",
+    "Provisionally-Proven and says so rather than borrowing a stronger word.",
+    "Absent cells are declared absent, with the command that would test them.",
+    "A declared absence is a to-do list, not a silencer."
+  ],
+  "entries": [
+    {
+      "category": "UnitTest",
+      "aspect": "Functionality",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "analyzer_tests",
+        "types_tests",
+        "pattern_tests"
+      ],
+      "evidence": "Per-language detection, WeakPoint construction and pattern tables."
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Security",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "analyzer_tests",
+        "pattern_tests"
+      ],
+      "evidence": "Injection, deserialisation and crypto-misuse patterns (PA003, PA005, PA022)."
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Dependability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "regression_tests",
+        "readiness"
+      ],
+      "evidence": "Regression fixtures plus the CRG readiness grades D/C/B."
+    },
+    {
+      "category": "PropertyBasedTest",
+      "aspect": "Functionality",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "property_tests"
+      ],
+      "evidence": "proptest invariants over report construction and canonical JSON."
+    },
+    {
+      "category": "PropertyBasedTest",
+      "aspect": "Dependability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "property_tests"
+      ],
+      "evidence": "Invariants that must hold for every generated input, not one fixture."
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Interoperability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "seam_contract_tests"
+      ],
+      "evidence": "Seam contracts: the JSON/SARIF/PanLL surfaces other tools consume."
+    },
+    {
+      "category": "ContractInvariantTest",
+      "aspect": "Interoperability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "seam_contract_tests",
+        "panll_tests"
+      ],
+      "evidence": "Schema versions, event-chain shape and CLI contract stability."
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Observability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "panll_tests",
+        "report_tests"
+      ],
+      "evidence": "PanLL event export and report rendering, including SARIF runs."
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Reproducibility",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "report_tests"
+      ],
+      "evidence": "I-JSON/JCS artefacts: equal data yields equal bytes, one trailing LF."
+    },
+    {
+      "category": "RegressionTest",
+      "aspect": "Dependability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "regression_tests",
+        "unbounded_corpus"
+      ],
+      "evidence": "Named defects stay fixed; corpus scans stay bounded."
+    },
+    {
+      "category": "EndToEnd",
+      "aspect": "Functionality",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "e2e_tests",
+        "integration"
+      ],
+      "evidence": "Scan -> detect -> report, exercised through the built binary."
+    },
+    {
+      "category": "SmokeTest",
+      "aspect": "Functionality",
+      "tier": "Unproven",
+      "bins": [
+        "integration"
+      ],
+      "evidence": "Process-level smoke: the CLI starts and produces parseable output."
+    },
+    {
+      "category": "CompatibilityTest",
+      "aspect": "Portability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "coverage_php_tests",
+        "analyzer_tests"
+      ],
+      "evidence": "Multi-language inputs and the PHP adapter across templates, traits and namespaces."
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Privacy",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "coverage_php_tests"
+      ],
+      "evidence": "unsafe-deserialisation checks: unserialize with and without object options."
+    },
+    {
+      "category": "ProofRegressionTest",
+      "aspect": "Dependability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "aggregate_proof_fixture"
+      ],
+      "evidence": "Folds a real Idris2 proof artifact and asserts the Closed verdict; the test is example-based even though the artifact is proof-carrying."
+    },
+    {
+      "category": "ProofRegressionTest",
+      "aspect": "Reproducibility",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "panic_attack"
+      ],
+      "pattern": "(proven_tests|aggregate)::tests::",
+      "evidence": "proven-tests run-report ingestion: hashing, tier mapping and defect detection (library unit tests)."
+    },
+    {
+      "category": "LifecycleTest",
+      "aspect": "Dependability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "panic_attack"
+      ],
+      "pattern": "storage::tests::",
+      "evidence": "Hexad write/load and campaign lifecycle state transitions."
+    },
+    {
+      "category": "ChaosResilienceTest",
+      "aspect": "Dependability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "panic_attack"
+      ],
+      "pattern": "(ambush|amuck|abduct)::",
+      "evidence": "Ambient stressors, mutation combinations and isolation/time-skew, at unit level."
+    },
+    {
+      "category": "TypeSafeTest",
+      "aspect": "Safety",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "panic_attack"
+      ],
+      "pattern": "kanren::",
+      "evidence": "miniKanren unification, taint and cross-language reasoning."
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Usability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "panic_attack"
+      ],
+      "pattern": "(i18n|a2ml)::",
+      "evidence": "Ten-language message catalogue and A2ML manifest lookup."
+    },
+    {
+      "category": "BuildTest",
+      "aspect": "Reproducibility",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "readiness"
+      ],
+      "evidence": "The built artefact exists and runs: readiness grades D/C/B exercise the release binary end to end, so a build that does not build cannot pass."
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Maintainability",
+      "tier": "Provisionally-Proven",
+      "bins": [
+        "aspect_tests"
+      ],
+      "evidence": "Aspect/report structure tests that keep the public shape reviewable."
+    }
+  ],
+  "declared_absent": [
+    {
+      "category": "MutationTest",
+      "aspect": "Dependability",
+      "reason": "No cargo-mutants campaign in CI. This is exactly the PA025 MutationGap finding the tool reports about other repositories, and it applies here until mutation testing runs nightly.",
+      "would_test": "cargo mutants --in-place --timeout 120 (nightly, schedule-only)"
+    },
+    {
+      "category": "FuzzTest",
+      "aspect": "Security",
+      "reason": "proptest is property-based, not coverage-guided fuzzing; no fuzz target exists.",
+      "would_test": "cargo fuzz run parse_report (nightly, schedule-only)"
+    },
+    {
+      "category": "Performance",
+      "aspect": "Performance",
+      "reason": "benches/scan_bench.rs exists as a Criterion bench but is not a graded test and is not gated on regressions.",
+      "would_test": "criterion bench + baseline diff (see proven-tests-and-benches scripts/check-bench-regression.sh)"
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Accessibility",
+      "reason": "The CLI is the only default surface; the TUI/GUI are opt-in features with no accessibility assertions.",
+      "would_test": "TUI snapshot tests with terminal accessibility assertions"
+    },
+    {
+      "category": "UnitTest",
+      "aspect": "Versability",
+      "reason": "The taxonomy aspect is not yet defined normatively in the estate canon, so any claim here would be unanchored.",
+      "would_test": "wait for the canon definition, then map"
+    }
+  ]
+}
