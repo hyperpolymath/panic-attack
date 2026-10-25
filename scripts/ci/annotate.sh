@@ -78,6 +78,13 @@ if [ "$status" -ne 0 ]; then
       print "::error::" msg
       next
     }
+    # "... requires rustc 1.90" tells you what to raise the MSRV to, or which
+    # dependency to pin back. It is the whole answer and it is on its own line.
+    match($0, /requires rustc [0-9]/) {
+      msg = $0
+      sub(/^[[:space:]]+/, "", msg)
+      print "::error::" msg
+    }
     pending && /^[[:space:]]*--> / {
       pos = $0
       sub(/^[[:space:]]*--> /, "", pos)
