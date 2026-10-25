@@ -52,6 +52,36 @@ fn malformed_php_and_unsupported_inputs_are_visible() {
         .any(|f| f.description.starts_with("PHP-EMPTY-CALLABLE:")));
 }
 
+#[cfg(unix)]
+#[test]
+fn non_utf8_input_paths_serialize_without_losing_index_lookups() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir
+        .path()
+        .join(std::ffi::OsString::from_vec(b"invalid-\xff.php".to_vec()));
+    let content = b"<?php echo 'ok';";
+    std::fs::write(&path, content).unwrap();
+    let mut report = assail::analyze(dir.path()).unwrap();
+    assert_eq!(report.coverage.inputs[0].path, path);
+    report
+        .coverage
+        .mark(&path, "unsupported", None, Some(content));
+    assert_eq!(
+        report.coverage.inputs[0].content_blake3.as_deref(),
+        Some(blake3::hash(content).to_hex().as_str())
+    );
+
+    let json = panic_attack::json::to_canonical_string(&report).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        value["coverage"]["inputs"][0]["path"],
+        path.to_string_lossy().as_ref()
+    );
+    assert_eq!(report.coverage.inputs[0].path, path);
+}
+
 #[test]
 fn headless_output_is_json_and_strict_gate_preserves_the_report() {
     let dir = tempfile::tempdir().unwrap();

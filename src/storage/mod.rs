@@ -771,11 +771,6 @@ fn write_crosslang_hexads(hexads: &[PanicAttackHexad], base_dir: &Path) -> Resul
 // Issue #33 S2 — campaign-state hexad write/load helpers
 // ---------------------------------------------------------------------------
 
-/// Maximum size (in bytes) of a single hexad JSON file we'll load from
-/// disk. Hexads are small documents; anything past 16 MiB is corrupted
-/// or hostile.
-const HEXAD_FILE_READ_LIMIT: u64 = 16 * 1024 * 1024;
-
 /// Build a campaign-state hexad for one lifecycle event (issue #33 S2).
 ///
 /// The id is derived from the current millisecond timestamp, so calls in the
@@ -833,8 +828,6 @@ pub fn write_campaign_hexad(hexad: &PanicAttackHexad, base_dir: &Path) -> Result
 /// effort" reader used by status/query subcommands, not a validation
 /// pass. Returns hexads in filesystem-order (the caller sorts as needed).
 fn load_hexad_dir(dir: &Path) -> Result<Vec<PanicAttackHexad>> {
-    use std::io::Read;
-
     if !dir.exists() {
         return Ok(Vec::new());
     }
@@ -844,17 +837,10 @@ fn load_hexad_dir(dir: &Path) -> Result<Vec<PanicAttackHexad>> {
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        let mut content = String::new();
-        let Ok(file) = fs::File::open(&path) else {
+        // Aggregate reports can include large input ledgers; read the whole document.
+        let Ok(content) = fs::read_to_string(&path) else {
             continue;
         };
-        if file
-            .take(HEXAD_FILE_READ_LIMIT)
-            .read_to_string(&mut content)
-            .is_err()
-        {
-            continue;
-        }
         if let Ok(hexad) = serde_json::from_str::<PanicAttackHexad>(&content) {
             hexads.push(hexad);
         }
@@ -1380,6 +1366,30 @@ mod tests {
         );
         assert_eq!("disk".parse::<StorageMode>(), Ok(StorageMode::Filesystem));
         assert_eq!("bogus".parse::<StorageMode>(), Err(()));
+    }
+
+    #[test]
+    fn load_aggregate_hexads_preserves_large_input_ledgers() {
+        let dir = tempfile::tempdir().unwrap();
+        let hexad_dir = dir.path().join("hexads");
+        fs::create_dir_all(&hexad_dir).unwrap();
+        let report = sample_assemblyline("demo", vec![]);
+        let mut hexad = build_assemblyline_hexad(&report).unwrap();
+        let inputs = serde_json::json!([
+            { "path": "first.php", "reason": "x".repeat(16 * 1024 * 1024) },
+            { "path": "last.php", "status": "analyzed" }
+        ]);
+        hexad.document["results"][0]["report"]["coverage"]["inputs"] = inputs.clone();
+        let path = hexad_dir.join("large.json");
+        fs::write(&path, serde_json::to_vec(&hexad).unwrap()).unwrap();
+        assert!(fs::metadata(&path).unwrap().len() > 16 * 1024 * 1024);
+
+        let loaded = load_aggregate_hexads(dir.path()).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(
+            loaded[0].document["results"][0]["report"]["coverage"]["inputs"],
+            inputs
+        );
     }
 
     // ----- Issue #33 S1: per-finding hexad tests -----------------------

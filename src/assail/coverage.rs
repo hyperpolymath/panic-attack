@@ -38,6 +38,7 @@ const SKIP_DIRS: &[&str] = &[
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputCoverage {
+    #[serde(serialize_with = "serialize_path_lossy")]
     pub path: PathBuf,
     pub kind: String,
     pub status: String,
@@ -45,6 +46,13 @@ pub struct InputCoverage {
     pub analysis: Option<String>,
     pub reason: Option<String>,
     pub content_blake3: Option<String>,
+}
+
+fn serialize_path_lossy<S: serde::Serializer>(
+    path: &Path,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&path.to_string_lossy())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
