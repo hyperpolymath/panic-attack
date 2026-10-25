@@ -38,7 +38,7 @@ const SKIP_DIRS: &[&str] = &[
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputCoverage {
-    #[serde(serialize_with = "serialize_path_lossy")]
+    #[serde(flatten, with = "coverage_path")]
     pub path: PathBuf,
     pub kind: String,
     pub status: String,
@@ -48,11 +48,41 @@ pub struct InputCoverage {
     pub content_blake3: Option<String>,
 }
 
-fn serialize_path_lossy<S: serde::Serializer>(
-    path: &Path,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&path.to_string_lossy())
+// Keep the readable path string compatible with existing reports. On Unix,
+// non-UTF-8 paths also carry their exact bytes as hex for lossless round trips.
+mod coverage_path {
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+    use std::path::{Path, PathBuf};
+
+    pub fn serialize<S: Serializer>(path: &Path, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("path", &path.to_string_lossy())?;
+        #[cfg(unix)]
+        if path.to_str().is_none() {
+            use std::os::unix::ffi::OsStrExt;
+            map.serialize_entry("path_bytes_hex", &hex::encode(path.as_os_str().as_bytes()))?;
+        }
+        map.end()
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<PathBuf, D::Error> {
+        #[derive(Deserialize)]
+        struct StoredPath {
+            path: PathBuf,
+            #[cfg(unix)]
+            #[serde(default)]
+            path_bytes_hex: Option<String>,
+        }
+
+        let stored = StoredPath::deserialize(deserializer)?;
+        #[cfg(unix)]
+        if let Some(encoded) = stored.path_bytes_hex {
+            use std::os::unix::ffi::OsStringExt;
+            let bytes = hex::decode(encoded).map_err(serde::de::Error::custom)?;
+            return Ok(std::ffi::OsString::from_vec(bytes).into());
+        }
+        Ok(stored.path)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -82,6 +82,75 @@ fn non_utf8_input_paths_serialize_without_losing_index_lookups() {
     assert_eq!(report.coverage.inputs[0].path, path);
 }
 
+#[cfg(unix)]
+#[test]
+fn colliding_lossy_paths_round_trip_with_distinct_bytes() {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    let dir = tempfile::tempdir().unwrap();
+    let paths: Vec<_> = [
+        b"invalid-\xfe.php".as_slice(),
+        b"invalid-\xff.php".as_slice(),
+        "invalid-\u{fffd}.php".as_bytes(),
+    ]
+    .into_iter()
+    .map(|name| dir.path().join(std::ffi::OsString::from_vec(name.to_vec())))
+    .collect();
+    for path in &paths {
+        std::fs::write(path, "<?php echo 'ok';").unwrap();
+        assert_eq!(path.to_string_lossy(), paths[0].to_string_lossy());
+    }
+
+    let report = assail::analyze(dir.path()).unwrap();
+    let json = panic_attack::json::to_canonical_string(&report).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    for input in value["coverage"]["inputs"].as_array().unwrap() {
+        assert_eq!(input["path"], paths[0].to_string_lossy().as_ref());
+    }
+    let mut restored: panic_attack::types::AssailReport = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored.coverage.inputs.len(), 3);
+    for (original, decoded) in report.coverage.inputs.iter().zip(&restored.coverage.inputs) {
+        assert_eq!(original.path, decoded.path);
+    }
+    // Rebuilding the index must still allow each colliding display path to be
+    // marked independently after loading the saved report.
+    restored.coverage.finish();
+    for (i, path) in paths.iter().enumerate() {
+        restored
+            .coverage
+            .mark(path, "unsupported", Some(i.to_string()), None);
+        let input = restored
+            .coverage
+            .inputs
+            .iter()
+            .find(|input| &input.path == path)
+            .unwrap();
+        assert_eq!(input.reason, Some(i.to_string()));
+    }
+
+    let inputs = value["coverage"]["inputs"].as_array().unwrap();
+    for path in &paths {
+        let input = inputs.iter().find(|input| {
+            input["path_bytes_hex"].as_str()
+                == Some(hex::encode(path.as_os_str().as_bytes()).as_str())
+        });
+        if path.to_str().is_some() {
+            assert!(input.is_none());
+            assert_eq!(
+                inputs
+                    .iter()
+                    .filter(|input| input.get("path_bytes_hex").is_none())
+                    .count(),
+                1
+            );
+        } else {
+            let mut invalid = input.unwrap().clone();
+            invalid["path_bytes_hex"] = serde_json::json!("not hex");
+            assert!(serde_json::from_value::<assail::coverage::InputCoverage>(invalid).is_err());
+        }
+    }
+}
+
 #[test]
 fn headless_output_is_json_and_strict_gate_preserves_the_report() {
     let dir = tempfile::tempdir().unwrap();

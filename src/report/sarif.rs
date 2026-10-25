@@ -182,9 +182,9 @@ fn parse_location(loc: &str) -> (&str, Option<u32>) {
 /// of a file target) when that prefix matches; other paths are retained.
 ///
 /// # Errors
-/// Propagates errors serialising coverage to a JSON value, including non-UTF-8 paths.
+/// Propagates errors serialising coverage to a JSON value.
 pub fn to_sarif(report: &AssailReport) -> Result<SarifLog> {
-    let mut coverage = serde_json::to_value(&report.coverage)?;
+    let mut coverage = report.coverage.clone();
     let root = if report.program_path.is_dir() {
         report.program_path.as_path()
     } else {
@@ -193,19 +193,14 @@ pub fn to_sarif(report: &AssailReport) -> Result<SarifLog> {
             .parent()
             .unwrap_or(std::path::Path::new("."))
     };
-    if let Some(inputs) = coverage["inputs"].as_array_mut() {
-        for input in inputs {
-            if let Some(path) = input["path"].as_str() {
-                let path = std::path::Path::new(path);
-                input["path"] = serde_json::Value::String(
-                    path.strip_prefix(root)
-                        .unwrap_or(path)
-                        .to_string_lossy()
-                        .into_owned(),
-                );
-            }
-        }
+    for input in &mut coverage.inputs {
+        input.path = input
+            .path
+            .strip_prefix(root)
+            .unwrap_or(&input.path)
+            .to_path_buf();
     }
+    let coverage = serde_json::to_value(&coverage)?;
 
     // Collect unique rules
     let mut seen_categories = std::collections::HashSet::new();
