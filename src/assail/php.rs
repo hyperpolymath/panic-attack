@@ -4,6 +4,7 @@
 use crate::types::{Severity, WeakPoint, WeakPointCategory};
 use tree_sitter::Node;
 
+/// Build a medium-severity finding at `path` and the node's one-based start line.
 fn finding(
     path: &str,
     node: Node<'_>,
@@ -23,6 +24,8 @@ fn finding(
     }
 }
 
+/// Check a subtree for a function call whose source name matches `name`, ignoring
+/// ASCII case and leading backslashes. `text` must be the tree's source text.
 fn has_call(node: Node<'_>, text: &str, name: &str) -> bool {
     let mut pending = vec![node];
     while let Some(n) = pending.pop() {
@@ -39,6 +42,16 @@ fn has_call(node: Node<'_>, text: &str, name: &str) -> bool {
     false
 }
 
+/// Parse PHP/template source and return local syntax findings, possibly empty.
+/// Checks cover empty or comment-only named functions/methods except constructors,
+/// `blake3` callables containing a `sodium_crypto_generichash` call, and
+/// `unserialize` calls with exactly one non-comment argument. These are
+/// heuristics without name resolution or taint analysis. `path` labels finding
+/// locations with one-based lines; it is not read from disk.
+///
+/// # Errors
+/// Propagates parser language initialisation errors and returns an error if no
+/// tree is produced or the tree contains syntax errors, rather than findings.
 pub fn analyze(text: &str, path: &str) -> anyhow::Result<Vec<WeakPoint>> {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&tree_sitter_php::LANGUAGE_PHP.into())?;

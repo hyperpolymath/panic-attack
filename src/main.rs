@@ -1372,6 +1372,8 @@ fn main() -> Result<()> {
 /// Parse process arguments and execute the selected command, including its output
 /// and requested persistence. Default manifest settings are used if loading fails.
 /// Argument parsing exits the process for help or invalid CLI syntax.
+/// For assail with `--fail-on-incomplete`, exits with status 2 when coverage is
+/// not `complete`, after report output and any requested attestation are written.
 ///
 /// # Errors
 /// Returns command validation errors and propagates I/O, serialisation and

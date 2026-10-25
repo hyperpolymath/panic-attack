@@ -60,6 +60,7 @@ pub struct AnalysisCoverage {
 }
 
 impl Default for AnalysisCoverage {
+    /// Represent unrecorded coverage with unknown status and an empty inventory.
     fn default() -> Self {
         Self {
             status: "unknown".into(),
@@ -74,9 +75,15 @@ impl Default for AnalysisCoverage {
 }
 
 impl AnalysisCoverage {
+    /// Return whether coverage is anything other than `complete`, including
+    /// unknown coverage and scans with no applicable input.
     pub fn incomplete(&self) -> bool {
         self.status != "complete"
     }
+    /// Replace an indexed input's status and reason, ignoring unindexed paths.
+    /// When supplied, `bytes` replaces its BLAKE3 digest; `None` keeps the old
+    /// digest. Counts and overall status are updated only by [`Self::finish`].
+    /// After deserialisation, call `finish` first to rebuild the path index.
     pub fn mark(
         &mut self,
         path: &Path,
@@ -96,6 +103,10 @@ impl AnalysisCoverage {
             }
         }
     }
+    /// Sort inputs by path, rebuild their index and recompute counts and status.
+    /// Non-excluded files are candidates; any input neither analysed nor excluded
+    /// is a gap. With analysed inputs, gaps yield `partial`, otherwise `complete`.
+    /// Without analysed inputs, gaps yield `failed`, otherwise `no_applicable_input`.
     pub fn finish(&mut self) {
         self.inputs.sort_by(|a, b| a.path.cmp(&b.path));
         self.index = self
@@ -133,6 +144,8 @@ impl AnalysisCoverage {
     }
 }
 
+/// Recognise selected source/config extensions case-insensitively and build-file
+/// names case-sensitively as candidates even when no language adapter matches.
 fn unsupported_candidate(path: &Path) -> bool {
     matches!(
         path.extension()
@@ -164,6 +177,16 @@ fn unsupported_candidate(path: &Path) -> bool {
     )
 }
 
+/// Inventory a file or directory tree and return sorted paths with known languages.
+/// Named build/vendor subdirectories are recorded without enumerating their
+/// contents; symlinks and other non-regular inputs are excluded. Selected unknown
+/// source/config formats are unsupported; other unknown formats are excluded.
+/// Returned candidates are still `pending`: use [`AnalysisCoverage::mark`] and
+/// [`AnalysisCoverage::finish`] after analysis to update the provisional coverage.
+///
+/// # Errors
+/// Returns root metadata errors and rejects a symlink root. Later traversal
+/// errors are recorded as `discovery_error` inputs while discovery continues.
 pub fn discover(root: &Path) -> anyhow::Result<(Vec<PathBuf>, AnalysisCoverage)> {
     let meta = std::fs::symlink_metadata(root)?;
     anyhow::ensure!(

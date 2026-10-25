@@ -373,6 +373,15 @@ impl Analyzer {
         self.analyze_inner(None)
     }
 
+    /// Analyse discovered source files and return findings, statistics and coverage.
+    /// UTF-8 decoding falls back to Windows-1252. Files larger than 16 MiB, read
+    /// or decoding failures, and PHP parser failures are skipped and remain
+    /// coverage gaps in a successful report.
+    /// If supplied, `accumulator` records candidate parent directories and files
+    /// that were read and decoded, including PHP files that subsequently fail parsing.
+    ///
+    /// # Errors
+    /// Propagates root metadata errors and symlink-root rejection from discovery.
     fn analyze_inner(
         &self,
         mut accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,
@@ -831,6 +840,12 @@ impl Analyzer {
         Ok(report)
     }
 
+    /// Choose the most common language among discovered source files, or `Unknown`
+    /// if none are found. Ties favour the lexicographically greatest debug name.
+    ///
+    /// # Errors
+    /// Propagates root metadata errors and symlink-root rejection from discovery;
+    /// later traversal errors are recorded there and do not prevent a result.
     fn detect_directory_language(dir: &Path) -> Result<Language> {
         let (files, _) = super::coverage::discover(dir)?;
         let mut counts = std::collections::HashMap::new();

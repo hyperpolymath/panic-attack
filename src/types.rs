@@ -97,6 +97,8 @@ pub enum Language {
 }
 
 impl Language {
+    /// Infer the language from the final, case-sensitive extension without reading
+    /// the file. Missing or unrecognised extensions yield `Unknown`.
     pub fn detect(path: &str) -> Self {
         let ext = std::path::Path::new(path)
             .extension()

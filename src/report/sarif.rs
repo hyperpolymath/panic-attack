@@ -177,7 +177,12 @@ fn parse_location(loc: &str) -> (&str, Option<u32>) {
     (loc, None)
 }
 
-/// Convert an AssailReport to SARIF JSON
+/// Convert findings to a SARIF 2.1.0 log with coverage in the run's properties.
+/// Coverage paths are made relative to the target directory (or the parent
+/// of a file target) when that prefix matches; other paths are retained.
+///
+/// # Errors
+/// Propagates errors serialising coverage to a JSON value, including non-UTF-8 paths.
 pub fn to_sarif(report: &AssailReport) -> Result<SarifLog> {
     let mut coverage = serde_json::to_value(&report.coverage)?;
     let root = if report.program_path.is_dir() {
