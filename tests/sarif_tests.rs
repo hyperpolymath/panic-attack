@@ -204,7 +204,7 @@ fn test_sarif_from_real_analysis() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn coverage_paths_preserve_relative_bytes_in_sarif() {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
