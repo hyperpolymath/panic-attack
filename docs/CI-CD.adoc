@@ -13,7 +13,7 @@ annotation, no check run**. Nothing in the GitHub UI said why, and the only
 diagnosis available was to read the estate's settings canon and compare it with
 our own workflow files.
 
-Three causes, all policy-level, none visible from the code:
+Four causes, all policy-level, none visible from the code:
 
 tag-pinned `uses:`, e.g. `actions/checkout@v7.0.1`:: The estate posture is
 `sha_pinning_required = true`. Under it a tag-pinned `uses:` is refused **at
@@ -21,17 +21,20 @@ startup** — the same opaque death. The control is worth having, so the fix is 
 pin properly: every `uses:` in this repository now names a 40-hex commit with a
 `# <version>` comment, and `ci-integrity.yml` refuses a regression.
 
-a `uses:` whose repository has been RENAMED:: `hyperpolymath/standards` is now
-`metadatastician/standards` (same `repo_id`; the API 301s). Allowlist patterns
-match the repository's **canonical** name, so `hyperpolymath/standards/...` is
-refused *and* the new spelling is refused too, because
-`rhodium-standard-repositories/actions-allowlist/allowed-actions.json` lists
-`hyperpolymath/*` and not `metadatastician/*`. Re-pointing the wrappers — the
-obvious first fix, which this repository tried — changed nothing. Six wrappers
-(`rust-ci`, `governance`, `hypatia-scan`, `secret-scanner`, `scorecard`,
-`mirror`) are queued behind a one-line canon change plus a settings apply, both
-of which need repository administration this repository does not have.
-See `docs/ci/PROMPT-standards-allowlist.md`.
+this repository's allowed-actions policy:: The remaining six — `rust-ci`,
+`governance`, `hypatia-scan`, `secret-scanner`, `scorecard`, `mirror` — call the
+estate's reusable workflows, and every run of them concludes `startup_failure`
+with zero jobs. The estate allowlist already covers `hyperpolymath/*`, and
+sibling repositories call the *same* reusable at the *same* pin successfully, so
+the refusal is scoped to this repository: `allowed_actions: selected` with
+`verified_allowed` passes GitHub-owned and marketplace-verified actions and
+refuses a non-verified cross-repository `uses:`. That is the exact pattern here —
+checkout, cache and `dtolnay/rust-toolchain` work; every estate call dies.
+`secret-scanner.yml` is the serious one: `main` requires the context
+**`scan / gitleaks`**, which can therefore never arrive, and no pull request can
+merge until it does. This needs repository admin (`allowed_actions: all`, the
+canon default, or `hyperpolymath/*` in `patterns_allowed`); the policy endpoints
+are 403 for an ordinary token. See `docs/ci/PROMPT-actions-policy.md`.
 
 a `uses:` pinned to a commit that no longer exists upstream:: The caller dies
 before its first job, exactly like the other two. Cheap to check, so it is.
@@ -91,9 +94,9 @@ than a broken one. Two of the three causes are now gated before they can bite
 | `rust-ci.yml`, `governance.yml`, `hypatia-scan.yml`, `secret-scanner.yml`,
   `scorecard.yml`, `mirror.yml`
 | The estate's richer reusable gates (audit, coverage upload, Hypatia SARIF,
-  governance, secret scanning). **Blocked at the time of writing** by the
-  renamed-upstream allowlist gap (see above, and
-  `docs/ci/PROMPT-standards-allowlist.md`), not by anything in this repository.
+  governance, secret scanning). **Blocked at the time of writing** by this
+  repository's Actions policy refusing cross-repository reusable workflows (see
+  above, and `docs/ci/PROMPT-actions-policy.md`), not by anything in the files.
 | per estate canon
 
 | `e2e.yml`, `codecov`, `cargo-audit`, `chapel-ci`, `dogfood-gate`,
@@ -128,10 +131,13 @@ vendored `.github/actions-allowlist.json`. No API, no admin: it lists exactly
 which `uses:` the estate policy does not cover.
 YAML parseability:: every workflow parses *and* declares a `jobs:` map. A file
 whose quoting swallowed the document parses to a scalar and never runs.
-Renamed upstreams:: `scripts/ci/triage-startup-failure.sh` resolves the
-canonical name of every repository named by a `uses:` and checks that every
-reusable pin still exists. Report-only on a pull request (the finding is an
-owner action, not a code change) and strict on `workflow_dispatch`.
+Startup-failure triage:: `scripts/ci/triage-startup-failure.sh` checks every
+`uses:`: 40-hex pin, canonical repository name after any rename, and that each
+reusable pin still exists. It also states the one cause no file can show — a
+repository-scoped allowed-actions policy refusing a cross-repository reference —
+and can print sibling repositories' run conclusions as the discriminator.
+Report-only on a pull request (the finding is an owner action, not a code
+change), strict on `workflow_dispatch`.
 
 Maintenance: after changing any `uses:`, run
 

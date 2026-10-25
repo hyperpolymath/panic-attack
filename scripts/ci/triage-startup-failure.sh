@@ -9,7 +9,8 @@
 # `referenced_workflows: []` even when the workflow's only job is `uses:` a
 # reusable workflow from another repository. Nothing in the API says why.
 #
-# There are four causes, and they are distinguishable from the files alone:
+# There are five causes, and they are distinguishable with the files plus a
+# read-only API call:
 #
 #   1. a `uses:` that is not a 40-hex commit, under `sha_pinning_required`;
 #   2. a `uses:` whose repository is NOT the one the workflow names — i.e. the
@@ -17,7 +18,21 @@
 #      *canonical* owner, not the spelling in the file;
 #   3. a reusable workflow pinned to a commit that no longer exists upstream;
 #   4. a workflow file that does not parse as a workflow (GitHub's parser is
-#      stricter than YAML: duplicate job keys, `on:` shapes, unknown keys).
+#      stricter than YAML: duplicate job keys, `on:` shapes, unknown keys);
+#   5. THIS REPOSITORY's allowed-actions policy refusing a non-verified
+#      cross-repository `uses:`. Under `allowed_actions: selected` with
+#      `verified_allowed`, GitHub-owned and marketplace-verified actions pass and
+#      a `uses: some-org/some-repo/...` does not — so checkout, cache and
+#      dtolnay/rust-toolchain work while every call into the estate's own
+#      reusable workflows dies at startup. The signature is exactly the one above
+#      (zero jobs, `referenced_workflows: []`), and the discriminator is that
+#      sibling repositories calling the SAME reusable at the SAME pin succeed.
+#      Only a repository admin can change it (GET /actions/permissions is 403 for
+#      an ordinary token), which is why this script reports rather than fixes.
+
+# Set TRIAGE_SIBLINGS to a space-separated list of repositories that use the same
+# reusable workflows, to have the script state the discriminator explicitly:
+#   TRIAGE_SIBLINGS="hyperpolymath/hypatia hyperpolymath/verisimdb"
 #
 # This script checks 1–3 against the live GitHub API (read-only, no admin
 # permission needed: public repository metadata is enough) and leaves 4 to
@@ -139,7 +154,10 @@ for ref in "${refs[@]}"; do
         continue
     fi
     if [ "$canon" != "$repo" ]; then
-        emit error "$repo is now $canon — allowlist patterns match the repository's canonical name, so a \`uses:\` written with the old owner is refused at startup (signature: \`startup_failure\` with \`referenced_workflows: []\`). Write \`$canon\` here, and only after the canonical owner is in \`patterns_allowed\`."
+        # A rename is reported, not condemned: what matters is whether the
+        # reference is permitted, and a rename only bites when the allowlist
+        # pattern matches the old owner and not the new one.
+        emit warning "$repo now resolves to $canon — a \`uses:\` keeps working across a rename as long as an allowlist pattern matches the canonical name; check \`patterns_allowed\` before assuming this is the cause"
         repo="$canon"
     fi
 
@@ -147,10 +165,37 @@ for ref in "${refs[@]}"; do
         .github/workflows/*)
             if ! ref_exists "$repo" "$at"; then
                 emit error "$ref: reusable workflow pinned to $at, which no longer exists in $repo — the caller dies before its first job"
+                continue
             fi
+            # The pin exists. If runs of the calling workflow still die at
+            # startup, the reference is being refused by this repository's
+            # allowed-actions policy — the one cause no file can show.
+            echo "  cross-repo reusable: $ref"
+            echo "    if the calling workflow reports startup_failure with referenced_workflows: [], this"
+            echo "    repository's allowed-actions policy is refusing it. Sibling repos calling the same"
+            echo "    reusable at the same pin are the discriminator; the fix needs repository admin"
+            echo "    (allowed_actions=all, or add \`$owner/*\` to patterns_allowed)."
             ;;
     esac
 done
+
+if [ -n "${TRIAGE_SIBLINGS:-}" ]; then
+    echo "== discriminator: do siblings actually run this? =="
+    for sib in $TRIAGE_SIBLINGS; do
+        summary="$(api "repos/$sib/actions/runs?per_page=20")"
+        printf '%s\n' "$summary" | python3 -c '
+import json, sys, collections
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("  (unreadable)"); sys.exit(0)
+counts = collections.Counter((r.get("conclusion") or r.get("status")) for r in d.get("workflow_runs", []))
+print("  " + ", ".join(f"{k}={v}" for k, v in counts.most_common()) or "  (no runs)")
+' | sed "s|^|  $sib: |"
+    done
+    echo "  A sibling whose reusable-workflow runs SUCCEED, at the same pin, means the"
+    echo "  estate allowlist is fine and the refusal is scoped to this repository."
+fi
 
 echo "== summary =="
 if [ "$findings" -eq 0 ]; then

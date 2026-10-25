@@ -82,11 +82,11 @@ jobs:
       - name: Actions allowlist (would this run start?)
         run: bash scripts/ci/check-allowed-actions.sh .github/actions-allowlist.json .github/workflows
 
-      # The one cause the file scan above cannot see: a `uses:` whose repository
-      # has been RENAMED. Allowlist patterns match the repository's canonical
-      # name, so the stale spelling passes every local check and is refused at
-      # startup (`referenced_workflows: []`, zero jobs, no log). This asks the
-      # API what each referenced repository is called now.
+      # The cause no file scan can see: a `uses:` that is well-formed, correctly
+      # pinned, and still refused at startup (`referenced_workflows: []`, zero
+      # jobs, no log) because the repository's allowed-actions policy does not
+      # cover it — or because the referenced repository was renamed and nothing
+      # covers the new owner. Both are named here, with the evidence.
       - name: Startup-failure triage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,5 +130,5 @@ jobs:
             echo "| Lockfile | a reusable caller dying with \`failure\`, 0 jobs, no reason |"
             echo "| Allowlist | \`startup_failure\` from an action outside the estate allowlist |"
             echo "| YAML parse | a workflow that parses to nothing and never runs |"
-            echo "| Renamed repo | \`startup_failure\` with zero jobs when a \`uses:\` names an owner that has moved |"
+            echo "| Startup triage | \`startup_failure\` with zero jobs: unpinned, renamed, missing pin, or refused by the repo's actions policy |"
           } >> "$GITHUB_STEP_SUMMARY"
