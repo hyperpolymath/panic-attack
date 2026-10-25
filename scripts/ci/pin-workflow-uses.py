@@ -133,59 +133,87 @@ def refs_in(workflow: Path) -> list[str]:
     return sorted(set(refs))
 
 
-def build_lock(pins: dict[str, dict[str, str]], existing: str) -> str:
-    """Emit actions.lock: `workflows:` lists refs as written; `dependencies:`
-    is keyed by normalised owner/repo@sha and must carry the *tag* as `ref`
-    (never its own SHA — standards#1271)."""
-    # Seed tag/identity knowledge from the lockfile that is already committed.
-    # We never invent an owner_id/repo_id: if a ref is genuinely new, the
-    # maintainer must resolve it (scripts/ci/resolve-action-shas.sh does the
-    # network call) and this script refuses to guess.
-    ids: dict[str, list[str]] = {}
-    by_sha: dict[tuple[str, str], str] = {}
+def parse_lock(text: str) -> tuple[dict[str, list[str]], list[str]]:
+    """Split an existing lockfile into its dependency BLOCKS.
 
-    def slot(key: str) -> list[str]:
-        return ids.setdefault(key.lower(), ["", "", ""])
-
-    # Parse the lockfile as entry blocks so a tag-keyed entry can lend its
-    # owner/repo ids to the SHA-keyed entry we are about to write.
-    id_by_tag: dict[tuple[str, str], tuple[str, str]] = {}
-    blocks: list[dict[str, str]] = []
-    cur: dict[str, str] | None = None
-    for line in existing.splitlines():
+    The blocks are kept as raw lines because `gh actions-lock` writes things
+    this script does not compute — `owner_id`/`repo_id`, tag-keyed aliases, and
+    crucially a `uses:` list for composite actions that resolve OTHER actions at
+    run time (`actions/upload-pages-artifact` pulls
+    `actions/upload-artifact@bbbca2dd…`). Discarding those is not cosmetic:
+    GitHub validates the lockfile at job setup and refuses the workflow with
+    "lockfile missing pin for …", which is how a regenerated lockfile took the
+    Pages deploy down.
+    """
+    blocks: dict[str, list[str]] = {}
+    current: str | None = None
+    in_deps = False
+    for line in text.splitlines():
+        if line.startswith("dependencies:"):
+            in_deps = True
+            current = None
+            continue
+        if not in_deps:
+            continue
         m = re.match(r"^    '([^']+)':$", line)
         if m:
-            cur = {"key": m.group(1)}
-            blocks.append(cur)
+            current = m.group(1)
+            blocks[current] = [line]
             continue
-        if cur is None:
-            continue
-        m = re.match(r"^        (ref|owner_id|repo_id): '?([^'\n]*)'?$", line)
-        if m:
-            cur[m.group(1)] = m.group(2)
-    for b in blocks:
-        key = b.get("key", "")
-        slug, _, ref = normalise(key)
-        if not key:
-            continue
-        slot(key)[:2] = [b.get("owner_id", ""), b.get("repo_id", "")]
-        slot(key)[2] = b.get("ref", "")
-        if b.get("owner_id"):
-            id_by_tag[(slug.lower(), b.get("ref", ""))] = (
-                b["owner_id"],
-                b.get("repo_id", ""),
-            )
-        if SHA_RE.match(ref) and b.get("ref") and not SHA_RE.match(b["ref"]):
-            by_sha[(slug.lower(), ref.lower())] = b["ref"]
+        if current is not None:
+            blocks[current].append(line)
+    # Trim trailing blank lines accidentally captured.
+    for key, lines in blocks.items():
+        while lines and not lines[-1].strip():
+            lines.pop()
+    return blocks
 
-    # Tags named by the pins map (owner/repo@tag -> sha) beat nothing else.
+
+def block_fields(lines: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in lines[1:]:
+        m = re.match(r"^        ([a-z_]+): '?([^'\n]*)'?$", line)
+        if m:
+            out[m.group(1)] = m.group(2)
+    return out
+
+
+def build_lock(pins: dict[str, dict[str, str]], existing: str) -> str:
+    """Emit actions.lock: `workflows:` regenerated from the files on disk; the
+    `dependencies:` section MERGED into what is already committed.
+
+    Merge, not rebuild, on purpose: the lockfile is a superset of what the
+    workflows name — `gh actions-lock` also records the actions that composite
+    actions resolve internally, and it records tag-keyed aliases. A generator
+    that reconstructs the file from `grep uses:` silently deletes both, and the
+    deletion is only visible as a startup failure inside the one workflow that
+    relied on it.
+    """
+    preserved = parse_lock(existing)
+
+    # Identity knowledge: owner/repo ids, and sha -> tag, taken from the
+    # preserved entries so a new pin can inherit them instead of guessing.
+    id_by_key: dict[str, tuple[str, str]] = {}
+    id_by_tag: dict[tuple[str, str], tuple[str, str]] = {}
+    by_sha: dict[tuple[str, str], str] = {}
+    for key, lines in preserved.items():
+        fields = block_fields(lines)
+        slug, _, ref = normalise(key)
+        if fields.get("owner_id"):
+            id_by_key[key.lower()] = (fields["owner_id"], fields.get("repo_id", ""))
+            if fields.get("ref"):
+                id_by_tag[(slug.lower(), fields["ref"])] = (
+                    fields["owner_id"],
+                    fields.get("repo_id", ""),
+                )
+            if SHA_RE.match(ref) and not SHA_RE.match(fields["ref"]):
+                by_sha[(slug.lower(), ref.lower())] = fields["ref"]
     for key, info in pins.items():
         slug, _, tag = normalise(key)
         sha = info.get("sha", "")
         if SHA_RE.match(sha) and tag and not SHA_RE.match(tag):
             by_sha[(slug.lower(), sha.lower())] = tag
 
-    # A `# vX.Y.Z` comment on a pinned ref is the reviewer-facing tag.
     comment_tag: dict[tuple[str, str], str] = {}
     for wf in workflow_files():
         for line in wf.read_text(encoding="utf-8").splitlines():
@@ -200,30 +228,36 @@ def build_lock(pins: dict[str, dict[str, str]], existing: str) -> str:
                 comment_tag[(slug.lower(), gitref.lower())] = comment
 
     per_file: dict[str, list[str]] = {}
-    deps: dict[str, tuple[str, str, str, str]] = {}
+    new_blocks: dict[str, list[str]] = {}
     missing: list[str] = []
     for wf in workflow_files():
         entries = []
         for ref in refs_in(wf):
             slug, path, gitref = normalise(ref)
             entries.append(f"{slug.lower()}@{gitref}")
-            # The lockfile models ACTIONS. A reusable workflow
-            # (owner/repo/.github/workflows/x.yml@sha) is not keyed.
             if ".github/workflows/" in path or not SHA_RE.match(gitref):
                 continue
             key = f"{slug.lower()}@{gitref.lower()}"
+            if key in preserved:
+                continue  # keep the committed block verbatim
             tag = (
                 comment_tag.get((slug.lower(), gitref.lower()))
                 or by_sha.get((slug.lower(), gitref.lower()))
                 or pins.get(f"{slug}@{gitref}", {}).get("tag", "")
             )
-            owner_id, repo_id = slot(key)[:2]
+            owner_id, repo_id = id_by_key.get(key, ("", ""))
             if not (owner_id and repo_id):
                 owner_id, repo_id = id_by_tag.get((slug.lower(), tag or ""), ("", ""))
             if not (tag and not SHA_RE.match(tag) and owner_id and repo_id):
                 missing.append(f"{slug}@{gitref}")
                 continue
-            deps[key] = (tag, owner_id, repo_id, gitref.lower())
+            new_blocks[key] = [
+                f"    '{key}':",
+                f"        ref: '{tag}'",
+                f"        commit: 'sha1-{gitref.lower()}'",
+                f"        owner_id: {owner_id}",
+                f"        repo_id: {repo_id}",
+            ]
         per_file[f".github/workflows/{wf.name}"] = sorted(set(entries))
 
     if missing:
@@ -248,13 +282,10 @@ def build_lock(pins: dict[str, dict[str, str]], existing: str) -> str:
         for e in per_file[path]:
             out.append(f"        - '{e}'")
     out.append("dependencies:")
-    for key in sorted(deps):
-        tag, owner_id, repo_id, sha = deps[key]
-        out.append(f"    '{key}':")
-        out.append(f"        ref: '{tag}'")
-        out.append(f"        commit: 'sha1-{sha}'")
-        out.append(f"        owner_id: {owner_id}")
-        out.append(f"        repo_id: {repo_id}")
+    merged = dict(preserved)
+    merged.update(new_blocks)
+    for key in sorted(merged):
+        out.extend(merged[key])
     return "\n".join(out) + "\n"
 
 
