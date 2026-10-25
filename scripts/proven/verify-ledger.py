@@ -12,9 +12,14 @@ So this verifier:
 
   1. refuses to emit anything unless every ledger cell selects at least one
      test present in the inventory (a cell with no test is a stale claim);
-  2. refuses to emit anything unless every test in the inventory is either
-     selected by a cell or named in `declared_absent`/`declared_unmapped`
-     (a test nobody accounted for is an invisible gap);
+  2. refuses to emit anything unless every test in the inventory reaches a
+     typed coordinate: either an explicit cell, or a `buckets` rule (module
+     prefix or binary -> category x aspect), or `declared_unmapped`. A test that
+     reaches none of those is an invisible gap and fails the run;
+  2b. caps how much of the suite may reach the LAST bucket (the declared
+     remainder) via `max_unmapped`. That is a ratchet: the number can be lowered
+     in review, and a suite that grows past it fails rather than quietly
+     claiming more un-triaged ground;
   3. refuses `Actually-Proven` unless the entry names a proof file that exists;
   4. writes a `schema_version: 1` run report, the format panic-attack's
      `aggregate --proven-tests` reads, so the two tools agree on one artefact
@@ -95,8 +100,38 @@ def main() -> int:
 
     claimed = select(entries, inventory)
 
+    # Buckets: every executed test that no explicit cell claims is assigned a
+    # typed coordinate by the first matching rule. This is how "every test is
+    # accounted for" stays true as the suite grows without hand-writing a cell
+    # per test — and the last rule's population is capped, so it cannot become a
+    # place where untriaged work hides.
+    buckets = ledger.get("buckets", [])
+    compiled = [
+        (re.compile(b["match"]) if b.get("match") else None, set(b.get("bins") or []), b)
+        for b in buckets
+    ]
+    bucketed: dict[str, dict] = {}
+    remainder: list[str] = []
+    for binary, names in inventory.items():
+        for name in names:
+            if name in claimed:
+                continue
+            chosen = None
+            for regex, bins, bucket in compiled:
+                if bins and binary not in bins:
+                    continue
+                if regex is not None and not regex.search(name):
+                    continue
+                chosen = bucket
+                break
+            if chosen is None:
+                continue
+            bucketed[name] = chosen
+            if buckets and chosen is buckets[-1]:
+                remainder.append(name)
+
     all_tests = {name for names in inventory.values() for name in names}
-    unaccounted = sorted(all_tests - set(claimed))
+    unaccounted = sorted(all_tests - set(claimed) - set(bucketed))
     allowed_unmapped = []
     for decl in unmapped_decl:
         regex = re.compile(decl["match"])
@@ -148,6 +183,31 @@ def main() -> int:
             }
         )
 
+    # The bucketed remainder, folded in at its declared tier.
+    for name in sorted(bucketed):
+        bucket = bucketed[name]
+        tier = bucket.get("tier", "Provisionally-Proven")
+        tiers[tier] += 1
+        cells_covered.add((bucket["category"], bucket["aspect"]))
+        report_entries.append(
+            {
+                "test_id": name,
+                "category": bucket["category"],
+                "aspect": bucket["aspect"],
+                "provenance": tier,
+                "proof_ladder": [],
+                "result": "passed",
+            }
+        )
+
+    max_unmapped = ledger.get("max_unmapped")
+    if remainder and max_unmapped is not None and len(remainder) > int(max_unmapped):
+        problems.append(
+            f"{len(remainder)} test(s) fall through to the declared remainder bucket, "
+            f"above the ratchet of {max_unmapped}: either map them to a coordinate "
+            "in `buckets`, or raise the cap in review with the reason"
+        )
+
     categories = ledger.get("taxonomy", {}).get("categories", [])
     aspects = ledger.get("taxonomy", {}).get("aspects", [])
     for a in absent:
@@ -186,6 +246,11 @@ def main() -> int:
         f"{tiers['Provisionally-Proven']} provisionally-proven, "
         f"{tiers['Unproven']} unproven); {len(absent)} cell(s) declared absent"
     )
+    if remainder:
+        print(
+            f"proven: {len(remainder)} test(s) in the declared remainder bucket "
+            f"(cap {max_unmapped}) — the to-do list, not a coverage claim"
+        )
     print(f"proven: wrote {args.out}")
     return 0
 

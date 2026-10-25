@@ -297,5 +297,115 @@
       "reason": "The taxonomy aspect is not yet defined normatively in the estate canon, so any claim here would be unanchored.",
       "would_test": "wait for the canon definition, then map"
     }
-  ]
+  ],
+  "buckets": [
+    {
+      "match": "^(sarif|json|yaml|bridge|abi|ffi_kind)::",
+      "category": "UnitTest",
+      "aspect": "Interoperability",
+      "reason": "wire formats and the FFI/ABI boundary: the property under test is that two representations agree"
+    },
+    {
+      "match": "^(storage|campaign|sweep_tracker|assemblyline|query)::",
+      "category": "LifecycleTest",
+      "aspect": "Dependability",
+      "reason": "persistence and finding lifecycle: what is written must be readable back, in order, after a restart"
+    },
+    {
+      "match": "^(attestation|mass_panic)::",
+      "category": "UnitTest",
+      "aspect": "Reproducibility",
+      "reason": "evidence chains: the assertion is that the same input produces the same recorded hash"
+    },
+    {
+      "match": "^(report|panll|diagnostics|notify)::",
+      "category": "UnitTest",
+      "aspect": "Observability",
+      "reason": "rendering and reporting: the tested property is what an operator can see"
+    },
+    {
+      "match": "^(adjudicate|assay|attack|scan|signatures|axial|kin|panll)::",
+      "category": "UnitTest",
+      "aspect": "Functionality",
+      "reason": "analysis behaviour on a fixed input"
+    },
+    {
+      "match": "^(aggregate|proven_tests)::",
+      "category": "ProofRegressionTest",
+      "aspect": "Dependability",
+      "reason": "ingesting prover output: a verdict that does not follow from its artifact must be refused"
+    },
+    {
+      "match": "^(ambush|amuck|abduct|groove)::",
+      "category": "ChaosResilienceTest",
+      "aspect": "Dependability",
+      "reason": "the adversarial paths: these modules exist to model what goes wrong"
+    },
+    {
+      "match": "^(kanren|safe_path|comment_marker|test_context|jit_context)::|^types::",
+      "category": "TypeSafeTest",
+      "aspect": "Safety",
+      "reason": "invariants carried in the type system rather than checked at runtime"
+    },
+    {
+      "match": "^(a2ml|i18n|cli)::",
+      "category": "UnitTest",
+      "aspect": "Usability",
+      "reason": "operator-facing surface: manifests, translations, argument parsing"
+    },
+    {
+      "match": "^assail::",
+      "category": "UnitTest",
+      "aspect": "Functionality",
+      "reason": "the analysis engine: each rule's behaviour on a fixed fixture"
+    },
+    {
+      "bins": [
+        "sarif_tests"
+      ],
+      "category": "UnitTest",
+      "aspect": "Interoperability",
+      "reason": "SARIF interchange"
+    },
+    {
+      "bins": [
+        "assemblyline_tests"
+      ],
+      "category": "LifecycleTest",
+      "aspect": "Dependability",
+      "reason": "incremental rescan lifecycle"
+    },
+    {
+      "bins": [
+        "coverage_php_tests"
+      ],
+      "category": "CompatibilityTest",
+      "aspect": "Portability",
+      "reason": "PHP adapter and non-UTF-8 path handling"
+    },
+    {
+      "bins": [
+        "types_tests"
+      ],
+      "category": "UnitTest",
+      "aspect": "Functionality",
+      "reason": "public type surface"
+    },
+    {
+      "bins": [
+        "pattern_tests"
+      ],
+      "category": "UnitTest",
+      "aspect": "Functionality",
+      "reason": "signature matching"
+    },
+    {
+      "match": ".*",
+      "category": "UnitTest",
+      "aspect": "Functionality",
+      "tier": "Unproven",
+      "reason": "not yet mapped to a typed coordinate \u2014 counted, capped by max_unmapped, and listed in the job summary"
+    }
+  ],
+  "max_unmapped": 360
 }
