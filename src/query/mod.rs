@@ -772,6 +772,7 @@ mod tests {
         }
         fn assail(repo: &str, wps: Vec<WeakPoint>) -> AssailReport {
             AssailReport {
+                coverage: Default::default(),
                 schema_version: "2.5".to_string(),
                 program_path: PathBuf::from(format!("/tmp/{}", repo)),
                 language: Language::Rust,

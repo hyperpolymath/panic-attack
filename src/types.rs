@@ -27,6 +27,7 @@ pub enum Language {
     Python,
     JavaScript,
     Ruby,
+    Php,
 
     // === BEAM family ===
     Elixir,
@@ -113,6 +114,7 @@ impl Language {
             "js" | "mjs" | "cjs" => Language::JavaScript,
             "ts" | "tsx" | "jsx" => Language::JavaScript,
             "rb" => Language::Ruby,
+            "php" | "php3" | "php4" | "php5" | "php7" | "php8" | "phtml" | "inc" => Language::Php,
 
             // BEAM family
             "ex" | "exs" => Language::Elixir,
@@ -212,6 +214,7 @@ impl Language {
             Language::Python => "python",
             Language::JavaScript => "javascript",
             Language::Ruby => "ruby",
+            Language::Php => "php",
             Language::WokeLang
             | Language::Eclexia
             | Language::MyLang
@@ -602,8 +605,12 @@ pub struct FileStatistics {
 /// Assail analysis results
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssailReport {
+    /// Missing in legacy reports: defaults to unknown, never a fabricated pass.
+    #[serde(default)]
+    pub coverage: Box<crate::assail::coverage::AnalysisCoverage>,
     /// Semantic version of the report schema. Consumers must check this
-    /// before parsing to detect incompatible drift. Current: "2.5".
+    /// before parsing to detect incompatible drift. New assail scans emit "2.6";
+    /// the deserialize default preserves the legacy "2.5" contract.
     #[serde(default = "assail_schema_version")]
     pub schema_version: String,
     pub program_path: PathBuf,

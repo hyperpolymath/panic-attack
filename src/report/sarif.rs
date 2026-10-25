@@ -27,6 +27,7 @@ pub struct SarifLog {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SarifRun {
+    pub properties: serde_json::Value,
     pub tool: SarifTool,
     pub results: Vec<SarifResult>,
 }
@@ -178,6 +179,29 @@ fn parse_location(loc: &str) -> (&str, Option<u32>) {
 
 /// Convert an AssailReport to SARIF JSON
 pub fn to_sarif(report: &AssailReport) -> Result<SarifLog> {
+    let mut coverage = serde_json::to_value(&report.coverage)?;
+    let root = if report.program_path.is_dir() {
+        report.program_path.as_path()
+    } else {
+        report
+            .program_path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+    };
+    if let Some(inputs) = coverage["inputs"].as_array_mut() {
+        for input in inputs {
+            if let Some(path) = input["path"].as_str() {
+                let path = std::path::Path::new(path);
+                input["path"] = serde_json::Value::String(
+                    path.strip_prefix(root)
+                        .unwrap_or(path)
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+        }
+    }
+
     // Collect unique rules
     let mut seen_categories = std::collections::HashSet::new();
     let mut rules = Vec::new();
@@ -227,6 +251,7 @@ pub fn to_sarif(report: &AssailReport) -> Result<SarifLog> {
         schema: SARIF_SCHEMA.to_string(),
         version: SARIF_VERSION.to_string(),
         runs: vec![SarifRun {
+            properties: serde_json::json!({"coverage": coverage}),
             tool: SarifTool {
                 driver: SarifToolComponent {
                     name: "panic-attack".to_string(),

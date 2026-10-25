@@ -151,6 +151,10 @@ enum Commands {
         /// Headless mode: emit JSON to stdout, suppress interactive prompts (CI-safe)
         #[arg(long, default_value_t = false)]
         headless: bool,
+
+        /// Exit 2 if the declared source/config scan is incomplete or empty.
+        #[arg(long)]
+        fail_on_incomplete: bool,
     },
 
     /// Execute a single attack on a target program
@@ -1393,9 +1397,10 @@ fn run_main() -> Result<()> {
             signing_key,
             browser_extension,
             headless,
+            fail_on_incomplete,
         } => {
             qprintln!(
-                cli.quiet,
+                cli.quiet || headless,
                 "Running assail analysis on: {}",
                 target.display()
             );
@@ -1405,7 +1410,7 @@ fn run_main() -> Result<()> {
 
             // Optionally start attestation chain before scanning
             let mut chain_builder = if attest {
-                qprintln!(cli.quiet, "Attestation enabled");
+                qprintln!(cli.quiet || headless, "Attestation enabled");
                 Some(attestation::AttestationChainBuilder::begin(
                     &target, &cli_args,
                 )?)
@@ -1449,13 +1454,23 @@ fn run_main() -> Result<()> {
 
             if let Some(output_path) = &output {
                 fs::write(output_path, &report_json)?;
-                qprintln!(cli.quiet, "Report saved to: {}", output_path.display());
+                qprintln!(
+                    cli.quiet || headless,
+                    "Report saved to: {}",
+                    output_path.display()
+                );
             } else if cli.quiet || headless {
                 // Machine-readable mode: emit JSON to stdout for pipeline consumers.
                 // `--headless` makes this explicit for CI callers that cannot pass --quiet.
                 print!("{report_json}");
             } else {
                 println!("\nAssail Summary:");
+                println!(
+                    "  Coverage: {} ({} analysed / {} candidate files)",
+                    report.coverage.status,
+                    report.coverage.analyzed_files,
+                    report.coverage.candidate_files
+                );
                 println!("  Language: {:?}", report.language);
                 println!("  Weak points: {}", report.weak_points.len());
                 println!("  Recommended attacks: {:?}", report.recommended_attacks);
@@ -1476,10 +1491,14 @@ fn run_main() -> Result<()> {
 
                 fs::write(&sidecar_path, attestation_json)?;
                 qprintln!(
-                    cli.quiet,
+                    cli.quiet || headless,
                     "Attestation written to: {}",
                     sidecar_path.display()
                 );
+            }
+            if fail_on_incomplete && report.coverage.incomplete() {
+                eprintln!("assail: incomplete coverage ({})", report.coverage.status);
+                std::process::exit(2);
             }
         }
 
@@ -2705,15 +2724,15 @@ fn run_main() -> Result<()> {
                 .map(|a| a.get_id().to_string())
                 .collect();
             global_flags.sort();
-            // Report-schema version mirrors types.rs::assail_schema_version
-            // and types.rs::assault_schema_version (both "2.5" in v2.5.0).
-            // The chapel-cli-contract CI gate catches drift between this
-            // string and the serialiser defaults.
+            // The compatibility field tracks assail, consumed by Chapel.
+            // Other report families retain their existing schema versions;
+            // deserialize defaults preserve legacy inputs rather than upgrading them.
             let contract = serde_json::json!({
                 "schema_version": "1",
                 "tool": "panic-attack",
                 "cli_version": env!("CARGO_PKG_VERSION"),
-                "report_schema_version": "2.5",
+                "report_schema_version": "2.6",
+                "report_schema_versions": {"assail": "2.6", "assault": "2.5"},
                 "detachability": {
                     "standalone": true,
                     "orchestrator_agnostic": true,

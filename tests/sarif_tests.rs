@@ -13,6 +13,7 @@ use std::path::Path;
 
 fn make_test_report() -> AssailReport {
     AssailReport {
+        coverage: Default::default(),
         schema_version: "2.5".to_string(),
         program_path: ".".into(),
         language: Language::Rust,
@@ -147,6 +148,7 @@ fn test_sarif_rules_deduplicated() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_sarif_empty_report() -> Result<(), Box<dyn std::error::Error>> {
     let report = AssailReport {
+        coverage: Default::default(),
         schema_version: "2.5".to_string(),
         program_path: ".".into(),
         language: Language::Unknown,

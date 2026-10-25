@@ -829,6 +829,7 @@ mod tests {
 
     fn sample_assail_report() -> AssailReport {
         AssailReport {
+            coverage: Default::default(),
             schema_version: "2.5".to_string(),
             program_path: PathBuf::from("src/main.rs"),
             language: Language::Rust,

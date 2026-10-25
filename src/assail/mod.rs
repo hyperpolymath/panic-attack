@@ -6,7 +6,9 @@
 //! Pre-analyzes target programs to identify weak points and recommend attacks
 
 pub mod analyzer;
+pub mod coverage;
 pub mod patterns;
+pub mod php;
 
 use crate::kanren::core::{FactDB, LogicEngine};
 use crate::kanren::crosslang::CrossLangAnalyzer;
@@ -698,6 +700,7 @@ mod classifications_tests {
         );
 
         let mut report = AssailReport {
+            coverage: Default::default(),
             schema_version: "2.5".to_string(),
             program_path: tmp.path().to_path_buf(),
             language: Language::Rust,
@@ -770,6 +773,7 @@ mod v255_context_suppression_tests {
 
     fn report_with(wp: Vec<WeakPoint>) -> AssailReport {
         AssailReport {
+            coverage: Default::default(),
             schema_version: "2.5".to_string(),
             program_path: std::path::PathBuf::from("test"),
             language: crate::types::Language::Rust,

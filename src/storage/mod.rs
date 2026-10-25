@@ -1406,6 +1406,7 @@ mod tests {
 
     fn sample_assemblyline(repo: &str, wps: Vec<WeakPoint>) -> AssemblylineReport {
         let assail = AssailReport {
+            coverage: Default::default(),
             schema_version: "2.5".to_string(),
             program_path: PathBuf::from(format!("/tmp/{}", repo)),
             language: Language::Rust,
@@ -1632,6 +1633,7 @@ mod tests {
 
     fn assemblyline_with_ffi(repo: &str) -> AssemblylineReport {
         let assail = AssailReport {
+            coverage: Default::default(),
             schema_version: "2.5".to_string(),
             program_path: PathBuf::from(format!("/tmp/{}", repo)),
             language: Language::Rust,
