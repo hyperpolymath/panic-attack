@@ -284,6 +284,34 @@ def build_lock(pins: dict[str, dict[str, str]], existing: str) -> str:
     out.append("dependencies:")
     merged = dict(preserved)
     merged.update(new_blocks)
+
+    # A composite action's own dependencies are recorded on whichever entry
+    # `gh actions-lock` happened to write them against — in practice the
+    # TAG-keyed one. GitHub resolves them from the entry the workflow actually
+    # names, which after a re-pin is the SHA-keyed one. Carry the `uses:` list
+    # across to every entry describing the same commit, or a re-pinned workflow
+    # dies in Set up job with "lockfile missing pin for <the nested action>".
+    deps_by_commit: dict[str, list[str]] = {}
+    for lines in merged.values():
+        fields = block_fields(lines)
+        if "uses" in fields or any(l.lstrip().startswith("uses:") for l in lines):
+            pass
+        try:
+            idx = next(i for i, l in enumerate(lines) if l.strip() == "uses:")
+        except StopIteration:
+            continue
+        commit = fields.get("commit", "")
+        if commit:
+            deps_by_commit.setdefault(commit, lines[idx:])
+
+    for key, lines in merged.items():
+        if any(l.strip() == "uses:" for l in lines):
+            continue
+        commit = block_fields(lines).get("commit", "")
+        extra = deps_by_commit.get(commit)
+        if extra:
+            merged[key] = lines + list(extra)
+
     for key in sorted(merged):
         out.extend(merged[key])
     return "\n".join(out) + "\n"
