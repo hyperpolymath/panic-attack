@@ -46,14 +46,18 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - name: Install panic-attack
-        run: |
-          cargo install --git https://github.com/hyperpolymath/panic-attack --branch main
+      # Build the commit under test, not `main`. The previous step was
+      # `cargo install --git … --branch main`, so every pull request was scanned
+      # by whatever happened to be on main at that moment: the workflow reported
+      # on code it had not checked out, and a PR that broke the scanner could
+      # pass with the last good binary.
+      - name: Build the commit under test
+        run: cargo build --locked --release
 
       - name: Run scan
         id: scan
         run: |
-          panic-attack assail ${{ inputs.repo_path }} --output scan-result.json
+          ./target/release/panic-attack assail ${{ inputs.repo_path }} --output scan-result.json
           echo "scan_complete=true" >> $GITHUB_OUTPUT
 
       - name: Enforce severity gate

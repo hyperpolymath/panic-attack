@@ -1,26 +1,53 @@
 # This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
-# This workflow is managed by gh actions-lock.
-# This workflow is managed by gh actions-lock.
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# coverage.yml — line coverage, measured and PUBLISHED.
+#
+# What this replaces: the previous version ran `cargo llvm-cov --lcov` and then
+# stopped, so the report was written to a runner's temporary disk and thrown away
+# when the job ended. A coverage job that uploads nothing is a coverage job that
+# reports nothing; it could not have failed for any value of the number.
+#
+# Two deliberate choices:
+#
+#   * `cargo install` is pinned by version AND `--locked`. An unpinned
+#     `cargo install cargo-llvm-cov` makes the measurement
+#     non-reproducible: the same commit can be measured by two different
+#     profilers, and a new tool release can turn this job red without a code
+#     change.
+#   * No third-party coverage uploader. Codecov's action is not in the estate
+#     allowlist, and adding a service that receives source-level coverage data is
+#     a decision, not a default. The report is an artifact plus a job summary;
+#     the badge question can be answered separately.
 name: Code Coverage
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   contents: read
 
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_LLVM_COV_VERSION: '0.9.1'
+
 jobs:
   coverage:
-    name: Generate Coverage Report
+    name: Line coverage (cargo-llvm-cov)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
@@ -28,9 +55,63 @@ jobs:
           toolchain: stable
           components: llvm-tools-preview
 
-      - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: coverage
+
+      - name: Install cargo-llvm-cov (pinned)
+        run: |
+          set -euo pipefail
+          cargo install cargo-llvm-cov --locked --version "$CARGO_LLVM_COV_VERSION"
+          cargo llvm-cov --version
 
       - name: Generate coverage
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+          cargo llvm-cov report --json --summary-only --output-path coverage-summary.json
 
+      - name: Summarise
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+
+          data = json.load(open("coverage-summary.json"))
+          totals = data["data"][0]["totals"]
+          lines = totals["lines"]
+
+          print("## Line coverage")
+          print("")
+          print(f"**{lines['percent']:.2f}%** of lines executed "
+                f"({lines['covered']}/{lines['count']}); "
+                f"{totals['functions']['percent']:.2f}% of functions.")
+          print("")
+          print("| file | lines | % |")
+          print("|---|---|---|")
+          rows = []
+          for entry in data["data"][0]["files"]:
+              s = entry["summary"]["lines"]
+              if s["count"] == 0:
+                  continue
+              rows.append((s["percent"], entry["filename"], s))
+          rows.sort()
+          for pct, name, s in rows[:15]:
+              print(f"| `{name}` | {s['covered']}/{s['count']} | {pct:.1f}% |")
+          if len(rows) > 15:
+              print(f"| _(and {len(rows) - 15} more files)_ | | |")
+          print("")
+          print("Lowest-covered files first. Coverage is a *measurement*, not a")
+          print("gate: `proven-tests.yml` is what refuses an untested claim.")
+          PY
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: coverage-lcov
+          path: |
+            lcov.info
+            coverage-summary.json
+          retention-days: 14
+          if-no-files-found: error

@@ -109,9 +109,35 @@ jobs:
 
       - name: E2E — Attestation chain
         run: |
-          # Run a scan with attestation and verify the chain
-          ./target/release/panic-attack assail . --output /tmp/attested-scan.json 2>&1 || true
-          echo "PASS: Attestation chain test completed"
+          set -euo pipefail
+          # What this replaces: `assail . --output … || true`, then an echo. That
+          # asserted nothing — no `--attest`, so no chain was built, and `|| true`
+          # made even a crash a pass. An "attestation chain test" that cannot
+          # fail is not a test of the attestation chain.
+          ./target/release/panic-attack assail . --attest \
+            --output /tmp/attested-scan.json --quiet
+          sidecar=/tmp/attested-scan.attestation.json
+          test -s "$sidecar" || { echo "::error::no attestation sidecar at $sidecar"; exit 1; }
+          ./target/release/panic-attack attest verify "$sidecar"
+          python3 - <<'PY'
+          import json
+
+          env = json.load(open("/tmp/attested-scan.attestation.json"))
+          chain = env["attestation"]
+          intent, evidence, seal = chain["intent"], chain["evidence"], chain["seal"]
+          # "Verified" is only meaningful if the chain it verified has content:
+          # a pre-execution commitment, recorded evidence of what was read, and a
+          # seal that binds the report hash to the intent.
+          assert env["envelope_type"] == "trustfile", env["envelope_type"]
+          assert env["decision_hash"] == seal["report_hash"], "decision hash != seal"
+          assert len(intent["session_nonce"]) == 64, "intent carries no nonce"
+          assert evidence["files_read"] > 0, evidence
+          assert evidence["rolling_content_hash"], evidence
+          assert seal["intent_hash"], seal
+          print(f"PASS: attestation chain verified "
+                f"({evidence['files_read']} files, "
+                f"{evidence['directories_traversed']} dirs, seal {seal['report_hash'][:12]}…)")
+          PY
 
       - name: Upload E2E artifacts
         if: always()
