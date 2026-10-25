@@ -486,6 +486,9 @@ mod tests {
         )
         .unwrap();
         let record = ingest(&report, None).expect("ingest");
-        assert!(record.defects.iter().any(|d| d.contains("summary claims 2")));
+        assert!(record
+            .defects
+            .iter()
+            .any(|d| d.contains("summary claims 2")));
     }
 }

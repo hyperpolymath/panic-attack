@@ -4,7 +4,7 @@
 //! SARIF 2.1.0 output for GitHub Security tab integration
 //!
 //! Converts AssailReport weak points into OASIS SARIF format.
-//! See: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
+//! See: <https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html>
 
 use crate::types::{AssailReport, Severity, WeakPointCategory};
 use anyhow::Result;

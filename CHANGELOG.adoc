@@ -15,6 +15,30 @@ rescan.
 and `+profiles/attack-profile.example.json+` (I-JSON/JCS). A test keeps the two
 in agreement.
 
+==== Fixed — analysis of files whose path is not valid UTF-8
+
+* Language detection now consults `+Path::extension()+` rather than a lossy
+`+to_str()+` conversion (`+Language::detect_path+`; `+Language::detect+`
+delegates to it). A file such as `+invalid-\xFF.php+` has an ASCII extension
+even when its stem is not UTF-8, so it is now analysed instead of being filed
+away as *unsupported* — or, worse, *excluded*, which is not a coverage gap and
+so let a scan report `+complete+` while skipping source it had been asked to
+scan. `+invalid-\xFF.rs+` was affected the same way.
+
+==== Fixed — a bound on reading hexad ledgers
+
+* `+load_hexad_dir+` no longer allocates from the file's own size.
+`+HEXAD_FILE_READ_LIMIT+` (64 MiB — two orders of magnitude above any real
+ledger) is checked from metadata before opening, and the read itself is capped,
+so a malformed or hostile file in the VeriSimDB directory costs a bounded
+amount of memory and is reported on stderr instead of being consumed whole.
+
+==== Changed — MSRV 1.89 → 1.90
+
+* The exact pin on `+tree-sitter+` 0.27 sets the floor: it declares
+`+rust-version = "1.90"+`. The `+msrv+` CI job builds with exactly the
+declared version on every pull request, so this cannot drift silently again.
+
 ==== Fixed — YAML parser replaced with safe Rust (RUSTSEC-2024-0449)
 
 * *`+serde_yaml+` → `+serde-saphyr+` 2.0.* `+serde_yaml+` 0.9 is

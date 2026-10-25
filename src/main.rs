@@ -595,7 +595,7 @@ enum Commands {
     ///
     /// `--headless` always works (text panel summaries to stdout). The
     /// windowed renderer requires `--features gui` at build time because
-    /// eframe/egui raise MSRV above 1.89.
+    /// eframe/egui raise MSRV above 1.90.
     Gui {
         /// Assault report JSON file
         #[arg(value_name = "REPORT")]

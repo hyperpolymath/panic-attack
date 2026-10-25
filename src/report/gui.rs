@@ -4,7 +4,7 @@
 //! Minimal GUI for reviewing assault reports, system images, and temporal diffs.
 //!
 //! This module is compiled only when the `gui` feature is enabled because the
-//! `eframe`/`egui` dependency chain raises MSRV above the 1.89 baseline.
+//! `eframe`/`egui` dependency chain raises MSRV above the 1.90 baseline.
 //! The text-only `gui --headless` path lives in [`super::gui_text`] and is
 //! always compiled.
 

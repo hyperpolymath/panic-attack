@@ -64,10 +64,12 @@ fn non_utf8_input_paths_serialize_without_losing_index_lookups() {
     let content = b"<?php echo 'ok';";
     std::fs::write(&path, content).unwrap();
     let mut report = assail::analyze(dir.path()).unwrap();
-    assert_eq!(report.coverage.inputs[0].path, path);
-    assert_eq!(report.language, panic_attack::types::Language::Php);
+    // The extension is valid ASCII even though the stem is not, so this file is
+    // analysable and must not be filed away as unsupported/excluded.
     assert_eq!(report.coverage.analyzed_files, 1);
     assert_eq!(report.coverage.inputs[0].status, "analyzed");
+    assert_eq!(report.coverage.inputs[0].path, path);
+    assert_eq!(report.language, panic_attack::types::Language::Php);
     let single_file_report = assail::analyze(&path).unwrap();
     assert_eq!(
         single_file_report.language,

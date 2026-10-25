@@ -3,7 +3,12 @@
 name = "panic-attack"
 version = "2.5.5"
 edition = "2021"
-rust-version = "1.89"
+# MSRV. Set by the highest `rust-version` in the dependency graph, which is
+# tree-sitter 0.27 (1.90); the pin is exact and deliberate, so the baseline
+# follows it rather than the other way round. This is a promise the `msrv` job
+# enforces on every pull request — bumping a dependency that needs a newer
+# compiler fails the build rather than the user's install.
+rust-version = "1.90"
 authors = ["Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>"]
 license-file = "LICENSE"
 description = "Universal static analysis, stress testing, and logic-based bug signature detection for 49 languages"
@@ -47,7 +52,7 @@ signing = ["ed25519-dalek"]
 http = ["ureq"]
 sarif = []
 # Native GUI viewer (eframe/egui). Opt-in because eframe raises MSRV above the
-# 1.89 baseline; default builds remain pure-CLI and MSRV-clean.
+# 1.90 baseline; default builds remain pure-CLI and MSRV-clean.
 gui = ["eframe"]
 
 [dev-dependencies]
