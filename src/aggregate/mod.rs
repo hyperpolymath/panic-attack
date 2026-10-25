@@ -54,7 +54,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Reached from the CLI as `panic-attack aggregate --proven-tests <report.json>`;
 /// see that repository's `docs/INTEROP-PANIC-ATTACK.adoc` for the mapping this
-/// implements, and [`proven_tests::ProvenTestsRecord::defects`] for what it
+/// implements, and `ProvenTestsRecord::defects` for what it
 /// refuses to take on trust.
 pub mod proven_tests;
 

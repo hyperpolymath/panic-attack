@@ -59,7 +59,8 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      - name: Format
+        run: bash scripts/ci/annotate.sh rustfmt -- cargo fmt --all -- --check
 
   clippy:
     name: cargo clippy -D warnings
@@ -76,7 +77,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
       # `gui` is deliberately excluded: eframe/egui needs system libraries this
       # job does not install, and the GUI is opt-in. Everything else is checked.
-      - run: cargo clippy --locked --all-targets --features http,sarif,signing -- -D warnings
+      - name: Clippy
+        run: bash scripts/ci/annotate.sh clippy -- cargo clippy --locked --all-targets --features http,sarif,signing -- -D warnings
 
   test:
     name: cargo test (${{ matrix.features }})
@@ -105,9 +107,10 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${{ matrix.features }}" ]; then
-            cargo test --locked --features "${{ matrix.features }}"
+            bash scripts/ci/annotate.sh "tests[${{ matrix.features }}]" -- \
+              cargo test --locked --features "${{ matrix.features }}"
           else
-            cargo test --locked
+            bash scripts/ci/annotate.sh "tests[default]" -- cargo test --locked
           fi
 
   msrv:
@@ -132,7 +135,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           key: msrv
-      - run: cargo check --locked --all-targets
+      - name: MSRV check
+        run: bash scripts/ci/annotate.sh msrv -- cargo check --locked --all-targets
 
   docs:
     name: cargo doc (no broken intra-doc links)
@@ -150,7 +154,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           key: docs
-      - run: cargo doc --locked --no-deps --features http,sarif,signing
+      - name: Docs
+        run: bash scripts/ci/annotate.sh rustdoc -- cargo doc --locked --no-deps --features http,sarif,signing
 
   coverage-ledger:
     name: Coverage ledger is honest (--fail-on-incomplete)
