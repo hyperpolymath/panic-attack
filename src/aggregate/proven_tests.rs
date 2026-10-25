@@ -209,7 +209,7 @@ impl ProvenTestsReport {
 /// present under the root, an unrecognised tier, a summary that disagrees with
 /// the entries, or a report with no entries at all. An empty `defects` list is
 /// therefore a positive claim, not a default.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProvenTestsRecord {
     /// Path of the report that was ingested.
     pub path: std::path::PathBuf,
@@ -241,7 +241,7 @@ pub struct ProvenTestsRecord {
 /// Returns file read, BLAKE3 hashing and JSON parsing errors (including an
 /// unsupported `schema_version`). Does *not* error on defects: it records them,
 /// so a caller may report first and fail afterwards with
-/// [`crate::aggregate::AggregateConfig::fail_on_defect`].
+/// `AggregateConfig::fail_on_defect`.
 pub fn ingest(path: &Path, root: Option<&Path>) -> Result<ProvenTestsRecord> {
     let report = ProvenTestsReport::from_path(path)?;
     let (hash, bytes) = super::hash_file(path)?;
@@ -411,7 +411,10 @@ mod tests {
         )
         .unwrap();
         let record = ingest(&report, None).expect("ingest");
-        assert!(record.defects.iter().any(|d| d.contains("empty proof ladder")));
+        assert!(record
+            .defects
+            .iter()
+            .any(|d| d.contains("empty proof ladder")));
         assert!(record.ladder_files.is_empty());
     }
 
@@ -429,10 +432,11 @@ mod tests {
         )
         .unwrap();
         let record = ingest(&report, None).expect("ingest");
-        assert!(record
-            .defects
-            .iter()
-            .any(|d| d.contains("was not found under")), "{:?}", record.defects);
+        assert!(
+            record.defects.iter().any(|d| d.contains("was not found under")),
+            "{:?}",
+            record.defects
+        );
         assert_eq!(record.ladder_files, vec!["src/ProvenTests/Tropical.idr".to_string()]);
     }
 
