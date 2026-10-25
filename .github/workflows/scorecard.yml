@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   scorecard:
-    uses: hyperpolymath/standards/.github/workflows/scorecard-reusable.yml@333b06a01db1874ffedb2de1bfabb195640927c7
+    uses: metadatastician/standards/.github/workflows/scorecard-reusable.yml@333b06a01db1874ffedb2de1bfabb195640927c7
     permissions:
       actions: read # required by scorecard-reusable.yml to read workflow metadata
       contents: read
