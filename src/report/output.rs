@@ -12,6 +12,8 @@ use clap::ValueEnum;
 pub enum ReportOutputFormat {
     Json,
     Yaml,
+    /// KYAML, the estate YAML dialect (D280/D307).
+    Kyaml,
     Nickel,
     Sarif,
 }
@@ -21,6 +23,7 @@ impl ReportOutputFormat {
         match value.to_ascii_lowercase().as_str() {
             "json" => Some(ReportOutputFormat::Json),
             "yaml" | "yml" => Some(ReportOutputFormat::Yaml),
+            "kyaml" => Some(ReportOutputFormat::Kyaml),
             "nickel" | "ncl" => Some(ReportOutputFormat::Nickel),
             "sarif" => Some(ReportOutputFormat::Sarif),
             _ => None,
@@ -31,6 +34,7 @@ impl ReportOutputFormat {
         match self {
             ReportOutputFormat::Json => "json",
             ReportOutputFormat::Yaml => "yaml",
+            ReportOutputFormat::Kyaml => "kyaml",
             ReportOutputFormat::Nickel => "ncl",
             ReportOutputFormat::Sarif => "sarif",
         }
@@ -40,6 +44,7 @@ impl ReportOutputFormat {
         match self {
             ReportOutputFormat::Json => crate::json::to_canonical_string(report),
             ReportOutputFormat::Yaml => Ok(crate::yaml::to_string(report)?),
+            ReportOutputFormat::Kyaml => crate::kyaml::to_string(report),
             // Nickel output is a compact projection for config-centric consumers.
             ReportOutputFormat::Nickel => Ok(format_report_as_nickel(report)),
             // SARIF output targets GitHub Security tab and other SARIF consumers.

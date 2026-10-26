@@ -172,7 +172,7 @@ Globally applied flags let automation pipelines control verbosity, output format
 | Flag | Default | Description
 | `--report-view` | `Accordion` | Controls the presentation mode (`Accordion`, `Summary`, `Timeline`) that the CLI writes and that PanLL mirrors.
 | `--expand-sections` | `false` | Expands extra detail blocks in the formatted report.
-| `--output-format` | `json` | Chooses how the artifact is serialized (`json`, `markdown`, or `text`); the CLI reuses this when it writes PanLL exports or temporal diffs.
+| `--output-format` | `json` | Chooses how saved reports are serialized: `json` (I-JSON/JCS), `yaml`, `kyaml` (the estate YAML dialect, byte-compatible with `yq -o kyaml`), `nickel` or `sarif`. The CLI reuses this when it writes PanLL exports or temporal diffs. `assail` always writes JSON.
 | `--pivot` | `false` | Rotates the narrative axis for boards that expect events-first storytelling.
 | `--store` | unset | Directory where generated reports, exports, and artifacts should land.
 | `--quiet` | `false` | Suppresses informational log lines for automation.
