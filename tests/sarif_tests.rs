@@ -204,6 +204,45 @@ fn test_sarif_from_real_analysis() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn finding_paths_match_coverage_for_directory_and_file_roots(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let root = dir.path().join("scan");
+    std::fs::create_dir_all(root.join("src"))?;
+    let input = root.join("src/input.php");
+    std::fs::write(&input, "<?php echo 'ok';")?;
+    let outside = dir.path().join("scan-other/outside.php");
+
+    for (target, expected) in [(&root, "src/input.php"), (&input, "input.php")] {
+        let mut report = assail::analyze(target)?;
+        report.weak_points = make_test_report().weak_points;
+        report.weak_points[0].location = Some(format!("{}:17", input.display()));
+        report.weak_points[1].location = Some(outside.display().to_string());
+
+        let log = sarif::to_sarif(&report)?;
+        let run = &log.runs[0];
+        let location = &run.results[0].locations[0].physical_location;
+        assert_eq!(location.artifact_location.uri, expected);
+        assert_eq!(
+            run.properties["coverage"]["inputs"][0]["path"],
+            location.artifact_location.uri
+        );
+        assert_eq!(
+            location.region.as_ref().ok_or("missing line")?.start_line,
+            17
+        );
+        let outside_location = &run.results[1].locations[0].physical_location;
+        assert_eq!(
+            outside_location.artifact_location.uri,
+            outside.to_string_lossy()
+        );
+        assert!(outside_location.region.is_none());
+        assert_eq!(report.coverage.inputs[0].path, input);
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn coverage_paths_preserve_relative_bytes_in_sarif() {

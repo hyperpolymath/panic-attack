@@ -24,8 +24,11 @@ recognition of extensionless or custom-language source.
 Coverage `path` strings use lossy UTF-8 for readability. On Unix, non-UTF-8
 paths additionally include `path_bytes_hex`, the hex-encoded original path
 bytes; Unix readers use these bytes to restore the exact path. Older reports
-without this field still load. In SARIF, both representations refer to the
-path relative to the scan root when that prefix matches.
+without this field still load. In SARIF, `to_sarif` uses the scan root directory
+as the base, or the scan root's parent directory when the scan root is a file.
+Both representations are made relative to this base when that prefix matches;
+paths outside the base are retained. Unix readers should resolve `path_bytes_hex`
+using this same base.
 
 A source read is bounded to 16 MiB. Read/decode/parse failures retain the other
 results and leave incomplete coverage. There is not yet a global analysis

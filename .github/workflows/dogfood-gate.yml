@@ -98,7 +98,7 @@ jobs:
 
           :warning: **No .a2ml/.deed manifest files found.** Every RSR-compliant repo should have a repo deed (`<reponame>_chora.deed`) at its root.
 
-          Author them per hyperpolymath/standards `1-formats/k9/spec/K9-CONTRACT-SPEC.adoc` (D173).
+          Author them per metadatastician/standards `1-formats/k9/spec/K9-CONTRACT-SPEC.adoc` (D173).
           EOF
           else
             echo "## K9 Contract Validation" >> "$GITHUB_STEP_SUMMARY"
