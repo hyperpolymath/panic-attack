@@ -12,7 +12,7 @@ use crate::types::*;
 use anyhow::Result;
 use regex::Regex;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -4133,7 +4133,7 @@ impl Analyzer {
         use std::collections::HashSet;
 
         let mut test_only_functions = Vec::new();
-        let mut function_calls = std::collections::HashMap::new();
+        let mut function_calls = std::collections::BTreeMap::new();
         let mut in_test_block = false;
         let mut current_function = String::new();
 
@@ -5302,7 +5302,7 @@ impl Analyzer {
     // ============================================================
 
     fn detect_frameworks(&self, files: &[PathBuf]) -> Result<Vec<Framework>> {
-        let mut frameworks = HashSet::new();
+        let mut frameworks = BTreeSet::new();
 
         // Primary signal: dependency manifest files.  These are the most reliable
         // because they declare actual dependencies, not just keyword mentions.
@@ -5584,7 +5584,7 @@ impl Analyzer {
         weak_points: &[WeakPoint],
         stats: &ProgramStatistics,
     ) -> Vec<AttackAxis> {
-        let mut recommendations = HashSet::new();
+        let mut recommendations = BTreeSet::new();
 
         // Base recommendations come from weak-point categories.
         for wp in weak_points {
@@ -5614,7 +5614,7 @@ impl Analyzer {
         frameworks: &[Framework],
     ) -> DependencyGraph {
         let mut edges = Vec::new();
-        let mut dir_groups: HashMap<String, Vec<String>> = HashMap::new();
+        let mut dir_groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
         // Group by directory first to approximate local import neighborhoods.
         for stat in file_statistics {
@@ -5663,7 +5663,7 @@ impl Analyzer {
     }
 
     fn build_taint_matrix(weak_points: &[WeakPoint], frameworks: &[Framework]) -> TaintMatrix {
-        let mut matrix: HashMap<(WeakPointCategory, AttackAxis), TaintMatrixRow> = HashMap::new();
+        let mut matrix: BTreeMap<(WeakPointCategory, AttackAxis), TaintMatrixRow> = BTreeMap::new();
 
         // Rows are keyed by source category x sink axis to enable pivot-friendly reporting.
         for wp in weak_points {
