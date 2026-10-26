@@ -2,15 +2,25 @@
 
 === [Unreleased]
 
-==== Fixed — assail reports are deterministic
+==== Changed — attestation hashes are reproducible JCS
 
-* The same input now yields the same report on every run. `+frameworks+`,
-`+recommended_attacks+`, the taint-matrix rows and dependency-graph edges were
-built from `+HashSet+`/`+HashMap+` iteration order, which changes per run, so
-the canonical JSON (and any hash over it, such as the `+--attest+` seal)
-differed for identical input. They now use `+BTreeSet+`/`+BTreeMap+` (enum
-declaration order via derived `+Ord+` on `+AttackAxis+`, `+Framework+` and
-`+WeakPointCategory+`). A regression test runs the analysis nine times.
+* `+assail --attest+` now hashes the intent and evidence records as their
+JCS (RFC 8785) bytes instead of `+serde_json+` struct order, and writes the
+`+.attestation.json+` sidecar itself as I-JSON/JCS. Anyone holding the sidecar
+can recompute both hashes in any language, for example with
+`+jq -cjS .attestation.intent | sha256sum+`.
+* The seal gains a `+hash_scheme+` field (`+jcs-sha256+`). The scheme is
+prefixed to the chain hash, so it is covered by any Ed25519 signature:
+relabelling a seal as legacy to skip the content check breaks the chain hash.
+* `+attest verify+` now rehashes the embedded intent and evidence and fails on
+a mismatch. Before, it checked only that the chain hash matched the three
+stored digests, so the intent and evidence could be edited after sealing
+without detection. Sidecars written before this change (no `+hash_scheme+`)
+still verify, reported as `+not rehashed (legacy hash scheme)+`.
+* `+attest verify+` rejects any digest field that is not exactly 64 lowercase hex
+characters. Fixed widths keep the legacy and scheme-prefixed chain inputs
+(192 and 202 bytes) apart; otherwise moving the scheme name into `+intent_hash+`
+would reproduce the signed bytes on the legacy path.
 
 ==== Added — KYAML report output
 

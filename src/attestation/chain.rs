@@ -30,11 +30,11 @@
 //!
 //! 3. **Seal** (after scanning): `seal()` finalises the accumulator
 //!    (which records wall clock time, CPU time, and peak RSS), serialises
-//!    intent and evidence to JSON, then computes:
-//!      - `intent_hash`    = SHA-256 of the serialised intent JSON
-//!      - `evidence_hash`  = SHA-256 of the serialised evidence JSON
+//!    intent and evidence to JCS (RFC 8785), then computes:
+//!      - `intent_hash`    = SHA-256 of the intent's JCS bytes
+//!      - `evidence_hash`  = SHA-256 of the evidence's JCS bytes
 //!      - `report_hash`    = SHA-256 of the report JSON bytes
-//!      - `chain_hash`     = SHA-256(intent_hash || evidence_hash || report_hash)
+//!      - `chain_hash`     = SHA-256(hash_scheme || intent_hash || evidence_hash || report_hash)
 //!
 //!        The chain_hash is the cryptographic root — if any component changes,
 //!        chain_hash changes. Optionally, chain_hash is signed with Ed25519.
@@ -61,11 +61,11 @@
 //!   ▼
 //! builder.seal(report_json, signing_key)
 //!   │  └─ accumulator.finalize() → freezes evidence, records timing/memory
-//!   │  └─ serde_json::to_vec(intent) → intent bytes for hashing
-//!   │  └─ serde_json::to_vec(evidence) → evidence bytes for hashing
+//!   │  └─ JCS (RFC 8785) of intent → intent bytes for hashing
+//!   │  └─ JCS (RFC 8785) of evidence → evidence bytes for hashing
 //!   │  └─ ReportSeal::create(nonce, intent_json, evidence_json, report_json)
 //!   │      └─ Computes intent_hash, evidence_hash, report_hash
-//!   │      └─ chain_hash = SHA-256(intent_hash || evidence_hash || report_hash)
+//!   │      └─ chain_hash = SHA-256(hash_scheme || intent_hash || evidence_hash || report_hash)
 //!   │  └─ seal.sign(key_path)? → Ed25519 over chain_hash (if key provided)
 //!   │  └─ A2mlEnvelope::wrap(chain) → sets envelope_type = "trustfile"
 //!   │
@@ -86,7 +86,8 @@
 //!   flow of the program.
 //!
 //! - **INV-5 (Chain Hash)**: Computed in `ReportSeal::create()` by hashing
-//!   the concatenation of intent_hash, evidence_hash, and report_hash.
+//!   the concatenation of hash_scheme, intent_hash, evidence_hash, and
+//!   report_hash.
 //!   This is the cryptographic binding of all three phases.
 //!
 //! ## Known Gaps
@@ -190,20 +191,22 @@ impl AttestationChainBuilder {
     ///    and computes `evidence_hash` = SHA-256 of the serialised evidence.
     ///
     /// 2. **Serialise for hashing**: Converts the intent and evidence
-    ///    structs to JSON bytes via `serde_json::to_vec`. These byte
-    ///    sequences are what get hashed — the serialised form, not the
-    ///    in-memory struct. This means the hash is deterministic: same
-    ///    field values → same JSON bytes → same hash.
+    ///    structs to their JCS (RFC 8785) bytes via
+    ///    [`crate::json::to_canonical_bytes`]. These byte sequences are what
+    ///    get hashed. JCS fixes key order, number form and string escaping,
+    ///    so same field values → same bytes → same hash, and a verifier in
+    ///    any language can recompute both hashes from the sidecar alone.
     ///
     /// 3. **Create seal**: Calls `ReportSeal::create()` with the nonce
     ///    and the three JSON byte slices. The seal computes:
     ///      - `intent_hash`   = SHA-256(intent_json)
     ///      - `evidence_hash` = SHA-256(evidence_json)
     ///      - `report_hash`   = SHA-256(report_json)
-    ///      - `chain_hash`    = SHA-256(intent_hash || evidence_hash || report_hash)
+    ///      - `chain_hash`    = SHA-256(hash_scheme || intent_hash || evidence_hash || report_hash)
     ///
-    ///        The `||` is string concatenation of the hex digests — 64 + 64 + 64 = 192
-    ///        ASCII characters fed into SHA-256.
+    ///        The `||` is string concatenation: the scheme name `jcs-sha256`
+    ///        followed by the three hex digests, 10 + 64 + 64 + 64 = 202 ASCII
+    ///        characters fed into SHA-256.
     ///
     /// 4. **Sign** (optional): If a signing key path is provided, calls
     ///    `seal.sign(key_path)`, which reads the Ed25519 private key seed,
@@ -225,11 +228,10 @@ impl AttestationChainBuilder {
             .expect("accumulator already consumed")
             .finalize();
 
-        // Step 2: Serialise intent and evidence to deterministic JSON bytes.
-        // serde_json::to_vec produces compact JSON (no pretty-printing),
-        // which is deterministic for the same field values.
-        let intent_json = serde_json::to_vec(&self.intent)?;
-        let evidence_json = serde_json::to_vec(&evidence)?;
+        // Step 2: Serialise intent and evidence to their JCS bytes, which
+        // `verify_attestation_file` recomputes from the sidecar.
+        let intent_json = crate::json::to_canonical_bytes(&self.intent)?;
+        let evidence_json = crate::json::to_canonical_bytes(&evidence)?;
 
         // Step 3: Create the seal — computes all four hashes including chain_hash.
         // The nonce is passed directly from self.intent.session_nonce, preserving

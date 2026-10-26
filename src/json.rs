@@ -24,6 +24,13 @@ pub fn to_canonical_string<T: Serialize + ?Sized>(value: &T) -> Result<String> {
     Ok(out)
 }
 
+/// The bare JCS bytes of `value`, with no trailing line feed: the form
+/// RFC 8785 defines for hashing and signing.
+pub fn to_canonical_bytes<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>> {
+    let tree = serde_json::to_value(value).context("serializing to JSON")?;
+    ijson_jcs::to_jcs(&tree).context("canonicalizing JSON (JCS)")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

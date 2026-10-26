@@ -7,9 +7,18 @@
 ||| Mirrors `src/attestation/{intent,evidence,seal}.rs`. The seal binds the
 ||| three attestation phases via
 |||
-|||     chain_hash = H(intent_hash || evidence_hash || report_hash)
+|||     chain_hash = H(hash_scheme || intent_hash || evidence_hash || report_hash)
 |||
-||| and optionally signs that chain hash with Ed25519.
+||| (legacy seals omit `hash_scheme`) and optionally signs that chain hash
+||| with Ed25519.
+|||
+||| SCOPE: `chainHash` below is the chain hash for ONE fixed scheme, i.e.
+||| `\i, e, r => H(s || i || e || r)` for a given `s`; the theorems hold for
+||| each scheme separately. Binding the scheme itself (relabelling a seal's
+||| scheme invalidates it) is NOT modelled here. In the code it rests on the
+||| verifier accepting only 64-hex-character digests, which makes the
+||| encoding injective across schemes (192 vs 202 input bytes). A model with
+||| the scheme as a fourth input and a no-downgrade lemma is follow-up work.
 |||
 ||| The cryptographic facts the seal relies on are taken as explicit
 ||| HYPOTHESES — a `parameters` block, NOT `postulate` (panic-attack's own
