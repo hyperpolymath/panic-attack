@@ -247,7 +247,7 @@ impl Language {
 }
 
 /// Application frameworks detected in the codebase
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum Framework {
     WebServer,
@@ -282,7 +282,7 @@ pub struct DependencyGraph {
 }
 
 /// Attack axes for stress testing
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AttackAxis {
     Cpu,
@@ -399,7 +399,7 @@ impl WeakPoint {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum WeakPointCategory {
     // Original categories
     UncheckedAllocation,
