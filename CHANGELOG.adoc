@@ -22,6 +22,23 @@ characters. Fixed widths keep the legacy and scheme-prefixed chain inputs
 (192 and 202 bytes) apart; otherwise moving the scheme name into `+intent_hash+`
 would reproduce the signed bytes on the legacy path.
 
+==== Added — KYAML report output
+
+* `+--output-format kyaml+` writes reports in KYAML, the estate YAML dialect
+(`+crate::kyaml+`). The output is a fixed point of `+yq -p yaml -o kyaml+`
+(v4.54.1), so it passes standards' `+scripts/kyaml-format.sh --check+`. On the
+reports checked it is also byte-identical to `+yq -p json -o kyaml+` run on the
+JCS report. (Reading JSON, `+yq+` reformats some floats, `+1e-7+` to `+1e-07+`;
+the KYAML report keeps the JCS form, which `+yq+` preserves.)
+* Keys and numbers are in JCS order and form, so the KYAML and JSON reports of
+a scan hold the same data.
+* One deliberate difference from `+yq+`: the YAML non-printables U+007F to U+009F,
+U+FFFE and U+FFFF are escaped as `+\uXXXX+`. `+yq+` writes them raw, and U+0085
+(NEL) then reads back as a line break. `+kyaml-format.sh+` refuses such a file
+rather than judging it, because `+yq+`'s own rewrite would change the data.
+* `+README.adoc+` now lists the real `+--output-format+` values; it named
+`+markdown+` and `+text+`, which never existed.
+
 ==== Added — `.kyaml` input (estate YAML policy D280/D307)
 
 * Attack profiles, ambush timelines, amuck specs, `+diff+` reports and

@@ -36,6 +36,7 @@ pub mod i18n;
 pub mod jit_context;
 pub mod json;
 pub mod kanren;
+pub mod kyaml;
 pub mod mass_panic;
 pub mod notify;
 pub mod panll;
