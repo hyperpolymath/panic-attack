@@ -17,6 +17,10 @@ a mismatch. Before, it checked only that the chain hash matched the three
 stored digests, so the intent and evidence could be edited after sealing
 without detection. Sidecars written before this change (no `+hash_scheme+`)
 still verify, reported as `+not rehashed (legacy hash scheme)+`.
+* `+attest verify+` rejects any digest field that is not exactly 64 lowercase hex
+characters. Fixed widths keep the legacy and scheme-prefixed chain inputs
+(192 and 202 bytes) apart; otherwise moving the scheme name into `+intent_hash+`
+would reproduce the signed bytes on the legacy path.
 
 ==== Added — `.kyaml` input (estate YAML policy D280/D307)
 

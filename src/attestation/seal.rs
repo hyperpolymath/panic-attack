@@ -42,7 +42,9 @@ fn legacy_hash_scheme() -> String {
 }
 
 /// The chain hash over three hex digests. Every scheme except the legacy
-/// one prefixes its name, binding the scheme into the hash.
+/// one prefixes its name, binding the scheme into the hash. The encoding is
+/// injective across schemes only because each digest is exactly 64 hex
+/// characters, which `verify_attestation_str` checks before calling this.
 pub fn chain_hash(
     hash_scheme: &str,
     intent_hash: &str,

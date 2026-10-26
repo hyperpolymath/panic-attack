@@ -102,6 +102,25 @@ pub fn verify_attestation_str(content: &str) -> anyhow::Result<VerifyResult> {
     let seal = &chain.seal;
     let mut failures = Vec::new();
 
+    // Every digest must be exactly 64 lowercase hex characters. With fixed
+    // widths the legacy chain input (192 bytes) and the scheme-prefixed one
+    // (202 bytes) cannot coincide; without them, moving the scheme name into
+    // `intent_hash` and dropping `hash_scheme` would reproduce the signed
+    // bytes on the legacy path, which skips the content check.
+    for (name, digest) in [
+        ("intent_hash", &seal.intent_hash),
+        ("evidence_hash", &seal.evidence_hash),
+        ("report_hash", &seal.report_hash),
+        ("chain_hash", &seal.chain_hash),
+    ] {
+        if !is_sha256_hex(digest) {
+            failures.push(format!("{} is not a SHA-256 digest: {}", name, digest));
+        }
+    }
+    if !failures.is_empty() {
+        return Ok(VerifyResult::Failed(failures));
+    }
+
     // Recompute chain_hash = SHA-256(hash_scheme || intent_hash || evidence_hash || report_hash)
     let computed_chain_hash = seal::chain_hash(
         &seal.hash_scheme,
@@ -168,6 +187,14 @@ pub fn verify_attestation_str(content: &str) -> anyhow::Result<VerifyResult> {
         content_bound,
         signature_verified,
     })
+}
+
+/// A hex-encoded SHA-256 digest as `hex::encode` writes it.
+fn is_sha256_hex(digest: &str) -> bool {
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 #[cfg(feature = "signing")]
@@ -377,6 +404,32 @@ mod tests {
         let reasons = failures(&downgraded);
         assert!(
             reasons.iter().any(|r| r.starts_with("chain_hash mismatch")),
+            "{reasons:?}"
+        );
+    }
+
+    #[test]
+    fn shifting_the_scheme_into_a_digest_field_is_rejected() {
+        // The legacy chain hashes `i || e || r`; the JCS chain hashes
+        // `"jcs-sha256" || i || e || r`. Moving the scheme name into
+        // `intent_hash` would reproduce the signed bytes exactly while
+        // dropping to the legacy path, which skips the content check.
+        let shifted = edit(&sealed_sidecar(), |tree| {
+            strip_scheme(tree);
+            let seal = &mut tree["attestation"]["seal"];
+            let original = seal["intent_hash"]
+                .as_str()
+                .expect("intent_hash")
+                .to_string();
+            seal["intent_hash"] =
+                serde_json::json!(format!("{}{}", seal::HASH_SCHEME_JCS, original));
+            tree["attestation"]["intent"]["cli_args"] = serde_json::json!(["--quiet"]);
+        });
+        let reasons = failures(&shifted);
+        assert!(
+            reasons
+                .iter()
+                .any(|r| r.starts_with("intent_hash is not a SHA-256 digest")),
             "{reasons:?}"
         );
     }
