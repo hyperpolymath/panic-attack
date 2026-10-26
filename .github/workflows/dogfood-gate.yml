@@ -76,7 +76,7 @@ jobs:
         id: detect
         run: |
           COUNT=$(find . \( -name '*.k9' -o -name '*.k9.ncl' \) -not -path './.git/*' | wc -l)
-          CONFIG_COUNT=$(find . \( -name '*.toml' -o -name '*.yaml' -o -name '*.yml' -o -name '*.json' \) \
+          CONFIG_COUNT=$(find . \( -name '*.toml' -o -name '*.yaml' -o -name '*.yml' -o -name '*.kyaml' -o -name '*.json' \) \
             -not -path './.git/*' -not -path './node_modules/*' -not -path './.deno/*' \
             -not -name 'package-lock.json' -not -name 'Cargo.lock' -not -name 'deno.lock' | wc -l)
           echo "k9_count=$COUNT" >> "$GITHUB_OUTPUT"
@@ -133,7 +133,7 @@ jobs:
             -not -path '*/external_corpora/*' -not -path '*/.lake/*' \
             -type f \( -name '*.rs' -o -name '*.ex' -o -name '*.exs' -o -name '*.res' \
               -o -name '*.js' -o -name '*.ts' -o -name '*.json' -o -name '*.toml' \
-              -o -name '*.yml' -o -name '*.yaml' -o -name '*.md' -o -name '*.adoc' \
+              -o -name '*.yml' -o -name '*.yaml' -o -name '*.kyaml' -o -name '*.md' -o -name '*.adoc' \
               -o -name '*.idr' -o -name '*.zig' -o -name '*.v' -o -name '*.jl' \
               -o -name '*.gleam' -o -name '*.hs' -o -name '*.ml' -o -name '*.sh' \) \
             -exec grep -aPrl "$PATTERNS" {} \; > /tmp/empty-lint-results.txt 2>/dev/null
@@ -282,7 +282,7 @@ jobs:
           fi
 
           # VeriSimDB integration?
-          if grep -rl 'verisimdb\|VeriSimDB' --include='*.toml' --include='*.yaml' --include='*.yml' --include='*.json' --include='*.rs' --include='*.ex' . 2>/dev/null | head -1 | grep -q .; then
+          if grep -rl 'verisimdb\|VeriSimDB' --include='*.toml' --include='*.yaml' --include='*.yml' --include='*.kyaml' --include='*.json' --include='*.rs' --include='*.ex' . 2>/dev/null | head -1 | grep -q .; then
             SCORE=$((SCORE + 1))
             VSDB_STATUS=":white_check_mark:"
           else
