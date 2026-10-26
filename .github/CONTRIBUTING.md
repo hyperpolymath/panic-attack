@@ -67,7 +67,7 @@ enhancement suggestion:
 
 ### Prerequisites
 
-- Rust 1.89 or later (MSRV)
+- Rust 1.90 or later (MSRV)
 
 - Cargo
 

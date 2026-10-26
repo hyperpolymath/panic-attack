@@ -343,7 +343,7 @@ impl Analyzer {
         }
 
         let language = if target.is_file() {
-            Language::detect(target.to_str().unwrap_or(""))
+            Language::detect_path(target)
         } else {
             Self::detect_directory_language(target)?
         };
@@ -361,7 +361,7 @@ impl Analyzer {
     /// When `accumulator` is `Some`, each successfully read file and each
     /// traversed directory are recorded into the accumulator for the
     /// attestation chain. When `None`, this behaves identically to
-    /// [`analyze()`].
+    /// `analyze`.
     pub fn analyze_with_accumulator(
         &self,
         accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,
@@ -498,7 +498,7 @@ impl Analyzer {
             let mut file_weak_points = Vec::new();
 
             // Dispatch to language-specific analyzer
-            let file_lang = Language::detect(file.to_str().unwrap_or(""));
+            let file_lang = Language::detect_path(file);
 
             // Record this file into the attestation accumulator (zero-cost when None)
             if let Some(ref mut acc) = accumulator {
@@ -850,9 +850,8 @@ impl Analyzer {
         let (files, _) = super::coverage::discover(dir)?;
         let mut counts = std::collections::HashMap::new();
         for path in files {
-            *counts
-                .entry(Language::detect(path.to_str().unwrap_or("")))
-                .or_insert(0usize) += 1;
+            let language = Language::detect_path(&path);
+            *counts.entry(language).or_insert(0usize) += 1;
         }
         Ok(counts
             .into_iter()
@@ -5437,7 +5436,7 @@ impl Analyzer {
         // scanning .rs files for `use` lines produces false positives from
         // string literals in tests and analyzer patterns.
         for file in files {
-            let file_lang = Language::detect(file.to_str().unwrap_or(""));
+            let file_lang = Language::detect_path(file);
             let content = match read_bounded(file, SOURCE_FILE_READ_LIMIT) {
                 Some(c) => c,
                 None => continue,

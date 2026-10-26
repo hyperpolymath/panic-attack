@@ -52,7 +52,7 @@ fn malformed_php_and_unsupported_inputs_are_visible() {
         .any(|f| f.description.starts_with("PHP-EMPTY-CALLABLE:")));
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn non_utf8_input_paths_serialize_without_losing_index_lookups() {
     use std::os::unix::ffi::OsStringExt;
@@ -64,7 +64,18 @@ fn non_utf8_input_paths_serialize_without_losing_index_lookups() {
     let content = b"<?php echo 'ok';";
     std::fs::write(&path, content).unwrap();
     let mut report = assail::analyze(dir.path()).unwrap();
+    // The extension is valid ASCII even though the stem is not, so this file is
+    // analysable and must not be filed away as unsupported/excluded.
+    assert_eq!(report.coverage.analyzed_files, 1);
+    assert_eq!(report.coverage.inputs[0].status, "analyzed");
     assert_eq!(report.coverage.inputs[0].path, path);
+    assert_eq!(report.language, panic_attack::types::Language::Php);
+    let single_file_report = assail::analyze(&path).unwrap();
+    assert_eq!(
+        single_file_report.language,
+        panic_attack::types::Language::Php
+    );
+    assert_eq!(single_file_report.coverage.analyzed_files, 1);
     report
         .coverage
         .mark(&path, "unsupported", None, Some(content));
@@ -82,7 +93,7 @@ fn non_utf8_input_paths_serialize_without_losing_index_lookups() {
     assert_eq!(report.coverage.inputs[0].path, path);
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 #[test]
 fn colliding_lossy_paths_round_trip_with_distinct_bytes() {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -102,6 +113,7 @@ fn colliding_lossy_paths_round_trip_with_distinct_bytes() {
     }
 
     let report = assail::analyze(dir.path()).unwrap();
+    assert_eq!(report.coverage.analyzed_files, 3);
     let json = panic_attack::json::to_canonical_string(&report).unwrap();
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
     for input in value["coverage"]["inputs"].as_array().unwrap() {

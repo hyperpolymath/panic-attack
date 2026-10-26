@@ -1,19 +1,40 @@
 # This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
-# This workflow is managed by gh actions-lock.
-# This workflow is managed by gh actions-lock.
+# SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+#
+# cargo-audit.yml — advisories in the locked dependency graph.
+#
+# What this replaces: `cargo install cargo-audit` unpinned, then bare
+# `cargo audit`. Two problems, both the kind that makes a gate untrustworthy:
+#
+#   * an unpinned installer means the advisory *scanner* changes underneath a
+#     fixed lockfile, so a red here may say nothing about this repository;
+#   * the findings never left the log, so the job's only output was an exit
+#     code.
+#
+# The audit is pinned by version with `--locked`. Findings are published as JSON
+# and rendered into the job summary; `cargo audit` still decides the exit status,
+# so a vulnerability fails the job rather than being merely displayed.
 name: Security Audit
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   schedule:
-    - cron: '0 0 * * 0' # Weekly on Sunday
+    - cron: '0 0 * * 0' # Weekly, Sunday
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: cargo-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_AUDIT_VERSION: '0.22.2'
 
 jobs:
   audit:
@@ -21,16 +42,84 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7.0.1
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         with:
           toolchain: stable
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          key: cargo-audit
 
-      - name: Run cargo audit
-        run: cargo audit
+      - name: Install cargo-audit (pinned)
+        run: |
+          set -euo pipefail
+          cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
+          cargo audit --version
+
+      # `--json` writes to stdout, which keeps the human output for the log and
+      # the machine output for the artifact. The exit status of THIS step is what
+      # gates: a vulnerability fails, an unmaintained-only warning does not.
+      - name: Audit the locked graph
+        id: audit
+        run: |
+          set -uo pipefail
+          # One scan, two audiences: JSON for the artifact and the summary,
+          # stderr for the log. The exit status is the scanner's own.
+          cargo audit --json > audit.json 2> audit.err
+          status=$?
+          if [ -s audit.err ]; then
+            cat audit.err >&2
+          fi
+          exit "$status"
+
+      - name: Summarise findings
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+
+          print("## Cargo audit")
+          print("")
+          if not os.path.exists("audit.json"):
+              print("_no JSON report was produced — see the audit step above_")
+              raise SystemExit(0)
+          try:
+              report = json.load(open("audit.json"))
+          except json.JSONDecodeError:
+              print("_the audit produced no parseable JSON_")
+              raise SystemExit(0)
+
+          vulns = report.get("vulnerabilities", {}).get("list", [])
+          warnings = report.get("warnings", {})
+          counts = report.get("vulnerabilities", {}).get("count", 0)
+
+          print(f"**{counts}** advisory finding(s) in the locked graph.")
+          print("")
+          if vulns:
+              print("| crate | version | advisory | title |")
+              print("|---|---|---|---|")
+              for v in vulns:
+                  adv = v.get("advisory", {})
+                  pkg = v.get("package", {})
+                  print(f"| `{pkg.get('name')}` | {pkg.get('version')} | "
+                        f"{adv.get('id')} | {adv.get('title')} |")
+          if warnings.get("unmaintained"):
+              print("")
+              print(f"{len(warnings['unmaintained'])} unmaintained (advisory, not a gate).")
+          PY
+
+      - name: Upload the audit report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: cargo-audit
+          path: audit.json
+          retention-days: 30
+          if-no-files-found: warn

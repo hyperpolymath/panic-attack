@@ -32,6 +32,9 @@ fn aggregate_folds_idris2_unsafecode_soundness_proof() {
             covers: Vec::new(),
         }],
         base_report: None,
+        proven_tests: Vec::new(),
+        proven_tests_root: None,
+        fail_on_defect: false,
     })
     .expect("aggregate should fold the Idris2 fixture");
 

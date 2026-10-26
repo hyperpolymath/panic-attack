@@ -1,0 +1,226 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= CI/CD for panic-attack
+:toc: left
+:toclevels: 3
+:sectnums:
+
+== The failure this replaces
+
+On 2026-10-25 this repository's CI went dark for four hours. Twelve
+`pull_request` workflows concluded `startup_failure`: **zero jobs, no log, no
+annotation, no check run**. Nothing in the GitHub UI said why, and the only
+diagnosis available was to read the estate's settings canon and compare it with
+our own workflow files.
+
+Four causes, all policy-level, none visible from the code:
+
+tag-pinned `uses:`, e.g. `actions/checkout@v7.0.1`:: The estate posture is
+`sha_pinning_required = true`. Under it a tag-pinned `uses:` is refused **at
+startup** — the same opaque death. The control is worth having, so the fix is to
+pin properly: every `uses:` in this repository now names a 40-hex commit with a
+`# <version>` comment, and `ci-integrity.yml` refuses a regression.
+
+this repository's allowed-actions policy:: The remaining six — `rust-ci`,
+`governance`, `hypatia-scan`, `secret-scanner`, `scorecard`, `mirror` — call the
+estate's reusable workflows, and every run of them concludes `startup_failure`
+with zero jobs. The estate allowlist already covers `hyperpolymath/*`, and
+sibling repositories call the *same* reusable at the *same* pin successfully, so
+the refusal is scoped to this repository: `allowed_actions: selected` with
+`verified_allowed` passes GitHub-owned and marketplace-verified actions and
+refuses a non-verified cross-repository `uses:`. That is the exact pattern here —
+checkout, cache and `dtolnay/rust-toolchain` work; every estate call dies.
+`secret-scanner.yml` is the serious one: `main` requires the context
+**`scan / gitleaks`**, which can therefore never arrive, and no pull request can
+merge until it does. This needs repository admin (`allowed_actions: all`, the
+canon default, or `hyperpolymath/*` in `patterns_allowed`); the policy endpoints
+are 403 for an ordinary token. See `docs/ci/PROMPT-actions-policy.md`.
+
+a `uses:` pinned to a commit that no longer exists upstream:: The caller dies
+before its first job, exactly like the other two. Cheap to check, so it is.
+
+The signature that distinguishes all three from an ordinary build failure is in
+the runs API: `jobs: []` and `referenced_workflows: []` on a run whose workflow
+has a job at all. `scripts/ci/triage-startup-failure.sh` (run by
+`ci-integrity.yml`, strict on `workflow_dispatch`) resolves every referenced
+repository's canonical name and every reusable pin, so the next occurrence is one
+command away from a sentence:
+
+[source,sh]
+----
+scripts/ci/triage-startup-failure.sh
+# hyperpolymath/standards is now metadatastician/standards — allowlist patterns
+# match the canonical name, so a `uses:` written with the old owner is refused at
+# startup (signature: startup_failure with referenced_workflows: []).
+----
+
+The lesson generalises and is the reason this document exists: *a run that never
+starts is invisible to every gate that watches runs*. It produces no check run,
+so a required context silently stops arriving and the branch looks **healthier**
+than a broken one. Two of the three causes are now gated before they can bite
+(see <<integrity>>); the third is named, tracked, and evidenced.
+
+== The shape of the pipeline
+
+[cols="2,3,2",options="header"]
+|===
+| Workflow | What it answers | When
+
+| `verify.yml`
+| Does it build, lint, test, document and self-scan honestly? The floor that
+  cannot be taken out by another repository.
+| every PR, every push
+
+| `ci-integrity.yml`
+| Can the CI itself start? SHA pins, lockfile coverage, allowlist coverage,
+  YAML parseability.
+| every PR, every push, Mondays
+
+| `proven-tests.yml`
+| Is the suite's claimed coverage derived from tests that ran, and are its tiers
+  honest? Plus the framework's own Idris2 suite.
+| ledger: every PR. framework: Mondays/dispatch
+
+| `squabble-gate.yml`
+| Is any required context missing, and is any CI upstream dead? Runs
+  `cicd-squabbler`.
+| Wednesdays, dispatch, PRs labelled `ci-squabble`
+
+| `recon.yml`
+| What do two independent analysers say about this repository, and has any
+  category regressed?
+| Tuesdays, dispatch
+
+| `rust-ci.yml`, `governance.yml`, `hypatia-scan.yml`, `secret-scanner.yml`,
+  `scorecard.yml`, `mirror.yml`
+| The estate's richer reusable gates (audit, coverage upload, Hypatia SARIF,
+  governance, secret scanning). **Blocked at the time of writing** by this
+  repository's Actions policy refusing cross-repository reusable workflows (see
+  above, and `docs/ci/PROMPT-actions-policy.md`), not by anything in the files.
+| per estate canon
+
+| `e2e.yml`, `codecov`, `cargo-audit`, `chapel-ci`, `dogfood-gate`,
+  `bridge-gate`, `pages`, `release`
+| Behavioural, supply-chain, contract and release checks.
+| per file header
+|===
+
+=== Why `verify.yml` exists at all
+
+Every estate gate except `verify` depends on `hyperpolymath/standards` being
+reachable *and* permitted at that instant. That is the right long-term shape -
+one place to configure, propagate everywhere - but it means a settings change in
+another repository can remove this repository's entire build signal. `verify`
+depends on nothing but actions this repository pins itself, so the "does it
+compile and pass" answer survives any policy change elsewhere.
+
+<<integrity>> === CI integrity
+
+`ci-integrity.yml` runs four gates, each of which corresponds to a way a
+workflow dies before its first job:
+
+SHA pins:: `.githooks/validate-sha-pins.sh` (canon). Every third-party `uses:`
+names a 40-hex commit plus a `# <version>` comment.
+Lockfile coverage:: `.githooks/validate-actions-lock.sh` (canon), plus
+`scripts/ci/pin-workflow-uses.py --check`, which derives the lockfile from the
+workflows. A caller pinned to a commit whose lockfile has drifted dies with
+`failure`, 0 jobs and *no reason in the API* - which is why this is a gate and
+not a courtesy.
+Allowlist coverage:: `scripts/ci/check-allowed-actions.sh` (canon) against the
+vendored `.github/actions-allowlist.json`. No API, no admin: it lists exactly
+which `uses:` the estate policy does not cover.
+YAML parseability:: every workflow parses *and* declares a `jobs:` map. A file
+whose quoting swallowed the document parses to a scalar and never runs.
+Startup-failure triage:: `scripts/ci/triage-startup-failure.sh` checks every
+`uses:`: 40-hex pin, canonical repository name after any rename, and that each
+reusable pin still exists. It also states the one cause no file can show — a
+repository-scoped allowed-actions policy refusing a cross-repository reference —
+and can print sibling repositories' run conclusions as the discriminator.
+Report-only on a pull request (the finding is an owner action, not a code
+change), strict on `workflow_dispatch`.
+
+Maintenance: after changing any `uses:`, run
+
+[source,sh]
+----
+bash scripts/ci/resolve-action-shas.sh      # network: resolves tag -> commit
+python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json
+----
+
+`action-pins.json` is committed on purpose: it records which tag a pin stood for
+on the day it was taken, so a reviewer can tell an intentional bump from a
+silent re-point.
+
+One hard-won rule about `actions.lock`: it is a **superset** of what `grep
+uses:` finds. `gh actions-lock` also records actions that composite actions
+resolve internally — `actions/upload-pages-artifact` runs
+`actions/upload-artifact@bbbca2dd…` itself — and GitHub validates the lockfile
+at *job setup*. A regenerator that rebuilds the file from the workflows deletes
+those entries, and the only symptom is `lockfile missing pin for …` in a job
+that never runs a step. `scripts/ci/pin-workflow-uses.py` therefore MERGES its
+`dependencies:` section instead of rebuilding it, and `--check` (which CI runs)
+is idempotent over the merged form.
+
+== Testing: evidence-graded, not declared
+
+`proven/ledger.json` grades this repository's suite on
+`proven-tests-and-benches`' 17-category x 14-aspect lattice. The rule the
+framework exists to enforce is that **coverage is derived from executed tests,
+never declared**, so:
+
+* `scripts/proven/inventory.sh` asks the test runner what tests exist, per
+  binary;
+* `scripts/proven/verify-ledger.py` fails when a cell selects no executed test,
+  when an executed test is claimed by nothing, or when a stronger tier is
+  claimed than the evidence supports;
+* the resulting report is fed to `panic-attack aggregate --proven-tests
+  --fail-on-defect`, which re-checks the report's internal consistency and fails
+  on an unsupported claim (an Actually-Proven entry with no ladder, a cited proof
+  file that is not there, a summary that disagrees with the entries).
+
+Tiers are used honestly: this repository has no proof-carrying Rust tests, so
+almost everything is `Provisionally-Proven` and says so. Five cells are declared
+**absent** with the command that would test them. A declared absence is a to-do
+list, not a silencer - `MutationTest` is absent because no mutation campaign
+runs here, which is the same `PA025 MutationGap` this tool reports about other
+repositories.
+
+== Recon: two analysers, one baseline
+
+`recon.yml` scans this repository with `panic-attack assail` and with
+`pons-asinorum` (pinned). They answer different questions - "what here is weak?"
+versus "what here is wasted, self-contradictory, or missing an escape hatch?" -
+and a finding that appears in both is corroborated evidence while a finding in
+exactly one is a prompt to look.
+
+Findings do **not** fail the job. This is the scanner: a scan of its own source
+will report what it is built to report, and failing on that creates pressure to
+suppress. Instead `recon/baseline.json` freezes the standing counts; a *new*
+category or a count *above* baseline fails; a count *below* is reported as debt
+paid and should be tightened in the same PR. See
+`docs/RECON-AND-EVIDENCE.adoc`.
+
+== Squabbling: fixing stuck gates without bypassing them
+
+`cicd-squabbler` (pinned to a commit) fetches this PR's live gate and reports
+which required contexts are missing or stuck, and maps the cross-repo CI chains
+this repository depends on. Its invariant is machine-checked: *green if and only
+if a required check actually ran and passed*, so an admin override or a dropped
+required context are provably not paths to green. It cannot fix code, and does
+not try.
+
+Exit codes are part of the contract and are never swallowed:
+`0` ok, `2` tool failure (**fails the job**), `3` no required-status-check rule
+on the base branch (reported), `4` a blocking chain finding - a cycle or a dead
+upstream (reported; fails when `strict` is requested), `5` agent items remain.
+
+== What is deliberately not here
+
+* **No `paths:` filter on a check intended to be required.** A required check
+  whose workflow filters itself off does not report as skipped - it does not
+  report at all, and the PR waits forever on a context that cannot arrive.
+* **No `continue-on-error` on a gate that can disagree with nobody.** An
+  advisory job that is always green carries no information; where a check is
+  genuinely advisory it says so in its name and its summary.
+* **No suppression of a finding to make a gate green.** Where debt exists it is
+  frozen in a baseline, in a reviewable file, with the reason.

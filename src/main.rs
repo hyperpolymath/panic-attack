@@ -519,8 +519,13 @@ enum Commands {
     /// existing report's findings (backed / corroborated / contradicted).
     /// Verdicts are explicitly conditioned on the named checker's trust.
     Aggregate {
-        /// External prover output file(s) to fold in (repeatable)
-        #[arg(long = "proof", value_name = "PATH", action = clap::ArgAction::Append, required = true)]
+        /// External prover output file(s) to fold in (repeatable).
+        ///
+        /// At least one `--proof` or `--proven-tests` is required; that is
+        /// checked in the engine so the two input kinds share one error path
+        /// (clap cannot express "one of these two" without a group, and a
+        /// group would have to be declared on the same struct as both).
+        #[arg(long = "proof", value_name = "PATH", action = clap::ArgAction::Append)]
         proofs: Vec<PathBuf>,
 
         /// Friendly-name override(s): PATH=NAME (repeatable)
@@ -534,6 +539,27 @@ enum Commands {
         /// Base assail/assault report to reconcile against (optional)
         #[arg(long = "report", value_name = "PATH")]
         report: Option<PathBuf>,
+
+        /// `proven-tests` JSON run report(s) to fold in (repeatable).
+        ///
+        /// Applies the tier->verdict mapping fixed in that repository's
+        /// docs/INTEROP-PANIC-ATTACK.adoc: only Actually-Proven ladders name a
+        /// proof artifact, and only those are read as `Closed`. Provisionally-
+        /// Proven and Unproven entries are recorded as informational — absence
+        /// of a proof is not presence of a hole.
+        #[arg(long = "proven-tests", value_name = "PATH", action = clap::ArgAction::Append)]
+        proven_tests: Vec<PathBuf>,
+
+        /// Directory cited `proof_file` paths resolve against
+        /// (default: the report's own directory).
+        #[arg(long = "proven-tests-root", value_name = "DIR")]
+        proven_tests_root: Option<PathBuf>,
+
+        /// Fail when an ingested proven-tests report makes a claim its own
+        /// contents do not support (empty ladder, missing cited file,
+        /// unrecognised tier, summary disagreeing with entries).
+        #[arg(long = "fail-on-defect", default_value_t = false)]
+        fail_on_defect: bool,
 
         /// Output report to file (JSON; default: reports/aggregate-<ts>.json)
         #[arg(short, long)]
@@ -569,7 +595,7 @@ enum Commands {
     ///
     /// `--headless` always works (text panel summaries to stdout). The
     /// windowed renderer requires `--features gui` at build time because
-    /// eframe/egui raise MSRV above 1.89.
+    /// eframe/egui raise MSRV above 1.90.
     Gui {
         /// Assault report JSON file
         #[arg(value_name = "REPORT")]
@@ -3097,6 +3123,9 @@ fn run_main() -> Result<()> {
             proofs,
             labels,
             covers,
+            proven_tests,
+            proven_tests_root,
+            fail_on_defect,
             report,
             output,
         } => {
@@ -3126,6 +3155,9 @@ fn run_main() -> Result<()> {
             let agg = aggregate::run(AggregateConfig {
                 proofs: proof_inputs,
                 base_report: report,
+                proven_tests,
+                proven_tests_root,
+                fail_on_defect,
             })?;
             let path = output.unwrap_or_else(default_aggregate_report_path);
             aggregate::write_report(&agg, &path)?;
@@ -3148,6 +3180,21 @@ fn run_main() -> Result<()> {
                             "    {:?}: {} ({} finding(s)) — {}",
                             r.effect, r.subject, r.affected_findings, r.detail
                         );
+                    }
+                }
+                for record in &agg.proven_tests {
+                    println!(
+                        "  proven-tests {} [{}]: {} passed / {} total, {} Actually-Proven, {} covered cells of {}",
+                        record.path.display(),
+                        record.suite,
+                        record.summary.passed,
+                        record.summary.total,
+                        record.summary.actually_proven,
+                        record.summary.covered_cells,
+                        record.summary.cat_aspect_cells
+                    );
+                    for defect in &record.defects {
+                        println!("    DEFECT: {defect}");
                     }
                 }
                 println!("  TRUST: {}", agg.trust_disclaimer);

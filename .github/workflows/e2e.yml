@@ -40,15 +40,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         with:
           toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.9.3
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
 
       - name: Build release binary
         run: cargo build --release
@@ -63,15 +63,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         with:
           toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.9.3
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
 
       - name: Build release binary
         run: cargo build --release
@@ -109,13 +109,39 @@ jobs:
 
       - name: E2E — Attestation chain
         run: |
-          # Run a scan with attestation and verify the chain
-          ./target/release/panic-attack assail . --output /tmp/attested-scan.json 2>&1 || true
-          echo "PASS: Attestation chain test completed"
+          set -euo pipefail
+          # What this replaces: `assail . --output … || true`, then an echo. That
+          # asserted nothing — no `--attest`, so no chain was built, and `|| true`
+          # made even a crash a pass. An "attestation chain test" that cannot
+          # fail is not a test of the attestation chain.
+          ./target/release/panic-attack assail . --attest \
+            --output /tmp/attested-scan.json --quiet
+          sidecar=/tmp/attested-scan.attestation.json
+          test -s "$sidecar" || { echo "::error::no attestation sidecar at $sidecar"; exit 1; }
+          ./target/release/panic-attack attest verify "$sidecar"
+          python3 - <<'PY'
+          import json
+
+          env = json.load(open("/tmp/attested-scan.attestation.json"))
+          chain = env["attestation"]
+          intent, evidence, seal = chain["intent"], chain["evidence"], chain["seal"]
+          # "Verified" is only meaningful if the chain it verified has content:
+          # a pre-execution commitment, recorded evidence of what was read, and a
+          # seal that binds the report hash to the intent.
+          assert env["envelope_type"] == "trustfile", env["envelope_type"]
+          assert env["decision_hash"] == seal["report_hash"], "decision hash != seal"
+          assert len(intent["session_nonce"]) == 64, "intent carries no nonce"
+          assert evidence["files_read"] > 0, evidence
+          assert evidence["rolling_content_hash"], evidence
+          assert seal["intent_hash"], seal
+          print(f"PASS: attestation chain verified "
+                f"({evidence['files_read']} files, "
+                f"{evidence['directories_traversed']} dirs, seal {seal['report_hash'][:12]}…)")
+          PY
 
       - name: Upload E2E artifacts
         if: always()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: e2e-scan-results
           path: /tmp/*-scan.json
@@ -129,15 +155,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         with:
           toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.9.3
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
 
       - name: Run readiness tests (Grade D/C/B)
         run: cargo test --test readiness -- --nocapture
@@ -150,22 +176,22 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         with:
           toolchain: stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.9.3
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
 
       - name: Run benchmarks
         run: cargo bench 2>&1 | tee /tmp/bench-results.txt
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: benchmark-results
           path: /tmp/bench-results.txt
