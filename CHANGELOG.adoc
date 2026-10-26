@@ -2,6 +2,16 @@
 
 === [Unreleased]
 
+==== Fixed — assail reports are deterministic
+
+* The same input now yields the same report on every run. `+frameworks+`,
+`+recommended_attacks+`, the taint-matrix rows and dependency-graph edges were
+built from `+HashSet+`/`+HashMap+` iteration order, which changes per run, so
+the canonical JSON (and any hash over it, such as the `+--attest+` seal)
+differed for identical input. They now use `+BTreeSet+`/`+BTreeMap+` (enum
+declaration order via derived `+Ord+` on `+AttackAxis+`, `+Framework+` and
+`+WeakPointCategory+`). A regression test runs the analysis nine times.
+
 ==== Added — KYAML report output
 
 * `+--output-format kyaml+` writes reports in KYAML, the estate YAML dialect

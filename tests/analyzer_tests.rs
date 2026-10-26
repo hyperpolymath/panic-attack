@@ -474,3 +474,50 @@ fn test_js_ffi_eval_symbol_not_flagged() -> Result<(), Box<dyn std::error::Error
     assert!(flagged2, "genuine JS eval() must still be flagged");
     Ok(())
 }
+
+/// Repeated analysis of the same tree must give byte-identical canonical
+/// JSON. Each `HashMap`/`HashSet` gets its own random seed, so running the
+/// analysis several times in one process catches any report field built
+/// from hash iteration order (frameworks, recommended attacks, the taint
+/// matrix, dependency-graph edges).
+#[test]
+fn test_assail_report_is_deterministic() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"det\"\n\n[dependencies]\ntokio = \"1\"\nrayon = \"1\"\naxum = \"0.7\"\nsqlx = \"0.8\"\n",
+    )?;
+    for sub in ["src", "src/net", "src/db"] {
+        fs::create_dir_all(dir.path().join(sub))?;
+    }
+    let body = "use std::thread;\nfn main() {\n    let v: Option<u8> = None;\n    v.unwrap();\n    unsafe { std::ptr::null::<u8>().read() };\n    thread::spawn(|| panic!(\"boom\"));\n    let _ = std::fs::read(\"x\").expect(\"io\");\n    let _ = vec![0u8; 1 << 20];\n}\n";
+    for file in [
+        "src/main.rs",
+        "src/lib.rs",
+        "src/net/a.rs",
+        "src/net/b.rs",
+        "src/db/c.rs",
+        "src/db/d.rs",
+    ] {
+        fs::write(dir.path().join(file), body)?;
+    }
+
+    let first = panic_attack::json::to_canonical_string(&assail::analyze(dir.path())?)?;
+    let parsed: serde_json::Value = serde_json::from_str(&first)?;
+    assert!(
+        parsed["frameworks"].as_array().is_some_and(|f| f.len() > 1),
+        "fixture should detect several frameworks: {}",
+        parsed["frameworks"]
+    );
+    assert!(
+        parsed["recommended_attacks"]
+            .as_array()
+            .is_some_and(|a| a.len() > 1),
+        "fixture should recommend several attacks"
+    );
+    for _ in 0..8 {
+        let again = panic_attack::json::to_canonical_string(&assail::analyze(dir.path())?)?;
+        assert_eq!(first, again, "assail report differs between runs");
+    }
+    Ok(())
+}

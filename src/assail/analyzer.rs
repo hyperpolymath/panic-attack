@@ -12,7 +12,7 @@ use crate::types::*;
 use anyhow::Result;
 use regex::Regex;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -4128,12 +4128,15 @@ impl Analyzer {
         (test_ptr_ops, test_c_imports)
     }
 
-    /// Detect functions that are only called from test blocks (test-only helper functions)
+    /// Return candidate Zig test-helper names containing `scan` in lexical order.
+    ///
+    /// Names come from recognised definitions and call patterns; this heuristic
+    /// does not verify that they are called exclusively from test blocks.
     fn detect_test_only_helper_functions(&self, content: &str) -> Vec<String> {
         use std::collections::HashSet;
 
         let mut test_only_functions = Vec::new();
-        let mut function_calls = std::collections::HashMap::new();
+        let mut function_calls = std::collections::BTreeMap::new();
         let mut in_test_block = false;
         let mut current_function = String::new();
 
@@ -5301,8 +5304,14 @@ impl Analyzer {
     // Framework detection (expanded)
     // ============================================================
 
+    /// Detect framework hints from manifests and supported source import patterns.
+    ///
+    /// Manifests are read from the target directory, or a file target's parent.
+    /// Returns unique frameworks in enum declaration order; Rust detection uses
+    /// manifests only. Reads at most 4 MiB per manifest and 64 MiB per source file,
+    /// skipping files with I/O or UTF-8 decoding errors. Always returns `Ok`.
     fn detect_frameworks(&self, files: &[PathBuf]) -> Result<Vec<Framework>> {
-        let mut frameworks = HashSet::new();
+        let mut frameworks = BTreeSet::new();
 
         // Primary signal: dependency manifest files.  These are the most reliable
         // because they declare actual dependencies, not just keyword mentions.
@@ -5579,12 +5588,17 @@ impl Analyzer {
         Ok(frameworks.into_iter().collect())
     }
 
+    /// Combine weak-point attack recommendations with aggregate activity heuristics.
+    ///
+    /// Returns unique axes in enum declaration order, always including CPU.
+    /// Adds memory for more than 10 allocation sites, disk for more than five
+    /// I/O operations, and concurrency for more than three threading constructs.
     fn generate_recommendations(
         &self,
         weak_points: &[WeakPoint],
         stats: &ProgramStatistics,
     ) -> Vec<AttackAxis> {
-        let mut recommendations = HashSet::new();
+        let mut recommendations = BTreeSet::new();
 
         // Base recommendations come from weak-point categories.
         for wp in weak_points {
@@ -5609,12 +5623,18 @@ impl Analyzer {
         recommendations.into_iter().collect()
     }
 
+    /// Build heuristic edges between consecutive files sharing a directory and
+    /// from each file to every supplied framework.
+    ///
+    /// Shared-directory edges have weight 1.0 and follow directory path order,
+    /// retaining input file order within each directory. Framework edges follow
+    /// input file and framework order, with risk-based weights of at least 1.0.
     fn build_dependency_graph(
         file_statistics: &[FileStatistics],
         frameworks: &[Framework],
     ) -> DependencyGraph {
         let mut edges = Vec::new();
-        let mut dir_groups: HashMap<String, Vec<String>> = HashMap::new();
+        let mut dir_groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
         // Group by directory first to approximate local import neighborhoods.
         for stat in file_statistics {
@@ -5662,8 +5682,15 @@ impl Analyzer {
         DependencyGraph { edges }
     }
 
+    /// Group weak points by category and recommended attack axis, returning rows
+    /// in category then axis enum declaration order.
+    ///
+    /// Each row retains the highest numeric severity and all contributing
+    /// locations in input order, including duplicates; missing locations become
+    /// `"unknown"`. Every row includes all supplied frameworks. Weak points
+    /// without recommended attacks contribute no rows.
     fn build_taint_matrix(weak_points: &[WeakPoint], frameworks: &[Framework]) -> TaintMatrix {
-        let mut matrix: HashMap<(WeakPointCategory, AttackAxis), TaintMatrixRow> = HashMap::new();
+        let mut matrix: BTreeMap<(WeakPointCategory, AttackAxis), TaintMatrixRow> = BTreeMap::new();
 
         // Rows are keyed by source category x sink axis to enable pivot-friendly reporting.
         for wp in weak_points {
