@@ -16,11 +16,13 @@
 //! of the same scan differ only in syntax.
 //!
 //! One deliberate difference from `yq`: YAML's non-printable characters
-//! (U+007F to U+009F, U+FFFE, U+FFFF) are escaped as `\uXXXX`. `yq` writes
-//! them raw, which YAML 1.2 does not allow, and U+0085 (NEL) written raw
-//! reads back as a line break, corrupting the string. Strings holding one
-//! are therefore not a `yq` fixed point; `kyaml-format.sh` refuses such a
-//! file instead of judging it.
+//! (U+007F to U+009F, U+FFFE, U+FFFF) and the YAML 1.1 line breaks U+2028
+//! (LS) and U+2029 (PS) are escaped as `\uXXXX`. `yq` writes them raw, which
+//! YAML 1.2 does not allow for the non-printables. go-yaml, the parser
+//! behind `yq`, reads a raw U+0085 (NEL), LS or PS as a line break: in a
+//! value NEL is folded to a space, and in a key any of the three makes the
+//! document unparseable. Strings holding one are therefore not a `yq` fixed
+//! point; `kyaml-format.sh` refuses such a file instead of judging it.
 
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -104,9 +106,12 @@ fn write_quoted(out: &mut String, text: &str) {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            '\0'..='\u{1F}' | '\u{7F}'..='\u{9F}' | '\u{FFFE}' | '\u{FFFF}' => {
-                out.push_str(&format!("\\u{:04X}", c as u32))
-            }
+            '\0'..='\u{1F}'
+            | '\u{7F}'..='\u{9F}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{FFFE}'
+            | '\u{FFFF}' => out.push_str(&format!("\\u{:04X}", c as u32)),
             _ => out.push(c),
         }
     }
@@ -150,15 +155,29 @@ mod tests {
 
     #[test]
     fn escapes_non_printables_that_yq_writes_raw() {
-        let text = "a\u{7F}\u{85}\u{9F}\u{FFFE}\u{FFFF}\u{A0}\u{2028}z";
+        let text = "a\u{7F}\u{85}\u{9F}\u{2028}\u{2029}\u{FFFE}\u{FFFF}\u{A0}z";
         let out = to_string(text).unwrap();
         assert_eq!(
             out,
-            "\"a\\u007F\\u0085\\u009F\\uFFFE\\uFFFF\u{A0}\u{2028}z\"\n"
+            "\"a\\u007F\\u0085\\u009F\\u2028\\u2029\\uFFFE\\uFFFF\u{A0}z\"\n"
         );
         // ...and they read back intact, NEL included.
         let back: String = crate::yaml::from_str(&out).unwrap();
         assert_eq!(back, text);
+    }
+
+    #[test]
+    fn line_breaks_in_keys_are_escaped() {
+        // go-yaml reads a raw NEL, LS or PS in a key as a line break and
+        // rejects the document, so keys are escaped like values.
+        for c in ['\u{85}', '\u{2028}', '\u{2029}'] {
+            let key = format!("x{c}y");
+            let value = json!({ key.clone(): 1 });
+            let out = to_string(&value).unwrap();
+            assert_eq!(out, format!("{{\n  \"x\\u{:04X}y\": 1,\n}}\n", c as u32));
+            let back: serde_json::Value = crate::yaml::from_str(&out).unwrap();
+            assert_eq!(back, value);
+        }
     }
 
     #[test]

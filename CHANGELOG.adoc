@@ -2,6 +2,14 @@
 
 === [Unreleased]
 
+==== Fixed — KYAML keys holding a line separator
+
+* KYAML output now escapes U+2028 (LS) and U+2029 (PS) as `+\uXXXX+`, as it
+already did for NEL (U+0085). go-yaml, the parser behind `+yq+`, reads all
+three as line breaks, so a raw one in a key made the document unparseable
+by `+yq+` and by standards' `+kyaml-format.sh+`.
+`+crate::yaml+` (serde-saphyr) read these files correctly before and after.
+
 ==== Changed — attestation hashes are reproducible JCS
 
 * `+assail --attest+` now hashes the intent and evidence records as their
