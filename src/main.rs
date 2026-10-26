@@ -1507,7 +1507,7 @@ fn run_main() -> Result<()> {
             // Seal and write attestation sidecar
             if let Some(builder) = chain_builder {
                 let envelope = builder.seal(report_json.as_bytes(), signing_key.as_deref())?;
-                let attestation_json = serde_json::to_string_pretty(&envelope)?;
+                let attestation_json = panic_attack::json::to_canonical_string(&envelope)?;
 
                 let sidecar_path = if let Some(out) = &output {
                     let stem = out.file_stem().unwrap_or_default().to_string_lossy();
@@ -2677,12 +2677,18 @@ fn run_main() -> Result<()> {
                         issuer,
                         issued_at,
                         chain_hash,
+                        content_bound,
                         signature_verified,
                     } => {
                         println!("  [OK] Attestation verified");
                         println!("       Issuer:    {}", issuer);
                         println!("       Issued at: {}", issued_at);
                         println!("       Chain:     {}", chain_hash);
+                        if content_bound {
+                            println!("       Content:   intent and evidence rehashed (JCS)");
+                        } else {
+                            println!("       Content:   not rehashed (legacy hash scheme)");
+                        }
                         if signature_verified {
                             println!("       Signature: verified (Ed25519)");
                         } else {

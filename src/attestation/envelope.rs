@@ -106,6 +106,7 @@ mod tests {
 
         let seal = ReportSeal {
             session_nonce: "a".repeat(64),
+            hash_scheme: crate::attestation::seal::HASH_SCHEME_JCS.to_string(),
             report_hash: "0".repeat(64),
             intent_hash: "1".repeat(64),
             evidence_hash: "2".repeat(64),

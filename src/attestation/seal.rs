@@ -7,17 +7,57 @@
 //! the intent, evidence, and report together via a chain hash:
 //!
 //! ```text
-//! chain_hash = SHA-256(intent_hash || evidence_hash || report_hash)
+//! chain_hash = SHA-256(hash_scheme || intent_hash || evidence_hash || report_hash)
 //! ```
+//!
+//! Legacy seals omit the `hash_scheme` prefix.
 //!
 //! If any component is tampered with after sealing, the chain hash will
 //! not match. Optionally, the chain hash can be signed with an Ed25519
 //! private key to provide non-repudiation.
+//!
+//! `hash_scheme` records how the intent and evidence were turned into
+//! bytes before hashing. Under [`HASH_SCHEME_JCS`] they are the JCS
+//! (RFC 8785) bytes of each record, so anyone holding the sidecar can
+//! recompute both hashes in any language. Seals written before the field
+//! existed read as [`HASH_SCHEME_LEGACY`]: `serde_json` struct order, which
+//! only this crate reproduces. The scheme is part of the chain hash (and so
+//! of any signature), so relabelling a seal as legacy to skip the content
+//! check breaks the chain hash.
 
 use super::intent::sha256_str;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+/// Intent and evidence hashed as their JCS (RFC 8785) bytes.
+pub const HASH_SCHEME_JCS: &str = "jcs-sha256";
+
+/// Intent and evidence hashed as `serde_json::to_vec` output. Seals that
+/// predate the `hash_scheme` field deserialise to this.
+pub const HASH_SCHEME_LEGACY: &str = "serde-json-sha256";
+
+fn legacy_hash_scheme() -> String {
+    HASH_SCHEME_LEGACY.to_string()
+}
+
+/// The chain hash over three hex digests. Every scheme except the legacy
+/// one prefixes its name, binding the scheme into the hash.
+pub fn chain_hash(
+    hash_scheme: &str,
+    intent_hash: &str,
+    evidence_hash: &str,
+    report_hash: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    if hash_scheme != HASH_SCHEME_LEGACY {
+        hasher.update(hash_scheme.as_bytes());
+    }
+    hasher.update(intent_hash.as_bytes());
+    hasher.update(evidence_hash.as_bytes());
+    hasher.update(report_hash.as_bytes());
+    hex::encode(hasher.finalize())
+}
 
 /// Post-execution seal that binds the three attestation phases together.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +67,10 @@ pub struct ReportSeal {
 
     /// SHA-256 of the serialised report JSON.
     pub report_hash: String,
+
+    /// How the intent and evidence were serialised for hashing.
+    #[serde(default = "legacy_hash_scheme")]
+    pub hash_scheme: String,
 
     /// SHA-256 of the serialised intent JSON (i.e., `intent.commitment_hash`
     /// is already a commitment, but this is the hash of the full intent record).
@@ -56,10 +100,10 @@ pub struct ReportSeal {
 impl ReportSeal {
     /// Create a seal binding the intent, evidence, and report hashes.
     ///
-    /// The `intent_json` and `evidence_json` are the serialised forms of
-    /// the respective structs. The `report_json` is the serialised scan
-    /// report. All three are hashed independently, then combined into
-    /// the chain hash.
+    /// `intent_json` and `evidence_json` must be the JCS bytes of the
+    /// intent and evidence records, because the seal records
+    /// [`HASH_SCHEME_JCS`]. The `report_json` is the report file as written.
+    /// All three are hashed independently, then combined into the chain hash.
     pub fn create(
         session_nonce: &str,
         intent_json: &[u8],
@@ -70,16 +114,11 @@ impl ReportSeal {
         let evidence_hash = sha256_str(evidence_json);
         let report_hash = sha256_str(report_json);
 
-        let chain_hash = {
-            let mut hasher = Sha256::new();
-            hasher.update(intent_hash.as_bytes());
-            hasher.update(evidence_hash.as_bytes());
-            hasher.update(report_hash.as_bytes());
-            hex::encode(hasher.finalize())
-        };
+        let chain_hash = chain_hash(HASH_SCHEME_JCS, &intent_hash, &evidence_hash, &report_hash);
 
         Self {
             session_nonce: session_nonce.to_string(),
+            hash_scheme: HASH_SCHEME_JCS.to_string(),
             report_hash,
             intent_hash,
             evidence_hash,

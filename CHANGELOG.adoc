@@ -2,6 +2,22 @@
 
 === [Unreleased]
 
+==== Changed — attestation hashes are reproducible JCS
+
+* `+assail --attest+` now hashes the intent and evidence records as their
+JCS (RFC 8785) bytes instead of `+serde_json+` struct order, and writes the
+`+.attestation.json+` sidecar itself as I-JSON/JCS. Anyone holding the sidecar
+can recompute both hashes in any language, for example with
+`+jq -cjS .attestation.intent | sha256sum+`.
+* The seal gains a `+hash_scheme+` field (`+jcs-sha256+`). The scheme is
+prefixed to the chain hash, so it is covered by any Ed25519 signature:
+relabelling a seal as legacy to skip the content check breaks the chain hash.
+* `+attest verify+` now rehashes the embedded intent and evidence and fails on
+a mismatch. Before, it checked only that the chain hash matched the three
+stored digests, so the intent and evidence could be edited after sealing
+without detection. Sidecars written before this change (no `+hash_scheme+`)
+still verify, reported as `+not rehashed (legacy hash scheme)+`.
+
 ==== Added — `.kyaml` input (estate YAML policy D280/D307)
 
 * Attack profiles, ambush timelines, amuck specs, `+diff+` reports and
