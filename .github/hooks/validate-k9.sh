@@ -26,6 +26,10 @@ set -euo pipefail
 
 REPO="${INPUT_PATH:-.}"
 STANDARDS_DIR="${STANDARDS_DIR:-$(cd "$REPO/.." && pwd)/standards}"
+case "$STANDARDS_DIR" in
+    /*) ;;
+    *) STANDARDS_DIR="$PWD/$STANDARDS_DIR" ;;
+esac
 VALIDATOR="$STANDARDS_DIR/1-formats/k9/tools/k9-validate.sh"
 
 if [ ! -f "$VALIDATOR" ]; then

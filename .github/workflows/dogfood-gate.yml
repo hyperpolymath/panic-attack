@@ -104,6 +104,14 @@ jobs:
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/standards-k9"
           mv "$PWD/.standards-k9" "$RUNNER_TEMP/standards-k9"
+          if [ ! -f "$RUNNER_TEMP/standards-k9/1-formats/k9/tools/k9-validate.sh" ]; then
+            echo "::error::K9 validator is missing from the standards checkout"
+            exit 1
+          fi
+          if ! command -v nickel >/dev/null 2>&1; then
+            echo "::error::nickel is required for K9 layer L2 validation"
+            exit 1
+          fi
           STANDARDS_DIR="$RUNNER_TEMP/standards-k9" bash .github/hooks/validate-k9.sh
 
   # ---------------------------------------------------------------------------

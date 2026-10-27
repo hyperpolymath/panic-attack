@@ -39,7 +39,7 @@ repos:
         entry: bash .github/hooks/validate-k9.sh
         language: system
         pass_filenames: false
-        files: '\.k9(\.ncl)?$'
+        files: '\.k9(\.(ncl|lock))?$'
 
   # --- Shell linting ---
   - repo: https://github.com/shellcheck-py/shellcheck-py
