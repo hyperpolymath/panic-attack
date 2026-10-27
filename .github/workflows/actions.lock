@@ -295,6 +295,11 @@ dependencies:
         commit: 'sha1-28959ce8df70de7be546dd1250a005dd32156697'
         owner_id: 18365890
         repo_id: 220359305
+    'slsa-framework/slsa-github-generator@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a':
+        ref: 'v2.1.0'
+        commit: 'sha1-f7dd8c54c2067bafc12ca7a55595d5ee9b75204a'
+        owner_id: 80431187
+        repo_id: 475074978
     'softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64':
         ref: 'v3.0.3'
         commit: 'sha1-efb35369e0ad2afab669f228072c1b0d510eae64'
