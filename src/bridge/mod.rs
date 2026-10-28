@@ -225,12 +225,17 @@ pub struct BridgeReport {
     pub informational: usize,
 }
 
+/// Treat reports without a `vulnerability_data` field as having queried a feed.
 fn default_vulnerability_data_status() -> VulnerabilityDataStatus {
     VulnerabilityDataStatus::Queried
 }
 
 impl BridgeReport {
-    /// Create an empty report for a project with no vulnerabilities.
+    /// Create a report with no assessed CVEs and zero finding counts.
+    ///
+    /// `total_deps` supplies the dependency count. No feed is queried here;
+    /// `vulnerability_data` defaults to `Queried`, so callers must change it
+    /// when reporting offline data or a project with no dependencies.
     pub fn empty(project: &Path, total_deps: usize) -> Self {
         Self {
             schema_version: "0.3.0".to_string(),
@@ -273,16 +278,33 @@ impl BridgeReport {
 
 /// Run the full Patch Bridge triage on a project directory.
 ///
-/// 1. Parse lockfile to extract dependencies
-/// 2. Query OSV API for known vulnerabilities
-/// 3. For each vulnerable dep, check reachability (import scanning)
-/// 4. Classify: mitigable / unmitigable / informational
-/// 5. Return structured report
+/// Recursively discovers supported lockfiles and merges their dependencies,
+/// then queries OSV, checks Rust import reachability and classifies findings.
+/// A parsed result with no dependencies returns an empty report marked
+/// `NoDependencies` without querying OSV.
+///
+/// With `offline = true`, skips OSV and returns no CVEs, marking reports with
+/// dependencies as `OfflineUnavailable`; this is not evidence of zero
+/// vulnerabilities.
+/// Unreadable source files are skipped during reachability scanning.
+///
+/// # Errors
+/// Returns an error if directory traversal fails, no supported lockfile is
+/// found, or any discovered lockfile fails to parse. Propagates OSV request,
+/// response-read and JSON errors.
 pub fn triage(project_dir: &Path, offline: bool) -> anyhow::Result<BridgeReport> {
     triage_with_discovery(project_dir, offline, None)
 }
 
 /// Run triage using explicitly named lockfiles instead of discovery.
+///
+/// Paths are used as supplied, relative to the process working directory when
+/// relative, rather than resolved against `project_dir`.
+///
+/// # Errors
+/// Propagates [`lockfile::parse_lockfiles`] and triage errors. Empty input is
+/// rejected as having no lockfiles; successfully parsed files with no external
+/// dependencies return a report marked `NoDependencies`.
 pub fn triage_with_lockfiles(
     project_dir: &Path,
     offline: bool,
@@ -292,6 +314,12 @@ pub fn triage_with_lockfiles(
     triage_with_discovery(project_dir, offline, Some(discovery))
 }
 
+/// Assess `explicit` discovery, or discover recursively when it is `None`.
+/// Uses the offline and report-status behaviour described by [`triage`].
+///
+/// # Errors
+/// Rejects missing lockfiles or recorded parse failures and propagates
+/// discovery traversal errors and OSV request, response-read and JSON errors.
 fn triage_with_discovery(
     project_dir: &Path,
     offline: bool,

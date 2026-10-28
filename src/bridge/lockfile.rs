@@ -100,6 +100,9 @@ impl LockfileDiscovery {
     }
 
     /// Whether no external dependency was declared by any readable lockfile.
+    ///
+    /// Also true when no lockfiles were found or all failed to parse; check
+    /// `lockfiles` and `unreadable` before treating this as dependency-free.
     pub fn is_empty(&self) -> bool {
         self.dependencies.is_empty()
     }
@@ -112,16 +115,19 @@ impl LockfileDiscovery {
 
 /// Discover and parse every lockfile under `dir`, recursively.
 ///
-/// The project root is searched first, then nested directories, so workspace
-/// and monorepo layouts that keep the lockfile in a member directory
-/// (`src/rust/Cargo.lock`, `frontend/package-lock.json`) are picked up without
+/// Lockfiles in workspace or monorepo member directories
+/// (`src/rust/Cargo.lock`, `frontend/package-lock.json`) are discovered without
 /// any flag. Use [`parse_lockfiles`] (the `--lockfile` flag) to name files
 /// explicitly, or [`discover_and_parse_root_only`] to pin the search to `dir`.
 ///
-/// Successful parses are merged into one de-duplicated list. Parse errors are
-/// logged as warnings and recorded in [`LockfileDiscovery::unreadable`] so one
-/// malformed lockfile does not abort discovery. Directory traversal errors are
-/// returned to the caller because an incomplete walk cannot establish coverage.
+/// Uses the exclusions of [`lockfile_paths`]. Successful parses are merged by
+/// ecosystem, name and version. Parse errors are logged as warnings and
+/// recorded in [`LockfileDiscovery::unreadable`] rather than returned; callers
+/// must inspect that list before treating an empty result as complete.
+///
+/// # Errors
+/// Returns directory traversal errors because an incomplete walk cannot
+/// establish dependency coverage.
 pub fn discover_and_parse(dir: &Path) -> Result<LockfileDiscovery> {
     discover_from(dir, true)
 }
@@ -132,11 +138,20 @@ pub fn discover_and_parse_root_only(dir: &Path) -> Result<LockfileDiscovery> {
     discover_from(dir, false)
 }
 
+/// Collect dependencies and parse failures from [`lockfile_paths`].
 fn discover_from(dir: &Path, recursive: bool) -> Result<LockfileDiscovery> {
     Ok(parse_found(lockfile_paths(dir, recursive)?))
 }
 
 /// Paths of the lockfiles under `dir`, sorted and de-duplicated.
+///
+/// With `recursive = false`, checks only `dir` itself. Recursive searches skip
+/// nested build, vendor and cache names in `LOCKFILE_SKIP_DIRS`. Only recognised
+/// base names are included.
+///
+/// # Errors
+/// Returns directory traversal or file metadata errors rather than reporting
+/// an incomplete search as an empty result.
 pub fn lockfile_paths(dir: &Path, recursive: bool) -> Result<Vec<PathBuf>> {
     let names: Vec<&str> = LOCKFILE_KINDS.iter().map(|(name, _)| *name).collect();
     let mut found: Vec<PathBuf> = Vec::new();
@@ -187,8 +202,13 @@ pub fn lockfile_paths(dir: &Path, recursive: bool) -> Result<Vec<PathBuf>> {
 /// unparseable is an error. Silently dropping it would turn "could not read"
 /// into "no dependencies", which is the failure mode this API exists to avoid.
 ///
+/// Dependencies are merged by ecosystem, name and version and tagged with the
+/// supplied paths. The returned `lockfiles` list retains those paths, including
+/// files with no external dependencies.
+///
 /// # Errors
-/// Returns an error if a path is not a readable, supported lockfile.
+/// Returns an error if a path is missing, is not a file, has an unsupported base
+/// name, or its parser fails to read or parse it.
 pub fn parse_lockfiles(paths: &[PathBuf]) -> Result<LockfileDiscovery> {
     let mut discovery = LockfileDiscovery::default();
 
@@ -214,6 +234,8 @@ pub fn parse_lockfiles(paths: &[PathBuf]) -> Result<LockfileDiscovery> {
     Ok(discovery)
 }
 
+/// Merge parsed dependencies, retaining all supplied paths in `lockfiles` and
+/// recording parser errors in `unreadable` rather than returning them.
 fn parse_found(paths: Vec<PathBuf>) -> LockfileDiscovery {
     let mut discovery = LockfileDiscovery::default();
 
@@ -274,9 +296,10 @@ impl LockfileDiscovery {
         }
     }
 
-    /// Merge lockfiles that declare the same package version, so a dependency
-    /// shared by several members of a workspace is queried once and lists every
-    /// lockfile that declares it.
+    /// Merge lockfiles that declare the same package version in an ecosystem,
+    /// so a dependency shared by several members of a workspace is queried once
+    /// and lists every lockfile that declares it.
+    /// Sort and de-duplicate the `lockfiles` and `unreadable` path lists.
     fn finish(&mut self) {
         let mut seen: std::collections::HashMap<(String, String, String), usize> =
             std::collections::HashMap::new();
@@ -316,6 +339,10 @@ fn parser_for(path: &Path) -> Option<LockfileParser> {
         .map(|(_, parser)| *parser)
 }
 
+/// Parse a supported base name, returning `Ok(None)` for an unrecognised name.
+///
+/// # Errors
+/// Propagates the selected parser's read and format errors.
 fn parse_one(path: &Path) -> Result<Option<Vec<LockedDependency>>> {
     match parser_for(path) {
         Some(parser) => parser(path).map(Some),
@@ -323,7 +350,7 @@ fn parse_one(path: &Path) -> Result<Option<Vec<LockedDependency>>> {
     }
 }
 
-/// Whether `path` is a directory the recursive lockfile search skips.
+/// Whether the final component of `path` matches an excluded directory name.
 fn is_skipped_dir(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     LOCKFILE_SKIP_DIRS.contains(&name)
@@ -335,8 +362,14 @@ fn is_skipped_dir(path: &Path) -> bool {
 
 /// Parse a Cargo.lock file into a list of locked dependencies.
 ///
-/// Handles Cargo.lock v3/v4 format. Each `[[package]]` entry becomes a
-/// LockedDependency. Local packages (no registry source) are skipped.
+/// Reads Cargo.lock v3/v4 package entries whose source contains `registry`.
+/// Returns an empty list if no such packages are present.
+///
+/// # Errors
+/// Returns file-read, UTF-8 or TOML parse errors, or an error if the top-level
+/// version is unsupported, the package structure is invalid, or a package lacks
+/// a non-empty string name or version, even if it is skipped. An invalid source
+/// field is also an error.
 pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
