@@ -264,11 +264,7 @@ impl LockfileDiscovery {
         let mut merged: Vec<LockedDependency> = Vec::with_capacity(self.dependencies.len());
 
         for dep in self.dependencies.drain(..) {
-            let key = (
-                dep.ecosystem.clone(),
-                dep.name.clone(),
-                dep.version.clone(),
-            );
+            let key = (dep.ecosystem.clone(), dep.name.clone(), dep.version.clone());
             match seen.get(&key) {
                 Some(&at) => {
                     for path in dep.declared_by {
@@ -334,11 +330,14 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
 
-    let has_supported_version = content.lines().any(|line| {
-        matches!(line.trim(), "version = 3" | "version = 4")
-    });
+    let has_supported_version = content
+        .lines()
+        .any(|line| matches!(line.trim(), "version = 3" | "version = 4"));
     if !has_supported_version {
-        anyhow::bail!("{} is not a supported Cargo.lock (expected version = 3 or 4)", path.display());
+        anyhow::bail!(
+            "{} is not a supported Cargo.lock (expected version = 3 or 4)",
+            path.display()
+        );
     }
 
     let mut deps = Vec::new();
@@ -1062,7 +1061,7 @@ sqlalchemy[asyncio]==2.0.0; python_version >= "3.8"
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(
             nested.join("Cargo.lock"),
-            "[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
+            "version = 4\n[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
         )
         .unwrap();
         let ignored = dir.path().join("target/generated");

@@ -1146,7 +1146,9 @@ mod rule_id_tests {
             assert_eq!(row["rule_id"].as_str(), Some(category.rule_id()));
             let category_name = format!("{category:?}");
             assert_eq!(row["category"].as_str(), Some(category_name.as_str()));
-            assert!(row["semantic_class"].as_str().is_some_and(|s| !s.is_empty()));
+            assert!(row["semantic_class"]
+                .as_str()
+                .is_some_and(|s| !s.is_empty()));
         }
         Ok(())
     }

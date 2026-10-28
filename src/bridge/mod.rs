@@ -429,7 +429,10 @@ mod triage_tests {
         let report = triage(dir.path(), true)?;
         assert_eq!(report.total_dependencies, 0);
         assert!(report.cves.is_empty());
-        assert_eq!(report.vulnerability_data, VulnerabilityDataStatus::NoDependencies);
+        assert_eq!(
+            report.vulnerability_data,
+            VulnerabilityDataStatus::NoDependencies
+        );
         Ok(())
     }
 
@@ -446,13 +449,16 @@ mod triage_tests {
         let dir = tempfile::TempDir::new()?;
         std::fs::write(
             dir.path().join("Cargo.lock"),
-            "[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
+            "version = 4\n[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
         )?;
 
         let report = triage(dir.path(), true)?;
         assert_eq!(report.total_dependencies, 1);
         assert!(report.cves.is_empty());
-        assert_eq!(report.vulnerability_data, VulnerabilityDataStatus::OfflineUnavailable);
+        assert_eq!(
+            report.vulnerability_data,
+            VulnerabilityDataStatus::OfflineUnavailable
+        );
         Ok(())
     }
 }
