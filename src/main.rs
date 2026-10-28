@@ -1051,9 +1051,14 @@ enum BridgeAction {
         #[arg(short, long)]
         output: Option<PathBuf>,
 
-        /// Skip network API calls (offline mode)
+        /// Skip network API calls. The report will contain NO vulnerability data,
+        /// not a clean bill of health (marked vulnerability_data="offline-unavailable").
         #[arg(long, default_value_t = false)]
         offline: bool,
+
+        /// Use this supported lockfile instead of recursive discovery; may be repeated.
+        #[arg(long = "lockfile", value_name = "FILE", action = clap::ArgAction::Append)]
+        lockfiles: Vec<PathBuf>,
 
         /// Update the mitigation registry with new findings
         #[arg(long, default_value_t = false)]
@@ -2513,6 +2518,7 @@ fn run_main() -> Result<()> {
                     dir,
                     output,
                     offline,
+                    lockfiles,
                     register,
                 } => {
                     // Reject path traversal sequences BEFORE any disk I/O.
@@ -2533,7 +2539,11 @@ fn run_main() -> Result<()> {
 
                     qprintln!(cli.quiet, "Patch Bridge triage: {}", project_dir.display());
 
-                    let report = bridge::triage(&project_dir, offline)?;
+                    let report = if lockfiles.is_empty() {
+                        bridge::triage(&project_dir, offline)?
+                    } else {
+                        bridge::triage_with_lockfiles(&project_dir, offline, &lockfiles)?
+                    };
 
                     qprintln!(
                         cli.quiet,

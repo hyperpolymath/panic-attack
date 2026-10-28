@@ -6,43 +6,295 @@
 
 use super::LockedDependency;
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 // ============================================================================
 // Discovery
 // ============================================================================
 
-/// Discover and parse all lockfiles found under `dir`.
-///
-/// Tries Cargo.lock, mix.lock, package-lock.json, and requirements.txt in
-/// order. All successful parses are merged into a single list. Errors from
-/// individual parsers are logged as warnings and skipped so one malformed
-/// lockfile does not abort triage of the whole project.
+/// A lockfile name the bridge understands, paired with its parser.
 type LockfileParser = fn(&Path) -> Result<Vec<LockedDependency>>;
 
-pub fn discover_and_parse(dir: &Path) -> Vec<LockedDependency> {
-    let mut all = Vec::new();
+/// Every lockfile kind the bridge reads, in parse order. The base name is the
+/// only thing discovery keys on — a `Cargo.lock` by any other name is not
+/// parsed, even when passed explicitly via `--lockfile`.
+const LOCKFILE_KINDS: &[(&str, LockfileParser)] = &[
+    ("Cargo.lock", parse_cargo_lock),
+    ("mix.lock", parse_mix_lock),
+    ("package-lock.json", parse_package_lock_json),
+    ("requirements.txt", parse_requirements_txt),
+];
 
-    let candidates: &[(&str, LockfileParser)] = &[
-        ("Cargo.lock", parse_cargo_lock),
-        ("mix.lock", parse_mix_lock),
-        ("package-lock.json", parse_package_lock_json),
-        ("requirements.txt", parse_requirements_txt),
-    ];
+/// Human-readable list of supported lockfiles, for error messages.
+pub const SUPPORTED_LOCKFILES: &str =
+    "Cargo.lock (Rust), mix.lock (Elixir), package-lock.json (npm), requirements.txt (Python)";
 
-    for (filename, parser) in candidates {
-        let path = dir.join(filename);
-        if path.exists() {
-            match parser(&path) {
-                Ok(deps) => all.extend(deps),
-                Err(e) => {
-                    log::warn!("[bridge] Failed to parse {}: {}", path.display(), e);
-                }
+/// Directories the recursive search does not descend into.
+///
+/// A lockfile under one of these describes somebody else's dependency graph
+/// (a vendored or installed copy) or a stale duplicate of this project's own,
+/// so reading it would report vulnerabilities the project cannot ship. Kept
+/// aligned with `bridge::reachability`'s scan exclusions, plus the build and
+/// package caches that are known to hold copied lockfiles.
+const LOCKFILE_SKIP_DIRS: &[&str] = &[
+    ".git",
+    "target",
+    "node_modules",
+    ".yarn",
+    "vendor",
+    "deps",
+    "_deps",
+    "_build",
+    "build",
+    "dist",
+    "out",
+    "obj",
+    "zig-cache",
+    ".zig-cache",
+    "zig-out",
+    ".stack-work",
+    "dist-newstyle",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".elixir_ls",
+    ".lexical",
+    ".machine_readable",
+    "external_corpora",
+    "third_party",
+    "corpus",
+];
+
+/// What lockfile discovery found for one project.
+///
+/// The two empty-dependency states are kept apart on purpose:
+///
+/// - `lockfiles` empty → nothing was found, so the project's dependency
+///   surface is **unknown** (callers report an error).
+/// - `lockfiles` non-empty, `dependencies` empty → the project has a lockfile
+///   that declares no external dependencies, which is a **complete answer**
+///   for a dependency-free project (see `BridgeReport::empty`).
+#[derive(Debug, Clone, Default)]
+pub struct LockfileDiscovery {
+    /// Lockfiles found on disk (or named with `--lockfile`), sorted by path so
+    /// a run is reproducible.
+    pub lockfiles: Vec<PathBuf>,
+    /// The union of the dependencies those lockfiles declare, de-duplicated by
+    /// `(ecosystem, name, version)`. `declared_by` on each entry holds the
+    /// lockfile paths as supplied by the walker or explicit command-line input.
+    pub dependencies: Vec<LockedDependency>,
+    /// Lockfiles that exist but could not be parsed.
+    ///
+    /// Discovery treats these as warnings — one malformed lockfile should not
+    /// abort triage of a whole project — but a caller that needs full coverage
+    /// must check this list: a lockfile that failed to parse contributes
+    /// nothing to `dependencies`, so a zero count here is not "clean".
+    pub unreadable: Vec<PathBuf>,
+}
+
+impl LockfileDiscovery {
+    /// Whether any recognised lockfile was found at all.
+    pub fn has_lockfiles(&self) -> bool {
+        !self.lockfiles.is_empty()
+    }
+
+    /// Whether no external dependency was declared by any readable lockfile.
+    pub fn is_empty(&self) -> bool {
+        self.dependencies.is_empty()
+    }
+
+    /// Number of distinct locked dependencies.
+    pub fn len(&self) -> usize {
+        self.dependencies.len()
+    }
+}
+
+/// Discover and parse every lockfile under `dir`, recursively.
+///
+/// The project root is searched first, then nested directories, so workspace
+/// and monorepo layouts that keep the lockfile in a member directory
+/// (`src/rust/Cargo.lock`, `frontend/package-lock.json`) are picked up without
+/// any flag. Use [`parse_lockfiles`] (the `--lockfile` flag) to name files
+/// explicitly, or [`discover_and_parse_root_only`] to pin the search to `dir`.
+///
+/// Successful parses are merged into one de-duplicated list. Parse errors are
+/// logged as warnings and recorded in [`LockfileDiscovery::unreadable`] so one
+/// malformed lockfile does not abort triage of the whole project.
+pub fn discover_and_parse(dir: &Path) -> LockfileDiscovery {
+    discover_from(dir, true)
+}
+
+/// As [`discover_and_parse`], but `dir` alone is searched — the pre-0.3
+/// behaviour. Kept for callers that must not pick up a nested sub-project.
+pub fn discover_and_parse_root_only(dir: &Path) -> LockfileDiscovery {
+    discover_from(dir, false)
+}
+
+fn discover_from(dir: &Path, recursive: bool) -> LockfileDiscovery {
+    parse_found(lockfile_paths(dir, recursive))
+}
+
+/// Paths of the lockfiles under `dir`, sorted and de-duplicated.
+pub fn lockfile_paths(dir: &Path, recursive: bool) -> Vec<PathBuf> {
+    let names: Vec<&str> = LOCKFILE_KINDS.iter().map(|(name, _)| *name).collect();
+    let mut found: Vec<PathBuf> = Vec::new();
+
+    if recursive {
+        for entry in WalkDir::new(dir)
+            .into_iter()
+            .filter_entry(|e| e.depth() == 0 || !is_skipped_dir(e.path()))
+            .filter_map(|e| e.ok())
+        {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let path = entry.path();
+            if !path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| names.contains(&n))
+            {
+                continue;
+            }
+            found.push(path.to_path_buf());
+        }
+    } else {
+        for name in names {
+            let path = dir.join(name);
+            if path.is_file() {
+                found.push(path);
             }
         }
     }
 
-    all
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// Parse exactly these lockfiles, with no searching.
+///
+/// This is the `--lockfile` path, and it is deliberately stricter than
+/// discovery: a lockfile the user named that is missing, unrecognised, or
+/// unparseable is an error. Silently dropping it would turn "could not read"
+/// into "no dependencies", which is the failure mode this API exists to avoid.
+///
+/// # Errors
+/// Returns an error if a path is not a readable, supported lockfile.
+pub fn parse_lockfiles(paths: &[PathBuf]) -> Result<LockfileDiscovery> {
+    let mut discovery = LockfileDiscovery::default();
+
+    for path in paths {
+        if !path.is_file() {
+            anyhow::bail!(
+                "lockfile not found or not a file: {} (supported: {})",
+                path.display(),
+                SUPPORTED_LOCKFILES
+            );
+        }
+        let Some(deps) = parse_one(path)? else {
+            anyhow::bail!(
+                "unsupported lockfile: {} (recognised base names: {})",
+                path.display(),
+                SUPPORTED_LOCKFILES
+            );
+        };
+        discovery.push(path, deps);
+    }
+
+    discovery.finish();
+    Ok(discovery)
+}
+
+fn parse_found(paths: Vec<PathBuf>) -> LockfileDiscovery {
+    let mut discovery = LockfileDiscovery::default();
+
+    for path in paths {
+        discovery.lockfiles.push(path.clone());
+        match parse_one(&path) {
+            Ok(Some(deps)) => discovery.push(&path, deps),
+            // Discovery only collects recognised names, so `None` here means
+            // the file vanished between the walk and the read. Skip it.
+            Ok(None) => {}
+            Err(e) => {
+                log::warn!("[bridge] Failed to parse {}: {}", path.display(), e);
+                discovery.unreadable.push(path);
+            }
+        }
+    }
+
+    discovery.finish();
+    discovery
+}
+
+impl LockfileDiscovery {
+    /// Record one parsed lockfile's dependencies, each tagged with the lockfile
+    /// it came from.
+    fn push(&mut self, lockfile: &Path, deps: Vec<LockedDependency>) {
+        for mut dep in deps {
+            dep.declared_by = vec![lockfile.to_path_buf()];
+            self.dependencies.push(dep);
+        }
+    }
+
+    /// Merge lockfiles that declare the same package version, so a dependency
+    /// shared by several members of a workspace is queried once and lists every
+    /// lockfile that declares it.
+    fn finish(&mut self) {
+        let mut seen: std::collections::HashMap<(String, String, String), usize> =
+            std::collections::HashMap::new();
+        let mut merged: Vec<LockedDependency> = Vec::with_capacity(self.dependencies.len());
+
+        for dep in self.dependencies.drain(..) {
+            let key = (
+                dep.ecosystem.clone(),
+                dep.name.clone(),
+                dep.version.clone(),
+            );
+            match seen.get(&key) {
+                Some(&at) => {
+                    for path in dep.declared_by {
+                        if !merged[at].declared_by.contains(&path) {
+                            merged[at].declared_by.push(path);
+                        }
+                    }
+                }
+                None => {
+                    seen.insert(key, merged.len());
+                    merged.push(dep);
+                }
+            }
+        }
+
+        self.dependencies = merged;
+        self.lockfiles.sort();
+        self.lockfiles.dedup();
+        self.unreadable.sort();
+        self.unreadable.dedup();
+    }
+}
+
+/// Whether a lockfile name is one we read, and which parser handles it.
+fn parser_for(path: &Path) -> Option<LockfileParser> {
+    let name = path.file_name().and_then(|n| n.to_str())?;
+    LOCKFILE_KINDS
+        .iter()
+        .find(|(candidate, _)| *candidate == name)
+        .map(|(_, parser)| *parser)
+}
+
+fn parse_one(path: &Path) -> Result<Option<Vec<LockedDependency>>> {
+    match parser_for(path) {
+        Some(parser) => parser(path).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Whether `path` is a directory the recursive lockfile search skips.
+fn is_skipped_dir(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    LOCKFILE_SKIP_DIRS.contains(&name)
 }
 
 // ============================================================================
@@ -57,16 +309,30 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
 
+    let has_supported_version = content.lines().any(|line| {
+        matches!(line.trim(), "version = 3" | "version = 4")
+    });
+    if !has_supported_version {
+        anyhow::bail!("{} is not a supported Cargo.lock (expected version = 3 or 4)", path.display());
+    }
+
     let mut deps = Vec::new();
     let mut current_name: Option<String> = None;
     let mut current_version: Option<String> = None;
     let mut current_source: Option<String> = None;
+    let mut package_seen = false;
 
     for line in content.lines() {
         let trimmed = line.trim();
 
         if trimmed == "[[package]]" {
-            if let (Some(name), Some(version)) = (current_name.take(), current_version.take()) {
+            if package_seen {
+                let name = current_name.take().ok_or_else(|| {
+                    anyhow::anyhow!("{} contains a package without a name", path.display())
+                })?;
+                let version = current_version.take().ok_or_else(|| {
+                    anyhow::anyhow!("{} contains a package without a version", path.display())
+                })?;
                 if current_source
                     .as_ref()
                     .is_some_and(|s| s.contains("registry"))
@@ -79,6 +345,7 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
                     });
                 }
             }
+            package_seen = true;
             current_name = None;
             current_version = None;
             current_source = None;
@@ -94,7 +361,13 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
         }
     }
 
-    if let (Some(name), Some(version)) = (current_name, current_version) {
+    if package_seen {
+        let name = current_name.ok_or_else(|| {
+            anyhow::anyhow!("{} contains a package without a name", path.display())
+        })?;
+        let version = current_version.ok_or_else(|| {
+            anyhow::anyhow!("{} contains a package without a version", path.display())
+        })?;
         if current_source
             .as_ref()
             .is_some_and(|s| s.contains("registry"))
@@ -653,7 +926,8 @@ checksum = "def456"
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         write!(
             tmp,
-            r#"[[package]]
+            r#"version = 4
+[[package]]
 name = "my-local-dep"
 version = "0.1.0"
 "#
@@ -746,13 +1020,50 @@ sqlalchemy[asyncio]==2.0.0; python_version >= "3.8"
         let mut f = std::fs::File::create(dir.path().join("Cargo.lock")).unwrap();
         write!(
             f,
-            "[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
+            "version = 4\n[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
         )
         .unwrap();
 
         let deps = discover_and_parse(dir.path());
+        assert_eq!(deps.lockfiles.len(), 1);
         assert_eq!(deps.len(), 1);
-        assert_eq!(deps[0].name, "serde");
+        assert_eq!(deps.dependencies[0].name, "serde");
+    }
+
+    #[test]
+    fn recursive_discovery_finds_nested_workspace_lockfiles_but_skips_build_trees() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join("src/rust");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(
+            nested.join("Cargo.lock"),
+            "[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
+        )
+        .unwrap();
+        let ignored = dir.path().join("target/generated");
+        std::fs::create_dir_all(&ignored).unwrap();
+        std::fs::write(ignored.join("Cargo.lock"), "not a lockfile").unwrap();
+
+        let found = discover_and_parse(dir.path());
+        assert_eq!(found.lockfiles.len(), 1);
+        assert!(found.lockfiles[0].ends_with("src/rust/Cargo.lock"));
+        assert_eq!(found.dependencies.len(), 1);
+        assert!(!found.dependencies[0].declared_by.is_empty());
+    }
+
+    #[test]
+    fn empty_valid_lockfile_is_distinct_from_missing_lockfile() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("Cargo.lock"), "version = 4\n").unwrap();
+        let found = discover_and_parse(dir.path());
+        assert!(found.has_lockfiles());
+        assert!(found.is_empty());
+        assert!(found.unreadable.is_empty());
+
+        let no_lock = tempfile::TempDir::new().unwrap();
+        let missing = discover_and_parse(no_lock.path());
+        assert!(!missing.has_lockfiles());
+        assert!(missing.is_empty());
     }
 
     // ------------------------------------------------------------------

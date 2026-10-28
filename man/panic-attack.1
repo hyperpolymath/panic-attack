@@ -75,6 +75,15 @@ Shows the man-style help text for panic-attack or one of its subcommands.
 .TP
 .B diagnostics [--manifest PATH]
 Runs self-diagnostics that check for AI manifest validity, required artifact directories, and the presence of Hypatia/gitbot-fleet watchers. This command returns non-zero if any check fails so automation can detect regressions.
+.TP
+.B bridge triage [DIR] [--output FILE] [--offline] [--lockfile FILE]
+Requires a binary built with `--features http`. Discovers supported lockfiles recursively beneath DIR (excluding .git, target, and vendor/build caches); `--lockfile FILE` may be repeated to select exact lockfiles. Global flags such as --quiet precede the subcommand: `panic-attack --quiet bridge triage DIR --output report.json`. `--output FILE` writes the JSON BridgeReport. A valid lockfile with zero external dependencies returns a valid empty report; no supported lockfile is an error. Unreadable discovered lockfiles fail closed.
+.TP
+.B bridge triage --offline
+Skips the OSV vulnerability query and returns NO vulnerability data. The JSON `vulnerability_data` field is `offline-unavailable`; an empty CVE list is not a clean bill of health and must not be interpreted as one.
+.TP
+.B bridge status [DIR]
+Displays the Patch Bridge mitigation registry for DIR.
 .SH EXAMPLES
 .TP
 .B panic-attack help amuck

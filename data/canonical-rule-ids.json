@@ -1,0 +1,283 @@
+{
+  "schema_version": "1.0.0",
+  "title": "panic-attack canonical rule-ID table",
+  "description": "Public rule ID contract matching WeakPointCategory::rule_id at source commit 410a8f821ea8297833162565b50a298f787815da. CWE links are semantic associations, not assertions of exact CWE identity; [] means no direct CWE mapping is claimed. PA001 and PA001b intentionally share a semantic class and CWE and should deduplicate for class-level verdict grids.",
+  "cwe_catalog": "https://cwe.mitre.org/",
+  "source_commit": "410a8f821ea8297833162565b50a298f787815da",
+  "deduplication": {
+    "primary_key": "semantic_class",
+    "preserve_rule_ids": [
+      "PA001",
+      "PA001b"
+    ],
+    "note": "Preserve the canonical rule ID for audit/report display; group findings by semantic_class for cross-tool verdict-grid comparison. CWE associations are supporting metadata, not a unique deduplication key."
+  },
+  "rules": [
+    {
+      "rule_id": "PA001",
+      "category": "UncheckedAllocation",
+      "name": "unchecked-allocation",
+      "cwe_ids": [
+        "CWE-789"
+      ],
+      "semantic_class": "unbounded-memory-allocation"
+    },
+    {
+      "rule_id": "PA001b",
+      "category": "UnboundedAllocation",
+      "name": "unbounded-allocation",
+      "cwe_ids": [
+        "CWE-789"
+      ],
+      "semantic_class": "unbounded-memory-allocation"
+    },
+    {
+      "rule_id": "PA002",
+      "category": "UnboundedLoop",
+      "name": "unbounded-loop",
+      "cwe_ids": [
+        "CWE-834"
+      ],
+      "semantic_class": "unbounded-iteration"
+    },
+    {
+      "rule_id": "PA003",
+      "category": "BlockingIO",
+      "name": "blocking-io",
+      "cwe_ids": [
+        "CWE-400"
+      ],
+      "semantic_class": "blocking-resource-consumption"
+    },
+    {
+      "rule_id": "PA004",
+      "category": "UnsafeCode",
+      "name": "unsafe-code",
+      "cwe_ids": [],
+      "semantic_class": "unsafe-memory-or-type-operation"
+    },
+    {
+      "rule_id": "PA005",
+      "category": "PanicPath",
+      "name": "panic-path",
+      "cwe_ids": [
+        "CWE-248"
+      ],
+      "semantic_class": "unhandled-runtime-panic"
+    },
+    {
+      "rule_id": "PA006",
+      "category": "RaceCondition",
+      "name": "race-condition",
+      "cwe_ids": [
+        "CWE-362"
+      ],
+      "semantic_class": "concurrent-access-race"
+    },
+    {
+      "rule_id": "PA007",
+      "category": "DeadlockPotential",
+      "name": "deadlock-potential",
+      "cwe_ids": [
+        "CWE-833"
+      ],
+      "semantic_class": "concurrency-deadlock"
+    },
+    {
+      "rule_id": "PA008",
+      "category": "ResourceLeak",
+      "name": "resource-leak",
+      "cwe_ids": [
+        "CWE-772"
+      ],
+      "semantic_class": "unreleased-resource"
+    },
+    {
+      "rule_id": "PA009",
+      "category": "CommandInjection",
+      "name": "command-injection",
+      "cwe_ids": [
+        "CWE-78"
+      ],
+      "semantic_class": "improper-neutralization-of-command-input"
+    },
+    {
+      "rule_id": "PA010",
+      "category": "UnsafeDeserialization",
+      "name": "unsafe-deserialization",
+      "cwe_ids": [
+        "CWE-502"
+      ],
+      "semantic_class": "unsafe-deserialization"
+    },
+    {
+      "rule_id": "PA011",
+      "category": "DynamicCodeExecution",
+      "name": "dynamic-code-execution",
+      "cwe_ids": [
+        "CWE-95"
+      ],
+      "semantic_class": "improper-neutralization-of-eval-input"
+    },
+    {
+      "rule_id": "PA012",
+      "category": "UnsafeFFI",
+      "name": "unsafe-ffi",
+      "cwe_ids": [],
+      "semantic_class": "unsafe-foreign-function-boundary"
+    },
+    {
+      "rule_id": "PA013",
+      "category": "AtomExhaustion",
+      "name": "atom-exhaustion",
+      "cwe_ids": [
+        "CWE-400"
+      ],
+      "semantic_class": "unbounded-resource-consumption"
+    },
+    {
+      "rule_id": "PA014",
+      "category": "InsecureProtocol",
+      "name": "insecure-protocol",
+      "cwe_ids": [
+        "CWE-319",
+        "CWE-326"
+      ],
+      "semantic_class": "insecure-communications-or-cryptography"
+    },
+    {
+      "rule_id": "PA015",
+      "category": "ExcessivePermissions",
+      "name": "excessive-permissions",
+      "cwe_ids": [
+        "CWE-732"
+      ],
+      "semantic_class": "incorrect-permission-assignment"
+    },
+    {
+      "rule_id": "PA016",
+      "category": "PathTraversal",
+      "name": "path-traversal",
+      "cwe_ids": [
+        "CWE-22"
+      ],
+      "semantic_class": "improper-limitation-of-pathname"
+    },
+    {
+      "rule_id": "PA017",
+      "category": "HardcodedSecret",
+      "name": "hardcoded-secret",
+      "cwe_ids": [
+        "CWE-798"
+      ],
+      "semantic_class": "hardcoded-credential"
+    },
+    {
+      "rule_id": "PA018",
+      "category": "UncheckedError",
+      "name": "unchecked-error",
+      "cwe_ids": [
+        "CWE-390",
+        "CWE-391"
+      ],
+      "semantic_class": "ignored-or-unchecked-error-condition"
+    },
+    {
+      "rule_id": "PA019",
+      "category": "InfiniteRecursion",
+      "name": "infinite-recursion",
+      "cwe_ids": [
+        "CWE-674"
+      ],
+      "semantic_class": "uncontrolled-recursion"
+    },
+    {
+      "rule_id": "PA020",
+      "category": "UnsafeTypeCoercion",
+      "name": "unsafe-type-coercion",
+      "cwe_ids": [
+        "CWE-704"
+      ],
+      "semantic_class": "incorrect-type-conversion"
+    },
+    {
+      "rule_id": "PA021",
+      "category": "ProofDrift",
+      "name": "proof-drift",
+      "cwe_ids": [],
+      "semantic_class": "unverified-or-drifted-formal-proof"
+    },
+    {
+      "rule_id": "PA022",
+      "category": "CryptoMisuse",
+      "name": "crypto-misuse",
+      "cwe_ids": [
+        "CWE-327",
+        "CWE-328",
+        "CWE-330"
+      ],
+      "semantic_class": "cryptographic-primitive-or-validation-misuse"
+    },
+    {
+      "rule_id": "PA023",
+      "category": "SupplyChain",
+      "name": "supply-chain",
+      "cwe_ids": [
+        "CWE-1104",
+        "CWE-1395"
+      ],
+      "semantic_class": "untrusted-or-vulnerable-component"
+    },
+    {
+      "rule_id": "PA024",
+      "category": "InputBoundary",
+      "name": "input-boundary",
+      "cwe_ids": [
+        "CWE-20",
+        "CWE-502"
+      ],
+      "semantic_class": "unvalidated-input-at-deserialization-boundary"
+    },
+    {
+      "rule_id": "PA025",
+      "category": "MutationGap",
+      "name": "mutation-gap",
+      "cwe_ids": [],
+      "semantic_class": "insufficient-test-or-mutation-assurance"
+    },
+    {
+      "rule_id": "PA026",
+      "category": "LicensePolicy",
+      "name": "license-policy",
+      "cwe_ids": [],
+      "semantic_class": "dependency-license-policy-violation"
+    },
+    {
+      "rule_id": "PA027",
+      "category": "Advisory",
+      "name": "advisory",
+      "cwe_ids": [
+        "CWE-1395"
+      ],
+      "semantic_class": "known-vulnerable-component-version"
+    },
+    {
+      "rule_id": "PA028",
+      "category": "BannedDep",
+      "name": "banned-dep",
+      "cwe_ids": [
+        "CWE-1357"
+      ],
+      "semantic_class": "prohibited-or-insufficiently-trustworthy-component"
+    },
+    {
+      "rule_id": "PA029",
+      "category": "UnknownSource",
+      "name": "unknown-source",
+      "cwe_ids": [
+        "CWE-1357"
+      ],
+      "semantic_class": "unverified-component-provenance"
+    }
+  ]
+}
