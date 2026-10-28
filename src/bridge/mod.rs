@@ -299,7 +299,10 @@ fn triage_with_discovery(
 ) -> anyhow::Result<BridgeReport> {
     // Distinguish no lockfile (unknown dependency surface) from a valid
     // lockfile containing zero external dependencies (a complete answer).
-    let discovery = explicit.unwrap_or_else(|| lockfile::discover_and_parse(project_dir));
+    let discovery = match explicit {
+        Some(discovery) => discovery,
+        None => lockfile::discover_and_parse(project_dir)?,
+    };
     if !discovery.has_lockfiles() {
         anyhow::bail!(
             "No supported lockfile found in {}. Supported: {}.",
@@ -328,13 +331,13 @@ fn triage_with_discovery(
         report.vulnerability_data = VulnerabilityDataStatus::NoDependencies;
         return Ok(report);
     }
-    let deps = discovery.dependencies;
+    let deps = &discovery.dependencies;
 
     // Step 2: Query for vulnerabilities
     let vulns = if offline {
         Vec::new() // Offline mode: no local advisory DB is queried or available.
     } else {
-        intelligence::query_osv_batch(&deps)?
+        intelligence::query_osv_batch(deps)?
     };
 
     if vulns.is_empty() {
@@ -345,13 +348,10 @@ fn triage_with_discovery(
         return Ok(report);
     }
 
-    // Direct-vs-transitive lookup table for the project's Cargo.toml.
+    // Direct-vs-transitive lookup tables for discovered Cargo workspaces.
     // Collected once (not per-CVE) to avoid re-parsing the manifest for
     // every vulnerable dep — see #47.
-    let direct_deps = lockfile::collect_direct_cargo_dependencies(project_dir);
-    // Parent-dep map from Cargo.lock: for any transitive crate, identify
-    // which direct dep's closure pulls it in (best-effort, first match wins).
-    let parent_map = lockfile::collect_cargo_parents(project_dir, &direct_deps);
+    let (direct_deps, parent_map) = discovery.cargo_context(project_dir);
 
     // Step 3 & 4: For each vuln, check reachability and classify
     let mut assessed = Vec::new();
@@ -402,7 +402,10 @@ mod triage_tests {
         let report = triage(dir.path(), true)?;
         assert_eq!(report.total_dependencies, 0);
         assert!(report.cves.is_empty());
-        assert_eq!(report.vulnerability_data, VulnerabilityDataStatus::NoDependencies);
+        assert_eq!(
+            report.vulnerability_data,
+            VulnerabilityDataStatus::NoDependencies
+        );
         Ok(())
     }
 
@@ -419,13 +422,158 @@ mod triage_tests {
         let dir = tempfile::TempDir::new()?;
         std::fs::write(
             dir.path().join("Cargo.lock"),
-            "[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
+            "version = 4\n[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
         )?;
 
         let report = triage(dir.path(), true)?;
         assert_eq!(report.total_dependencies, 1);
         assert!(report.cves.is_empty());
-        assert_eq!(report.vulnerability_data, VulnerabilityDataStatus::OfflineUnavailable);
+        assert_eq!(
+            report.vulnerability_data,
+            VulnerabilityDataStatus::OfflineUnavailable
+        );
+        Ok(())
+    }
+    #[test]
+    fn structurally_valid_empty_lockfiles_report_no_dependencies() -> anyhow::Result<()> {
+        for (name, content) in [
+            ("Cargo.lock", "version = 3\n"),
+            ("mix.lock", "%{}\n"),
+            (
+                "package-lock.json",
+                r#"{"name":"empty","lockfileVersion":1}"#,
+            ),
+            (
+                "package-lock.json",
+                r#"{"lockfileVersion":1,"dependencies":{}}"#,
+            ),
+            (
+                "package-lock.json",
+                r#"{"lockfileVersion":2,"packages":{}}"#,
+            ),
+            (
+                "package-lock.json",
+                r#"{"lockfileVersion":3,"packages":{"":{"name":"demo","version":"1.0.0"}}}"#,
+            ),
+            ("requirements.txt", "# No external dependencies\n\n"),
+        ] {
+            let dir = tempfile::TempDir::new()?;
+            let path = dir.path().join(name);
+            std::fs::write(&path, content)?;
+            for report in [
+                triage(dir.path(), true)?,
+                triage_with_lockfiles(dir.path(), true, &[path])?,
+            ] {
+                assert_eq!(
+                    report.vulnerability_data,
+                    VulnerabilityDataStatus::NoDependencies,
+                    "{name}: {content}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_or_unsupported_lockfiles_never_report_no_dependencies() -> anyhow::Result<()> {
+        for (name, content) in [
+            ("Cargo.lock", ""),
+            ("Cargo.lock", "version = 4\nnot toml"),
+            ("Cargo.lock", "version = 4\npackage = 1"),
+            ("Cargo.lock", "version = 4\n[[package]]\nname = \"broken\""),
+            ("Cargo.lock", "[[package]]\nname = \"broken\"\nversion = 4"),
+            ("Cargo.lock", "version = 4\n[packages]"),
+            ("mix.lock", ""),
+            ("mix.lock", "%{\ninvalid entry\n}"),
+            ("mix.lock", "%{\n\"broken\": {:hex, :broken, \"1.0\"\n}"),
+            ("mix.lock", "%{\n\"broken\": {:hex, :broken, 1.0},\n}"),
+            ("package-lock.json", "{}"),
+            ("package-lock.json", "[]"),
+            ("package-lock.json", "null"),
+            (
+                "package-lock.json",
+                r#"{"lockfileVersion":99,"packages":{}}"#,
+            ),
+            (
+                "package-lock.json",
+                r#"{"lockfileVersion":3,"packages":[]}"#,
+            ),
+            ("package-lock.json", r#"{"lockfileVersion":3}"#),
+            (
+                "package-lock.json",
+                r#"{"lockfileVersion":3,"packages":{"node_modules/broken":{}}}"#,
+            ),
+            (
+                "package-lock.json",
+                r#"{"lockfileVersion":1,"dependencies":{"broken":{"version":42}}}"#,
+            ),
+            ("requirements.txt", "not a requirement"),
+            ("requirements.txt", "requests>=2.0"),
+            ("requirements.txt", "-r other.txt"),
+            ("requirements.txt", "requests=="),
+            ("requirements.txt", "==1.0"),
+            ("requirements.txt", "requests===1.0"),
+        ] {
+            let dir = tempfile::TempDir::new()?;
+            let path = dir.path().join(name);
+            std::fs::write(&path, content)?;
+            let error = triage(dir.path(), true).expect_err(content);
+            assert!(
+                error.to_string().contains("Could not parse"),
+                "{name}: {content}: {error}"
+            );
+            assert!(
+                triage_with_lockfiles(dir.path(), true, &[path]).is_err(),
+                "{name}: {content}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn explicit_lockfile_does_not_trigger_recursive_discovery() -> anyhow::Result<()> {
+        let project = tempfile::TempDir::new()?;
+        std::fs::write(project.path().join("Cargo.lock"), "broken")?;
+        let external = tempfile::TempDir::new()?;
+        let path = external.path().join("requirements.txt");
+        std::fs::write(&path, "requests==2.0.0\n")?;
+        let report = triage_with_lockfiles(project.path(), true, &[path])?;
+        assert_eq!(report.total_dependencies, 1);
+        assert_eq!(
+            report.vulnerability_data,
+            VulnerabilityDataStatus::OfflineUnavailable
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn missing_project_directory_is_a_traversal_error() -> anyhow::Result<()> {
+        let dir = tempfile::TempDir::new()?;
+        let error = triage(&dir.path().join("missing"), true).unwrap_err();
+        assert!(error.to_string().contains("Failed to traverse"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_subdirectory_prevents_no_dependencies_report() -> anyhow::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::TempDir::new()?;
+        std::fs::write(dir.path().join("Cargo.lock"), "version = 4\n")?;
+        let blocked = dir.path().join("nested");
+        std::fs::create_dir(&blocked)?;
+        std::fs::write(blocked.join("requirements.txt"), "requests==2.0.0\n")?;
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o000))?;
+        // Root can bypass mode bits; exercise this case when the OS enforces them.
+        let enforced = std::fs::read_dir(&blocked).is_err();
+        let result = triage(dir.path(), true);
+        std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))?;
+        if enforced {
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to traverse"));
+        }
         Ok(())
     }
 }

@@ -42,6 +42,7 @@ sha2 = "0.11"
 hex = "0.4"
 getrandom = "0.4"
 walkdir = "2.5"
+toml_edit = { version = "0.23", default-features = false, features = ["parse"], optional = true }
 dirs = "7.0"
 ed25519-dalek = { version = "3.0", optional = true }
 ureq = { version = "3.3", optional = true }
@@ -49,7 +50,7 @@ ureq = { version = "3.3", optional = true }
 [features]
 default = []
 signing = ["ed25519-dalek"]
-http = ["ureq"]
+http = ["ureq", "dep:toml_edit"]
 sarif = []
 # Native GUI viewer (eframe/egui). Opt-in because eframe raises MSRV above the
 # 1.90 baseline; default builds remain pure-CLI and MSRV-clean.

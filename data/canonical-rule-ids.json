@@ -10,7 +10,7 @@
       "PA001",
       "PA001b"
     ],
-    "note": "Preserve the canonical rule ID for audit/report display; group findings by semantic_class for cross-tool verdict-grid comparison. CWE associations are supporting metadata, not a unique deduplication key."
+    "note": "Preserve the canonical rule ID for audit/report display; group findings by semantic_class for cross-tool verdict-grid comparison. Apply the first matching semantic_class_overrides entry (description_prefix matches the generated finding description) and use its semantic_class and cwe_ids before falling back to the rule metadata; this keeps PA011 DOM sinks separate from eval input. CWE associations are supporting metadata, not a unique deduplication key."
   },
   "rules": [
     {
@@ -117,7 +117,19 @@
       "cwe_ids": [
         "CWE-95"
       ],
-      "semantic_class": "improper-neutralization-of-eval-input"
+      "semantic_class": "improper-neutralization-of-eval-input",
+      "semantic_class_overrides": [
+        {
+          "description_prefix": "DOM manipulation (innerHTML/document.write) in ",
+          "semantic_class": "improper-neutralization-of-html-input",
+          "cwe_ids": ["CWE-79"]
+        },
+        {
+          "description_prefix": "dangerouslySetInnerHTML (XSS risk) in ",
+          "semantic_class": "improper-neutralization-of-html-input",
+          "cwe_ids": ["CWE-79"]
+        }
+      ]
     },
     {
       "rule_id": "PA012",

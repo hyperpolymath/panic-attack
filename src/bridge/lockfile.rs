@@ -120,23 +120,24 @@ impl LockfileDiscovery {
 ///
 /// Successful parses are merged into one de-duplicated list. Parse errors are
 /// logged as warnings and recorded in [`LockfileDiscovery::unreadable`] so one
-/// malformed lockfile does not abort triage of the whole project.
-pub fn discover_and_parse(dir: &Path) -> LockfileDiscovery {
+/// malformed lockfile does not abort discovery. Directory traversal errors are
+/// returned to the caller because an incomplete walk cannot establish coverage.
+pub fn discover_and_parse(dir: &Path) -> Result<LockfileDiscovery> {
     discover_from(dir, true)
 }
 
 /// As [`discover_and_parse`], but `dir` alone is searched — the pre-0.3
 /// behaviour. Kept for callers that must not pick up a nested sub-project.
-pub fn discover_and_parse_root_only(dir: &Path) -> LockfileDiscovery {
+pub fn discover_and_parse_root_only(dir: &Path) -> Result<LockfileDiscovery> {
     discover_from(dir, false)
 }
 
-fn discover_from(dir: &Path, recursive: bool) -> LockfileDiscovery {
-    parse_found(lockfile_paths(dir, recursive))
+fn discover_from(dir: &Path, recursive: bool) -> Result<LockfileDiscovery> {
+    Ok(parse_found(lockfile_paths(dir, recursive)?))
 }
 
 /// Paths of the lockfiles under `dir`, sorted and de-duplicated.
-pub fn lockfile_paths(dir: &Path, recursive: bool) -> Vec<PathBuf> {
+pub fn lockfile_paths(dir: &Path, recursive: bool) -> Result<Vec<PathBuf>> {
     let names: Vec<&str> = LOCKFILE_KINDS.iter().map(|(name, _)| *name).collect();
     let mut found: Vec<PathBuf> = Vec::new();
 
@@ -144,8 +145,8 @@ pub fn lockfile_paths(dir: &Path, recursive: bool) -> Vec<PathBuf> {
         for entry in WalkDir::new(dir)
             .into_iter()
             .filter_entry(|e| e.depth() == 0 || !is_skipped_dir(e.path()))
-            .filter_map(|e| e.ok())
         {
+            let entry = entry.with_context(|| format!("Failed to traverse {}", dir.display()))?;
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -162,15 +163,21 @@ pub fn lockfile_paths(dir: &Path, recursive: bool) -> Vec<PathBuf> {
     } else {
         for name in names {
             let path = dir.join(name);
-            if path.is_file() {
-                found.push(path);
+            match std::fs::metadata(&path) {
+                Ok(metadata) if metadata.is_file() => found.push(path),
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("Failed to inspect {}", path.display()))
+                }
             }
         }
     }
 
     found.sort();
     found.dedup();
-    found
+    Ok(found)
 }
 
 /// Parse exactly these lockfiles, with no searching.
@@ -214,9 +221,8 @@ fn parse_found(paths: Vec<PathBuf>) -> LockfileDiscovery {
         discovery.lockfiles.push(path.clone());
         match parse_one(&path) {
             Ok(Some(deps)) => discovery.push(&path, deps),
-            // Discovery only collects recognised names, so `None` here means
-            // the file vanished between the walk and the read. Skip it.
-            Ok(None) => {}
+            // Do not count a discovered file as valid if no parser handled it.
+            Ok(None) => discovery.unreadable.push(path),
             Err(e) => {
                 log::warn!("[bridge] Failed to parse {}: {}", path.display(), e);
                 discovery.unreadable.push(path);
@@ -229,9 +235,39 @@ fn parse_found(paths: Vec<PathBuf>) -> LockfileDiscovery {
 }
 
 impl LockfileDiscovery {
+    /// Build Cargo reachability context using the root manifest and each
+    /// discovered Cargo.lock's neighbouring manifest/workspace. Parent graphs
+    /// use their own direct dependencies so independent workspaces do not
+    /// accidentally create dependency paths across lockfiles.
+    pub(super) fn cargo_context(
+        &self,
+        project_dir: &Path,
+    ) -> (
+        std::collections::HashSet<String>,
+        std::collections::HashMap<String, String>,
+    ) {
+        let mut direct = collect_direct_cargo_dependencies(project_dir);
+        let mut parents = std::collections::HashMap::new();
+        for path in &self.lockfiles {
+            if path.file_name().is_none_or(|name| name != "Cargo.lock") {
+                continue;
+            }
+            let Some(dir) = path.parent() else {
+                continue;
+            };
+            let local_direct = collect_direct_cargo_dependencies(dir);
+            for (child, parent) in collect_cargo_parents(dir, &local_direct) {
+                parents.entry(child).or_insert(parent);
+            }
+            direct.extend(local_direct);
+        }
+        (direct, parents)
+    }
+
     /// Record one parsed lockfile's dependencies, each tagged with the lockfile
     /// it came from.
     fn push(&mut self, lockfile: &Path, deps: Vec<LockedDependency>) {
+        self.lockfiles.push(lockfile.to_path_buf());
         for mut dep in deps {
             dep.declared_by = vec![lockfile.to_path_buf()];
             self.dependencies.push(dep);
@@ -247,11 +283,7 @@ impl LockfileDiscovery {
         let mut merged: Vec<LockedDependency> = Vec::with_capacity(self.dependencies.len());
 
         for dep in self.dependencies.drain(..) {
-            let key = (
-                dep.ecosystem.clone(),
-                dep.name.clone(),
-                dep.version.clone(),
-            );
+            let key = (dep.ecosystem.clone(), dep.name.clone(), dep.version.clone());
             match seen.get(&key) {
                 Some(&at) => {
                     for path in dep.declared_by {
@@ -309,72 +341,51 @@ pub fn parse_cargo_lock(path: &Path) -> Result<Vec<LockedDependency>> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
 
-    let has_supported_version = content.lines().any(|line| {
-        matches!(line.trim(), "version = 3" | "version = 4")
-    });
-    if !has_supported_version {
-        anyhow::bail!("{} is not a supported Cargo.lock (expected version = 3 or 4)", path.display());
+    let document: toml_edit::DocumentMut = content
+        .parse()
+        .with_context(|| format!("Parsing {}", path.display()))?;
+    if !matches!(
+        document.get("version").and_then(|v| v.as_integer()),
+        Some(3 | 4)
+    ) {
+        anyhow::bail!(
+            "{} is not a supported Cargo.lock (expected version = 3 or 4)",
+            path.display()
+        );
     }
-
     let mut deps = Vec::new();
-    let mut current_name: Option<String> = None;
-    let mut current_version: Option<String> = None;
-    let mut current_source: Option<String> = None;
-    let mut package_seen = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        if trimmed == "[[package]]" {
-            if package_seen {
-                let name = current_name.take().ok_or_else(|| {
-                    anyhow::anyhow!("{} contains a package without a name", path.display())
-                })?;
-                let version = current_version.take().ok_or_else(|| {
-                    anyhow::anyhow!("{} contains a package without a version", path.display())
-                })?;
-                if current_source
-                    .as_ref()
-                    .is_some_and(|s| s.contains("registry"))
-                {
-                    deps.push(LockedDependency {
-                        name,
-                        version,
-                        ecosystem: "crates.io".to_string(),
-                        declared_by: Vec::new(),
-                    });
-                }
-            }
-            package_seen = true;
-            current_name = None;
-            current_version = None;
-            current_source = None;
-            continue;
+    let Some(packages) = document.get("package") else {
+        // The supported version header alone describes a valid empty lockfile.
+        if document.iter().any(|(key, _)| key != "version") {
+            anyhow::bail!("{} has no package array", path.display());
         }
-
-        if let Some(rest) = trimmed.strip_prefix("name = ") {
-            current_name = Some(unquote(rest));
-        } else if let Some(rest) = trimmed.strip_prefix("version = ") {
-            current_version = Some(unquote(rest));
-        } else if let Some(rest) = trimmed.strip_prefix("source = ") {
-            current_source = Some(unquote(rest));
-        }
-    }
-
-    if package_seen {
-        let name = current_name.ok_or_else(|| {
-            anyhow::anyhow!("{} contains a package without a name", path.display())
-        })?;
-        let version = current_version.ok_or_else(|| {
-            anyhow::anyhow!("{} contains a package without a version", path.display())
-        })?;
-        if current_source
-            .as_ref()
-            .is_some_and(|s| s.contains("registry"))
-        {
+        return Ok(deps);
+    };
+    let packages = packages
+        .as_array_of_tables()
+        .with_context(|| format!("{} has an invalid package array", path.display()))?;
+    for package in packages {
+        let name = package
+            .get("name")
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+            .with_context(|| format!("{} contains a package without a name", path.display()))?;
+        let version = package
+            .get("version")
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+            .with_context(|| format!("{} contains a package without a version", path.display()))?;
+        let source =
+            match package.get("source") {
+                Some(source) => Some(source.as_str().with_context(|| {
+                    format!("{} has an invalid package source", path.display())
+                })?),
+                None => None,
+            };
+        if source.is_some_and(|s| s.contains("registry")) {
             deps.push(LockedDependency {
-                name,
-                version,
+                name: name.to_string(),
+                version: version.to_string(),
                 ecosystem: "crates.io".to_string(),
                 declared_by: Vec::new(),
             });
@@ -400,24 +411,75 @@ pub fn parse_mix_lock(path: &Path) -> Result<Vec<LockedDependency>> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
 
+    let body = content
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let body = body
+        .trim()
+        .strip_prefix("%{")
+        .and_then(|s| s.trim_end().strip_suffix('}'))
+        .with_context(|| format!("{} is not a supported mix.lock map", path.display()))?;
     let mut deps = Vec::new();
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        // Skip blank lines, comment, and the map delimiters
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed == "%{" || trimmed == "}" {
+    for line in body.lines() {
+        let line = line.trim();
+        if line.is_empty() {
             continue;
         }
-
-        // Match lines like:  "cowboy": {:hex, :cowboy, "2.10.0", ...}
-        // We need the outer key (package name) and the version string.
-        if let Some(dep) = parse_mix_lock_line(trimmed) {
-            deps.push(dep);
+        let entry = line.trim_end_matches(',').trim();
+        let (key, value) = entry
+            .split_once(':')
+            .with_context(|| format!("{} contains an invalid mix.lock entry", path.display()))?;
+        let quoted_key = key.trim();
+        let value = value.trim();
+        if quoted_key.len() < 3
+            || !quoted_key.starts_with('"')
+            || !quoted_key.ends_with('"')
+            || !balanced_mix_tuple(value)
+        {
+            anyhow::bail!("{} contains an invalid mix.lock entry", path.display());
+        }
+        if value.starts_with("{:hex,") {
+            deps.push(parse_mix_lock_line(entry).with_context(|| {
+                format!("{} contains an invalid Hex dependency", path.display())
+            })?);
+        } else if !value.starts_with("{:git,") && !value.starts_with("{:path,") {
+            anyhow::bail!("{} contains an unsupported mix.lock entry", path.display());
         }
     }
 
     Ok(deps)
+}
+
+// Validate nested tuple/list delimiters without evaluating Elixir input.
+fn balanced_mix_tuple(value: &str) -> bool {
+    if !value.starts_with('{') || !value.ends_with('}') {
+        return false;
+    }
+    let mut stack = Vec::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    for ch in value.chars() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                quoted = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => quoted = true,
+            '{' => stack.push('}'),
+            '[' => stack.push(']'),
+            '}' | ']' if stack.pop() != Some(ch) => return false,
+            _ => {}
+        }
+    }
+    !quoted && stack.is_empty()
 }
 
 /// Parse a single mix.lock entry line into a LockedDependency.
@@ -447,7 +509,11 @@ fn parse_mix_lock_line(line: &str) -> Option<LockedDependency> {
         return None;
     }
 
-    let version = fields[2].trim().trim_matches('"').to_string();
+    let version = fields[2]
+        .trim()
+        .strip_prefix('"')?
+        .strip_suffix('"')?
+        .to_string();
     if version.is_empty() || version.starts_with(':') {
         return None;
     }
@@ -468,7 +534,7 @@ fn parse_mix_lock_line(line: &str) -> Option<LockedDependency> {
 ///
 /// npm lockfile v2/v3 uses a flat `packages` map where each key is
 /// `node_modules/<name>` and the value has a `version` field. We skip the
-/// root entry (empty key or no version) and dev-only packages.
+/// root entry (empty key) and workspace links. Entries must declare versions.
 pub fn parse_package_lock_json(path: &Path) -> Result<Vec<LockedDependency>> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
@@ -476,48 +542,90 @@ pub fn parse_package_lock_json(path: &Path) -> Result<Vec<LockedDependency>> {
     let root: serde_json::Value =
         serde_json::from_str(&content).with_context(|| "Parsing package-lock.json")?;
 
+    let version = root
+        .get("lockfileVersion")
+        .and_then(|v| v.as_u64())
+        .with_context(|| format!("{} has no lockfileVersion", path.display()))?;
     let mut deps = Vec::new();
-
-    // v2/v3 lockfile: flat `packages` object
-    if let Some(packages) = root.get("packages").and_then(|v| v.as_object()) {
-        for (key, pkg) in packages {
-            // Skip root entry and entries without a version
-            if key.is_empty() || !key.starts_with("node_modules/") {
-                continue;
+    match version {
+        2 | 3 => {
+            let packages = root
+                .get("packages")
+                .and_then(|v| v.as_object())
+                .with_context(|| format!("{} has no packages object", path.display()))?;
+            for (key, pkg) in packages {
+                if !pkg.is_object() {
+                    anyhow::bail!("Invalid npm package entry: {key}");
+                }
+                if key.is_empty() {
+                    continue;
+                }
+                // Workspace targets live outside node_modules; links point to them.
+                if pkg.get("link").and_then(|v| v.as_bool()) == Some(true) {
+                    continue;
+                }
+                let version = pkg
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .filter(|v| !v.is_empty())
+                    .with_context(|| format!("npm package {key} has no version"))?;
+                if !key.starts_with("node_modules/") {
+                    continue;
+                }
+                let name = key.trim_start_matches("node_modules/");
+                if name.is_empty() {
+                    anyhow::bail!("Invalid npm package path: {key}");
+                }
+                deps.push(LockedDependency {
+                    name: name.to_string(),
+                    version: version.to_string(),
+                    ecosystem: "npm".to_string(),
+                    declared_by: Vec::new(),
+                });
             }
-            let version = match pkg.get("version").and_then(|v| v.as_str()) {
-                Some(v) => v.to_string(),
-                None => continue,
-            };
-            // Extract package name from node_modules/<scope?/name> key
-            let name = key.trim_start_matches("node_modules/").to_string();
-            if name.is_empty() {
-                continue;
+        }
+        1 => {
+            // npm v1 omits `dependencies` when the project has none.
+            if let Some(dependencies) = root.get("dependencies") {
+                let dependencies = dependencies.as_object().with_context(|| {
+                    format!("{} has an invalid dependencies object", path.display())
+                })?;
+                collect_npm_v1_dependencies(dependencies, &mut deps)?;
             }
-            deps.push(LockedDependency {
-                name,
-                version,
-                ecosystem: "npm".to_string(),
-                declared_by: Vec::new(),
-            });
         }
-    } else if let Some(dependencies) = root.get("dependencies").and_then(|v| v.as_object()) {
-        // v1 lockfile: nested `dependencies` object
-        for (name, pkg) in dependencies {
-            let version = match pkg.get("version").and_then(|v| v.as_str()) {
-                Some(v) => v.to_string(),
-                None => continue,
-            };
-            deps.push(LockedDependency {
-                name: name.clone(),
-                version,
-                ecosystem: "npm".to_string(),
-                declared_by: Vec::new(),
-            });
-        }
+        _ => anyhow::bail!("Unsupported npm lockfileVersion: {version}"),
     }
 
     Ok(deps)
+}
+
+fn collect_npm_v1_dependencies(
+    packages: &serde_json::Map<String, serde_json::Value>,
+    deps: &mut Vec<LockedDependency>,
+) -> Result<()> {
+    for (name, pkg) in packages {
+        let version = pkg
+            .get("version")
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+            .with_context(|| format!("npm package {name} has no version"))?;
+        if name.is_empty() {
+            anyhow::bail!("Empty npm dependency name");
+        }
+        deps.push(LockedDependency {
+            name: name.clone(),
+            version: version.to_string(),
+            ecosystem: "npm".to_string(),
+            declared_by: Vec::new(),
+        });
+        if let Some(children) = pkg.get("dependencies") {
+            let children = children
+                .as_object()
+                .context("Invalid nested npm dependencies")?;
+            collect_npm_v1_dependencies(children, deps)?;
+        }
+    }
+    Ok(())
 }
 
 // ============================================================================
@@ -530,11 +638,14 @@ pub fn parse_package_lock_json(path: &Path) -> Result<Vec<LockedDependency>> {
 /// and ignores git/URL requirements, comments, and environment markers.
 /// Only `==` pins produce reliable version-exact OSV queries; `>=`/`~=`
 /// entries are skipped because they represent ranges, not locked versions.
+/// Non-empty files with no supported pins return an error rather than claiming
+/// the project has no dependencies.
 pub fn parse_requirements_txt(path: &Path) -> Result<Vec<LockedDependency>> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
 
     let mut deps = Vec::new();
+    let mut has_unlocked_entries = false;
 
     for line in content.lines() {
         // Strip inline comments and whitespace
@@ -545,7 +656,11 @@ pub fn parse_requirements_txt(path: &Path) -> Result<Vec<LockedDependency>> {
             line
         };
 
-        if line.is_empty() || line.starts_with('-') || line.starts_with("git+") {
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('-') || line.starts_with("git+") {
+            has_unlocked_entries = true;
             continue;
         }
 
@@ -568,7 +683,18 @@ pub fn parse_requirements_txt(path: &Path) -> Result<Vec<LockedDependency>> {
                 .trim()
                 .to_string();
 
-            if !name.is_empty() && !version.is_empty() {
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+                || version.is_empty()
+                || version.contains(['=', '<', '>', '~', '!', ' '])
+            {
+                anyhow::bail!("{} contains an invalid requirement pin", path.display());
+            }
+            if version.contains('*') {
+                has_unlocked_entries = true;
+            } else {
                 deps.push(LockedDependency {
                     name,
                     version,
@@ -576,7 +702,15 @@ pub fn parse_requirements_txt(path: &Path) -> Result<Vec<LockedDependency>> {
                     declared_by: Vec::new(),
                 });
             }
+        } else {
+            has_unlocked_entries = true;
         }
+    }
+    if deps.is_empty() && has_unlocked_entries {
+        anyhow::bail!(
+            "{} contains no supported exact requirement pins",
+            path.display()
+        );
     }
 
     Ok(deps)
@@ -1024,7 +1158,7 @@ sqlalchemy[asyncio]==2.0.0; python_version >= "3.8"
         )
         .unwrap();
 
-        let deps = discover_and_parse(dir.path());
+        let deps = discover_and_parse(dir.path()).unwrap();
         assert_eq!(deps.lockfiles.len(), 1);
         assert_eq!(deps.len(), 1);
         assert_eq!(deps.dependencies[0].name, "serde");
@@ -1037,14 +1171,14 @@ sqlalchemy[asyncio]==2.0.0; python_version >= "3.8"
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(
             nested.join("Cargo.lock"),
-            "[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
+            "version = 4\n[[package]]\nname = \"serde\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
         )
         .unwrap();
         let ignored = dir.path().join("target/generated");
         std::fs::create_dir_all(&ignored).unwrap();
         std::fs::write(ignored.join("Cargo.lock"), "not a lockfile").unwrap();
 
-        let found = discover_and_parse(dir.path());
+        let found = discover_and_parse(dir.path()).unwrap();
         assert_eq!(found.lockfiles.len(), 1);
         assert!(found.lockfiles[0].ends_with("src/rust/Cargo.lock"));
         assert_eq!(found.dependencies.len(), 1);
@@ -1055,15 +1189,81 @@ sqlalchemy[asyncio]==2.0.0; python_version >= "3.8"
     fn empty_valid_lockfile_is_distinct_from_missing_lockfile() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::write(dir.path().join("Cargo.lock"), "version = 4\n").unwrap();
-        let found = discover_and_parse(dir.path());
+        let found = discover_and_parse(dir.path()).unwrap();
         assert!(found.has_lockfiles());
         assert!(found.is_empty());
         assert!(found.unreadable.is_empty());
 
         let no_lock = tempfile::TempDir::new().unwrap();
-        let missing = discover_and_parse(no_lock.path());
+        let missing = discover_and_parse(no_lock.path()).unwrap();
         assert!(!missing.has_lockfiles());
         assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn discovery_returns_traversal_errors() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let error = discover_and_parse(&dir.path().join("missing")).unwrap_err();
+        assert!(error.to_string().contains("Failed to traverse"));
+    }
+
+    #[test]
+    fn nested_cargo_context_finds_direct_and_transitive_dependencies() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join("src/rust");
+        std::fs::create_dir_all(&nested).unwrap();
+        write_cargo_toml(&nested, "[dependencies]\nparent = \"1\"\n");
+        std::fs::write(
+            nested.join("Cargo.lock"),
+            r#"version = 4
+[[package]]
+name = "parent"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "child",
+]
+[[package]]
+name = "child"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"#,
+        )
+        .unwrap();
+        let discovery = discover_and_parse(dir.path()).unwrap();
+        let (direct, parents) = discovery.cargo_context(dir.path());
+        let declared = super::super::reachability::check_reachability_with_manifest(
+            dir.path(),
+            "parent",
+            &direct,
+            &parents,
+        )
+        .unwrap();
+        assert_eq!(
+            declared.status,
+            super::super::ReachabilityStatus::PhantomDeclared
+        );
+        let transitive = super::super::reachability::check_reachability_with_manifest(
+            dir.path(),
+            "child",
+            &direct,
+            &parents,
+        )
+        .unwrap();
+        assert_eq!(
+            transitive.status,
+            super::super::ReachabilityStatus::PhantomTransitive
+        );
+        assert_eq!(transitive.parent_dep.as_deref(), Some("parent"));
+
+        // Explicit files can live outside project_dir; no recursive discovery
+        // should be needed to locate their neighbouring manifests/graphs.
+        let other = tempfile::TempDir::new().unwrap();
+        let explicit = parse_lockfiles(&[nested.join("Cargo.lock")]).unwrap();
+        let (explicit_direct, explicit_parents) = explicit.cargo_context(other.path());
+        assert!(explicit.has_lockfiles());
+        assert_eq!(explicit_direct, direct);
+        assert_eq!(explicit_parents, parents);
     }
 
     // ------------------------------------------------------------------

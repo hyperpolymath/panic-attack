@@ -322,3 +322,83 @@ function App() {
     );
     Ok(())
 }
+
+#[test]
+fn pa011_semantic_classes_separate_eval_from_dom_sinks() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = TempDir::new()?;
+    let file = write_test_file(
+        &dir,
+        "sinks.js",
+        r#"
+eval(userInput);
+element.innerHTML = userInput;
+document.write(userInput);
+const component = <div dangerouslySetInnerHTML={{ __html: userInput }} />;
+"#,
+    )?;
+    let report = assail::analyze(&file)?;
+    let table: serde_json::Value =
+        serde_json::from_str(include_str!("../data/canonical-rule-ids.json"))?;
+    let rule = table["rules"]
+        .as_array()
+        .ok_or("missing canonical rules array")?
+        .iter()
+        .find(|rule| rule["rule_id"] == "PA011")
+        .ok_or("missing PA011 rule")?;
+    let mut classes = Vec::new();
+    for finding in report
+        .weak_points
+        .iter()
+        .filter(|wp| wp.category == WeakPointCategory::DynamicCodeExecution)
+    {
+        assert_eq!(finding.category.rule_id(), "PA011");
+        let mut selected = rule;
+        for entry in rule["semantic_class_overrides"]
+            .as_array()
+            .ok_or("missing PA011 overrides")?
+        {
+            if finding.description.starts_with(
+                entry["description_prefix"]
+                    .as_str()
+                    .ok_or("missing description prefix")?,
+            ) {
+                selected = entry;
+                break;
+            }
+        }
+        classes.push(
+            selected["semantic_class"]
+                .as_str()
+                .ok_or("missing semantic class")?,
+        );
+        if finding.description.starts_with("eval() usage") {
+            assert_eq!(
+                selected["semantic_class"],
+                "improper-neutralization-of-eval-input"
+            );
+            assert_eq!(selected["cwe_ids"], serde_json::json!(["CWE-95"]));
+        } else {
+            assert_eq!(
+                selected["semantic_class"],
+                "improper-neutralization-of-html-input"
+            );
+            assert_eq!(selected["cwe_ids"], serde_json::json!(["CWE-79"]));
+        }
+    }
+    assert_eq!(classes.len(), 3);
+    assert_eq!(
+        classes
+            .iter()
+            .filter(|c| **c == "improper-neutralization-of-eval-input")
+            .count(),
+        1
+    );
+    assert_eq!(
+        classes
+            .iter()
+            .filter(|c| **c == "improper-neutralization-of-html-input")
+            .count(),
+        2
+    );
+    Ok(())
+}
