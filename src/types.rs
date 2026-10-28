@@ -1133,6 +1133,25 @@ mod rule_id_tests {
         let actual: Vec<&str> = WeakPointCategory::ALL.iter().map(|c| c.rule_id()).collect();
         assert_eq!(actual, expected);
     }
+
+    #[test]
+    fn published_rule_table_matches_the_canonical_ids() -> Result<(), Box<dyn std::error::Error>> {
+        let table: serde_json::Value =
+            serde_json::from_str(include_str!("../data/canonical-rule-ids.json"))?;
+        let rules = table["rules"]
+            .as_array()
+            .ok_or("canonical rule table has no rules array")?;
+        assert_eq!(rules.len(), WeakPointCategory::ALL.len());
+        for (category, row) in WeakPointCategory::ALL.iter().zip(rules) {
+            assert_eq!(row["rule_id"].as_str(), Some(category.rule_id()));
+            let category_name = format!("{category:?}");
+            assert_eq!(row["category"].as_str(), Some(category_name.as_str()));
+            assert!(row["semantic_class"]
+                .as_str()
+                .is_some_and(|s| !s.is_empty()));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

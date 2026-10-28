@@ -70,7 +70,7 @@ panic-attack exists to address this by combining:
 panic-attack provides:
 
 * **49-language static analysis** across multiple families
-* **Weak point detection** (25 categories)
+* **Weak point detection** (30 canonical categories; see the PA rule-ID table below)
 * **Attack simulation (6 axes)**: CPU, memory, disk, network, concurrency, time
 * **miniKanren logic engine** for taint analysis and cross-language reasoning
 * **Signature detection** (use-after-free, deadlock, etc.)
@@ -187,6 +187,35 @@ Consult `man/panic-attack.1` or `panic-attack help` for every command, and use `
 
 `just test-elixir` runs the Elixir harnesses that cover the CLI surface so documentation, help text, and automation flags stay aligned.
 
+=== Patch Bridge CLI contract (`--features http`)
+
+Build with `cargo build --release --features http`. Global flags are placed
+before the subcommand. `bridge triage` discovers supported lockfiles
+recursively under the project directory (excluding `.git`, `target`, and
+vendor/build caches); use repeatable `--lockfile FILE` options to select an
+explicit set instead:
+
+[source,shell]
+----
+panic-attack --quiet bridge triage ./project --output bridge-report.json
+panic-attack --quiet bridge triage ./project --lockfile ./project/src/rust/Cargo.lock --output bridge-report.json
+----
+
+`--output FILE` writes the JSON `BridgeReport` to that file. Without it,
+`--quiet` writes JSON to stdout; normal mode prints a human-readable summary
+(and writes JSON only when `--output` is supplied). A valid lockfile with zero
+external dependencies produces a valid empty report; no supported lockfile
+is an error. An unreadable discovered lockfile fails closed rather than
+being counted as a clean scan.
+
+`--offline` skips OSV and returns **no vulnerability data**. The JSON field
+`vulnerability_data` is `offline-unavailable`; an empty `cves` array in that
+report is *not* evidence of zero vulnerabilities and must never be treated as
+clean. Online reports use `queried`; dependency-free projects use
+`no-dependencies`. See `data/canonical-rule-ids.json` for the published,
+versioned PA rule-ID/CWE/semantic-class mapping used for cross-tool
+verdict-grid de-duplication.
+
 == Integration & Groove
 
 panic-attack can emit PanLL-friendly exports (event chains, system images, temporal diffs) per `docs/panll-export.adoc`, and it also advertises its static-analysis capability via the Gossamer groove protocol. Start the discovery endpoint with `panic-attack groove --port 7600` and check the JSON manifest by curling `http://localhost:7600/.well-known/groove` (the health endpoint sits at `/health`).
@@ -206,7 +235,7 @@ Current state: **v2.5.0**
 * v2.5.5 cohort landed 2026-06-02: context-aware FP suppression via `test_context` / `comment_marker` / `ffi_kind` / `jit_context` modules — `// panic-attack: accepted` inline markers, automatic PanicPath suppression in test-only code, build.zig/build.rs auto-accept, Cranelift/LLVM/Wasm/JS JIT detection. See `PROOF-PROGRAMME.md` for the formal soundness landscape
 * 0 warnings
 * 38 CLI subcommands
-* 49 supported languages (25 canonical weak-point categories PA001–PA025; `PA001b` SARIF subvariant collapses two allocation flavors under the same canonical rule)
+* 49 supported languages (30 canonical weak-point categories PA001–PA029; `PA001b` is a distinct stable rule ID grouped with PA001 under one allocation semantic class for cross-tool de-duplication)
 
 See link:ROADMAP.adoc[ROADMAP.adoc] for full capability breakdown and milestones.
 
