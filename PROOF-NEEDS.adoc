@@ -58,9 +58,9 @@ signature correctness.
 
 |Hexad↔Octad persistence round-trip |`+src/storage/mod.rs+` (proptest)
 |*PROOF-PROGRAMME §3.1 (2026-06-04, #122)*:
-`+hexad_json_roundtrip_is_identity+` proves the on-disk serde round-trip
+`+hexad_json_roundtrip_is_identity+` tests the on-disk serde round-trip
 (`+write_*_hexad+` → `+load_hexad_dir+`) is the identity on the hexad
-JSON. The gateway octad projection is lossy by design, so the faithful
+JSON on generated samples, not by a universal theorem. The gateway octad projection is lossy by design, so the faithful
 integrity property is the persistence round-trip, not the literal
 hexad↔octad map.
 |===
