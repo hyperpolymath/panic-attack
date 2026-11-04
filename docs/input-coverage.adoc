@@ -1,0 +1,128 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= Configuration, template and build input coverage
+:toc:
+
+== Contract
+
+The discovery registry and execution dispatcher select the same input adapter.
+Discovery is an inventory, not an acknowledgement that checks ran. An input is
+`analyzed` only after its bounded read and all selected adapter checks finish.
+Its record retains a BLAKE3 digest of the actual bytes and the adapter's depth.
+Read, parse and unsupported-dialect errors remain explicit gaps. Other successfully
+analysed inputs and their findings remain in the report.
+
+`coverage.status == "complete"` means that every candidate in the declared
+inventory finished its stated adapter. It does not mean complete semantic
+security coverage. Parsing establishes a syntactic input for local checks; it
+does not establish application-schema validity, deployment safety, an execution
+trace, interprocedural dataflow or a successful build. A completed adapter can
+produce critical findings. `--fail-on-incomplete` checks completion only; a
+consumer's severity gate is independent and must still inspect active findings.
+
+The existing named build/vendor pruning, explicit symlink exclusions, 16 MiB
+read bound and unsupported-format inventory remain. No test-directory exclusion
+is added. XML, Swift, F# and other selected formats without adapters remain gaps.
+Ordinary F# in an ambiguous `.fs` file is not silently treated as Forth.
+Containerfile/Dockerfile variants and `.just` files now enter the inventory too.
+The registry is bounded, not a universal detector of custom source formats.
+
+== Declared adapters
+
+[cols="1,3,3",options="header"]
+|===
+|Input |Checks that run |Remaining limits
+
+|JSON, YAML, TOML
+|Real parsing, unique-key enforcement, recursive credential-field, disabled
+certificate-verification, privilege, plaintext-endpoint and Cargo revision
+checks. All YAML documents are inspected with the parser's resource budgets.
+|No complete application schema, deployment, secret-validity or dataflow proof.
+Schema namespace strings are not endpoints; nested objects remain checked.
+Possible credential values are not copied into findings.
+
+|Actions YAML and package.json
+|Recognised workflow and composite `run` steps use existing shell, Python or
+JavaScript checks. Step, job and workflow shell precedence is observed. Known
+non-Windows runner defaults and container jobs select shell checks; unresolved
+or unimplemented interpreters leave gaps. npm scripts receive POSIX-style shell
+heuristics, with the unresolved runtime shell stated in findings and coverage.
+|No Actions expression expansion, referenced-action loading, matrix evaluation
+or execution. npm can use cmd.exe or externally configured script-shell; these
+checks do not establish which runtime shell runs. Generic fields called `run`
+are not automatically executable code. Source fields are named without invented
+physical line numbers.
+
+|HTML, HTM
+|Pinned tree-sitter-html parsing; duplicate-attribute, executable-URL,
+plaintext-resource and remote-script integrity checks. Inline JavaScript/event
+handlers use existing JS heuristics. Styles use the CSS parser. Declared JSON
+script bodies use the JSON checks.
+|No browser, template expansion, dataflow or fetched resource checks. Recovered
+parse errors, unsupported embedded types and encoded executable/URL attributes
+whose interpretation is not implemented remain gaps.
+
+|CSS
+|Pinned tree-sitter-css parsing, expression-function and insecure/executable
+URL checks, including embedded style blocks.
+|No computed style, browser execution or complete CSS escape resolution.
+
+|Containerfile, Dockerfile and their dotted variants
+|Logical instruction extraction, FROM/stage-reference and remote ADD digest
+checks, explicit-root-user checks, JSON exec-vector validation, and existing
+interpreter heuristics for executable source blocks. Plain exec argv is not
+misrepresented as shell source.
+|No full Docker grammar, image resolution, image contents or build execution.
+Heredocs, ONBUILD, unknown instructions/interpreters and unsupported escape
+directives remain gaps. Declarative instructions have instruction-level
+validation, not full application semantics.
+
+|Justfile, justfile, .just
+|Recipe/declaration extraction and existing shell/Python/JavaScript checks for
+recipe bodies, respecting explicit shebangs and known default interpreters.
+|No complete Just grammar, import resolution, interpolation or task execution.
+Unknown interpreters, executable top-level substitutions and unhandled script
+declarations remain gaps. Imported .just files are inventoried separately when
+they are inside the declared traversal.
+
+|Forth .fs, .fth, .forth, .4th
+|Word-level evaluate/system/raw-memory hazards with comments and quoted data
+masked. Ambiguous .fs requires a definition witness; unfinished lexical forms
+remain gaps.
+|No Forth grammar, dictionary/stack interpretation or execution proof. A lexical
+witness distinguishes this adapter's bounded scope; it is not a type check.
+|===
+
+HTML and CSS grammars are exact dependencies `tree-sitter-html = 0.23.2` and
+`tree-sitter-css = 0.25.0`. Cargo.lock is generated through Cargo and contains
+their registry checksums. Both grammar packages use MIT licensing. Existing
+toml_edit is now available to normal assail builds as well as Patch Bridge.
+
+The existing 49 source-language dispatchers keep their previous depth; adding
+structured input adapters does not upgrade those heuristic checks into parsers.
+See link:php-coverage.adoc[PHP and schema 2.6 coverage] for PHP and the common
+inventory/report contract.
+
+== Regression evidence
+
+`configuration_coverage_tests`, `template_coverage_tests` and
+`build_input_coverage_tests` exercise real adapter entry points through assail.
+They include planted hazards, benign comment/string/data controls, malformed
+and duplicate structures, unsupported interpreters, non-pinned dependencies,
+direct-exec distinctions and preservation of unrelated unsupported candidates.
+`coverage_php_tests` continues to test the shared inventory and CLI boundary.
+
+Repository scans are additional evidence about those exact bytes, not a reason
+to remove failing candidates. Real malformed configuration must be repaired at
+the consumer. An empty report placeholder is not a clean scan result. A proof
+fixture's unfinished theorem remains a finding even when its path is under
+`tests/`; reviewed fixture intent and actual consuming-test execution evidence
+are separate from scanner completion.
+
+== Primary format references
+
+* https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax[GitHub Actions workflow syntax and shell defaults]
+* https://docs.github.com/en/actions/reference/workflows-and-actions/metadata-syntax[GitHub Actions composite metadata]
+* https://docs.npmjs.com/cli/v11/using-npm/scripts/[npm script execution and runtime shell]
+* https://github.com/tree-sitter/tree-sitter-html/tree/v0.23.2[tree-sitter HTML grammar 0.23.2]
+* https://github.com/tree-sitter/tree-sitter-css/tree/v0.25.0[tree-sitter CSS grammar 0.25.0]

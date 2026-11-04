@@ -6,9 +6,15 @@
 //! Pre-analyzes target programs to identify weak points and recommend attacks
 
 pub mod analyzer;
+mod build_inputs;
+mod configuration;
+mod configuration_scripts;
 pub mod coverage;
+mod forth;
+mod input_adapters;
 pub mod patterns;
 pub mod php;
+mod templates;
 
 use crate::kanren::core::{FactDB, LogicEngine};
 use crate::kanren::crosslang::CrossLangAnalyzer;

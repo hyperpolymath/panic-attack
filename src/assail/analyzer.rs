@@ -505,7 +505,73 @@ impl Analyzer {
                 acc.record_file(&rel_path, &raw_bytes, &format!("{:?}", file_lang));
             }
 
+            let configuration = super::input_adapters::Adapter::detect(file);
             match file_lang {
+                Language::Unknown => {
+                    let Some(format) = configuration else {
+                        coverage.mark(
+                            file,
+                            "unsupported",
+                            Some("no selected input adapter".into()),
+                            Some(&raw_bytes),
+                        );
+                        continue;
+                    };
+                    match format.analyze(&content, &rel_path) {
+                        Ok(analysis) => {
+                            file_weak_points.extend(analysis.findings);
+                            for script in analysis.scripts {
+                                let start = file_weak_points.len();
+                                match script.language {
+                                    Language::JavaScript => self.analyze_javascript(
+                                        &script.content,
+                                        &mut file_stats,
+                                        &mut file_weak_points,
+                                        &rel_path,
+                                    )?,
+                                    Language::Shell => self.analyze_shell(
+                                        &script.content,
+                                        &mut file_stats,
+                                        &mut file_weak_points,
+                                        &rel_path,
+                                    )?,
+                                    Language::Python => self.analyze_python(
+                                        &script.content,
+                                        &mut file_stats,
+                                        &mut file_weak_points,
+                                        &rel_path,
+                                    )?,
+                                    _ => anyhow::bail!("unimplemented embedded input adapter"),
+                                }
+                                self.analyze_cross_language(
+                                    &script.content,
+                                    &mut file_weak_points,
+                                    &rel_path,
+                                )?;
+                                for finding in &mut file_weak_points[start..] {
+                                    finding.description.push_str(&format!(
+                                        " (embedded {:?} input at {})",
+                                        script.language, script.origin
+                                    ));
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            let status = if error.is::<super::input_adapters::UnsupportedInput>() {
+                                "unsupported"
+                            } else {
+                                "parse_error"
+                            };
+                            coverage.mark(
+                                file,
+                                status,
+                                Some(format!("{error:#}")),
+                                Some(&raw_bytes),
+                            );
+                            continue;
+                        }
+                    }
+                }
                 Language::Php => match super::php::analyze(&content, &rel_path) {
                     Ok(findings) => file_weak_points.extend(findings),
                     Err(error) => {
@@ -734,8 +800,12 @@ impl Analyzer {
                 }
             }
 
-            // Cross-language security checks (run on all files)
-            self.analyze_cross_language(&content, &mut file_weak_points, &rel_path)?;
+            // Structured configuration uses parsed keys and values; treating
+            // comments or schema identifiers as executable source creates false
+            // findings. Source-language adapters retain their existing checks.
+            if configuration.is_none() {
+                self.analyze_cross_language(&content, &mut file_weak_points, &rel_path)?;
+            }
 
             coverage.mark(file, "analyzed", None, Some(&raw_bytes));
             // Accumulate global stats
