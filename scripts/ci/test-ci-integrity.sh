@@ -111,6 +111,59 @@ expect 2 'multiple JSON policies cannot be combined implicitly' bash "$checker" 
 printf '%s\n' '{"github_owned_allowed":false,"patterns_allowed":["fixture/action@*\nevil/*"]}' > "$work/newline-policy.json"
 expect 2 'a newline cannot inject a second allowlist pattern' bash "$checker" "$work/newline-policy.json" "$work/workflows"
 
+# Run the actual consumer entrypoint against disposable Git checkouts.
+# Hidden index flags must fail before any helper or native program executes.
+source_fixture="$work/source-fixture"
+authority_fixture="$work/standards-fixture"
+mkdir -p "$source_fixture/.githooks" "$source_fixture/scripts/ci" \
+  "$source_fixture/.github/workflows" "$source_fixture/.github/actions/local"
+cp "$ROOT/.githooks/validate-actions-lock.sh" "$source_fixture/.githooks/"
+cp "$transport" "$source_fixture/scripts/ci/"
+printf 'mock-only lock sentinel\n' > "$source_fixture/.github/workflows/actions.lock"
+printf 'jobs: {gate: {runs-on: ubuntu-latest, steps: [{run: echo fixture}]}}\n' \
+  > "$source_fixture/.github/workflows/test.yml"
+printf 'name: fixture\nruns: {using: composite, steps: []}\n' \
+  > "$source_fixture/.github/actions/local/action.yaml"
+printf '.github/actions/local/action.yml\n' > "$source_fixture/.gitignore"
+git -C "$source_fixture" init --quiet
+git -C "$source_fixture" add --all
+git -C "$source_fixture" -c user.name=Fixture -c user.email=fixture@example.invalid \
+  -c commit.gpgsign=false commit --quiet -m 'disposable source-qualification fixture'
+git clone --quiet --no-hardlinks "$STANDARDS_ROOT" "$authority_fixture"
+source_gate() {
+  STANDARDS_ROOT="$authority_fixture" GH_ACTIONS_LOCK_BIN="$official_native" \
+    ACTIONS_LOCK_EVIDENCE_DIR="$work/source-evidence" \
+    bash "$source_fixture/.githooks/validate-actions-lock.sh"
+}
+for flag in --assume-unchanged --skip-worktree; do
+  for fixture in "$authority_fixture" "$source_fixture"; do
+    if [[ "$fixture" = "$authority_fixture" ]]; then
+      path=scripts/update-actions-lock.sh
+    else
+      path=.github/workflows/test.yml
+    fi
+    git -C "$fixture" update-index "$flag" "$path"
+    printf 'tampered consumed source\n' > "$fixture/$path"
+    # This is the actual premise that fooled the previous source guard.
+    [[ -z "$(git -C "$fixture" status --porcelain --untracked-files=all)" ]]
+    expect 2 "hidden source flag $flag in $fixture is rejected" source_gate
+    grep -F 'unsafe index flags' "$work/stderr" >/dev/null
+    [[ ! -e "$work/source-evidence/native.exit" ]] ||
+      { echo 'an unqualified source reached native verification' >&2; exit 1; }
+    git -C "$fixture" update-index --no-assume-unchanged "$path"
+    git -C "$fixture" update-index --no-skip-worktree "$path"
+    git -C "$fixture" checkout -- "$path"
+  done
+done
+# A clean status must not hide action.yml shadowing a tracked action.yaml.
+printf 'name: ignored shadow\nruns: {using: composite, steps: []}\n' \
+  > "$source_fixture/.github/actions/local/action.yml"
+[[ -z "$(git -C "$source_fixture" status --porcelain --untracked-files=all)" ]]
+expect 2 'ignored action input is not part of the qualified commit' source_gate
+grep -F 'tracked, untracked or ignored changes' "$work/stderr" >/dev/null
+[[ ! -e "$work/source-evidence/native.exit" ]] ||
+  { echo 'ignored source reached native verification' >&2; exit 1; }
+
 cat > "$work/mock-native" <<'SH'
 #!/usr/bin/env bash
 set -eu

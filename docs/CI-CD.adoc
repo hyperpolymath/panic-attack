@@ -106,7 +106,9 @@ official `gh-actions-lock v0.2.0` binary through the unchanged published
 `scripts/check-lock-sync.sh`. The latter checks reusable and local composite
 references in both directions. No consumer code emits native lock records.
 The gate checks the native executable digest, the exact clean Standards
-checkout, a clean consumer commit, and unchanged workflow/lock bytes.
+checkout, a clean consumer commit, and unchanged workflow/lock bytes. Both
+checkouts reject assume-unchanged/skip-worktree index flags and ignored inputs;
+Git status alone cannot bind hidden working bytes to the recorded commit.
 
 Tree allowlist:: `scripts/ci/check-allowed-actions.sh` parses YAML, resolves
 aliases, and reads job/step `uses` values. Owner/repository spelling is

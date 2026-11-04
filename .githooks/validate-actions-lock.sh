@@ -5,7 +5,25 @@
 # boundary. No native YAML is generated, patched, or inferred here.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+assert_clean_checkout() {
+  local checkout=$1 git_state
+  # Git's normal status can hide modified consumed files behind these flags.
+  # NUL records keep unusual filenames from changing the flag interpretation.
+  git -C "$checkout" ls-files -v -z |
+    while IFS= read -r -d '' entry; do
+      case "${entry:0:1}" in
+        [a-z]|S)
+          echo "validate-actions-lock: unsafe index flags in $checkout; source bytes are unqualified" >&2
+          exit 2
+          ;;
+      esac
+    done
+  git_state="$(git -C "$checkout" status --porcelain --untracked-files=all --ignored=matching)" ||
+    { echo "validate-actions-lock: cannot inspect source state in $checkout" >&2; return 2; }
+  [[ -z "$git_state" ]] ||
+    { echo "validate-actions-lock: tracked, untracked or ignored changes in $checkout; use an isolated clean checkout" >&2; return 2; }
+}
 STANDARDS_REF=087f6bff5135ce3da6f287c83752256ce4a8efc1
 NATIVE_SHA256=79ec84c191667fd935a277e6fd3662cf5d3669cccc9e99998731d8f306f373b6
 : "${STANDARDS_ROOT:?checkout the pinned metadatastician/standards source; see docs/CI-CD.adoc}"
@@ -22,12 +40,12 @@ STANDARDS_ROOT="$(cd "$STANDARDS_ROOT" && pwd -P)"
   { echo 'validate-actions-lock: Standards path must be its repository root' >&2; exit 2; }
 [[ "$(git -C "$STANDARDS_ROOT" rev-parse HEAD)" = "$STANDARDS_REF" ]] ||
   { echo 'validate-actions-lock: wrong Standards source revision' >&2; exit 2; }
-[[ -z "$(git -C "$STANDARDS_ROOT" status --porcelain --untracked-files=all)" ]] ||
-  { echo 'validate-actions-lock: Standards checkout is not clean' >&2; exit 2; }
+assert_clean_checkout "$STANDARDS_ROOT"
 
 cd "$ROOT"
-[[ -z "$(git status --porcelain --untracked-files=all)" ]] ||
-  { echo 'validate-actions-lock: commit the exact input tree before qualification' >&2; exit 2; }
+[[ "$(git rev-parse --show-toplevel)" = "$ROOT" ]] ||
+  { echo 'validate-actions-lock: consumer path must be its repository root' >&2; exit 2; }
+assert_clean_checkout "$ROOT"
 [[ -f .github/workflows/actions.lock ]] ||
   { echo 'validate-actions-lock: missing native lock; use canonical recovery' >&2; exit 1; }
 snapshot="$(mktemp -d)"
@@ -63,4 +81,11 @@ jq -n \
 
 GH_BIN="$ROOT/scripts/ci/actions-lock-transport.sh" \
   bash "$STANDARDS_ROOT/scripts/update-actions-lock.sh" --verify-local
+case "$(cat "$ACTIONS_LOCK_EVIDENCE_DIR/native.exit")" in
+  0|1) ;;
+  *)
+    echo 'validate-actions-lock: helper returned without a completed native verifier result' >&2
+    exit 1
+    ;;
+esac
 bash "$STANDARDS_ROOT/scripts/check-lock-sync.sh" .github/workflows
