@@ -190,11 +190,9 @@ fn html_raw_text(node: Node<'_>, content: &str, file: &str, result: &mut Analysi
                         ),
                     })
                 }
-                "application/json" | "application/ld+json" | "importmap" => {
-                    result.findings.extend(
-                        super::configuration::Format::Json.analyze(text(node, content)?, file)?,
-                    )
-                }
+                "application/json" | "application/ld+json" | "importmap" => result.findings.extend(
+                    super::configuration::Format::Json.analyze(text(node, content)?, file)?,
+                ),
                 _ => {
                     return Err(UnsupportedInput(format!(
                         "embedded script type {kind:?} has no selected adapter"
@@ -206,10 +204,9 @@ fn html_raw_text(node: Node<'_>, content: &str, file: &str, result: &mut Analysi
         Some("style_element") => {
             let kind = element_type(node.parent().expect("parent matched"), content)?;
             if !kind.is_empty() && kind != "text/css" {
-                return Err(UnsupportedInput(format!(
-                    "embedded style type {kind:?} is not CSS"
-                ))
-                .into());
+                return Err(
+                    UnsupportedInput(format!("embedded style type {kind:?} is not CSS")).into(),
+                );
             }
             let nested = css(text(node, content)?, file)?;
             for mut finding in nested.findings {

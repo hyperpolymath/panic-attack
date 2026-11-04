@@ -49,7 +49,10 @@ fn shell_option(
         "--noprofile" | "--norc" | "--posix" | "--restricted" | "--verbose" | "--login" => {}
         "--rcfile" | "--init-file" => {
             *index += 1;
-            ensure!(argv.get(*index).is_some(), "shell option lacks its argument");
+            ensure!(
+                argv.get(*index).is_some(),
+                "shell option lacks its argument"
+            );
         }
         _ if !arg.starts_with("--") => {
             let flags = &arg[1..];
@@ -68,9 +71,8 @@ fn shell_option(
                             "named shell option lacks its argument"
                         );
                     }
-                    'a' | 'b' | 'e' | 'f' | 'h' | 'k' | 'm' | 'n' | 'p' | 't' | 'u'
-                    | 'v' | 'x' | 'B' | 'C' | 'E' | 'H' | 'P' | 'T' | 'i' | 'l' | 'r'
-                    | 's' | 'D' => {}
+                    'a' | 'b' | 'e' | 'f' | 'h' | 'k' | 'm' | 'n' | 'p' | 't' | 'u' | 'v' | 'x'
+                    | 'B' | 'C' | 'E' | 'H' | 'P' | 'T' | 'i' | 'l' | 'r' | 's' | 'D' => {}
                     _ => return Err(unsupported("unrecognised shell invocation option")),
                 }
             }
@@ -94,8 +96,7 @@ fn interpreter_option(
         "-e"
     };
     if arg == option
-        || language == Language::JavaScript
-            && matches!(arg, "--eval" | "--print" | "-p")
+        || language == Language::JavaScript && matches!(arg, "--eval" | "--print" | "-p")
     {
         return Ok(Some(
             argv.get(index + 1)
@@ -371,7 +372,12 @@ fn container_from(
     let image = fields[0];
     let pinned = image_pinned(image);
     if image != "scratch" && !stages.contains(&image.to_ascii_lowercase()) && !pinned {
-        result.findings.push(finding(file, line, WeakPointCategory::SupplyChain, "Container base image lacks a complete SHA256 digest; local stage aliases are accepted"));
+        result.findings.push(finding(
+            file,
+            line,
+            WeakPointCategory::SupplyChain,
+            "Container base image lacks a complete SHA256 digest; local stage aliases are accepted",
+        ));
     }
     if fields.len() == 3 {
         stages.insert(fields[2].to_ascii_lowercase());
@@ -457,7 +463,9 @@ fn container_copy(
             ensure!(index < stage_count, "COPY stage index does not exist");
         } else if !stages.contains(&source.to_ascii_lowercase()) && !image_pinned(source) {
             if source.contains('$') || !source.contains([':', '/', '@']) {
-                return Err(unsupported("COPY source is an unresolved external image or named build context"));
+                return Err(unsupported(
+                    "COPY source is an unresolved external image or named build context",
+                ));
             }
             result.findings.push(finding(
                 file,
