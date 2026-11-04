@@ -181,7 +181,9 @@ jobs:
       - name: Install Idris2 (chez backend)
         working-directory: .proven-tests
         env:
-          IDRIS2_VERSION: ${{ env.IDRIS2_VERSION }}
+          # The pinned older installer passes this verbatim to git --branch.
+          # Idris2's release ref is v0.7.0, not 0.7.0.
+          IDRIS2_VERSION: v${{ env.IDRIS2_VERSION }}
         run: bash scripts/install-idris2.sh
 
       - name: Build and run the framework's suite

@@ -166,6 +166,13 @@ install_just() {
 }
 
 # ── Main ──
+# Set up the project from the current directory, installing just if needed.
+# Run the first recipe whose `just --show` probe succeeds: setup, then
+# setup-dev; otherwise run doctor. On success, overwrite
+# INSTALL-SECURITY-REPORT.adoc with platform details and print security status.
+# Exit 1 if just is unavailable after the install attempt or neither Justfile
+# nor justfile is present. A failed selected recipe or report write stops the
+# script with a non-zero status; failed recipe probes select the next option.
 main() {
     printf "%s=== panic-attacker Setup ===%s\n\n" "$BOLD" "$RESET"
 
@@ -205,13 +212,13 @@ main() {
 
     # Step 3: Run just setup
     printf "%sStep 2: Project setup%s\n" "$BOLD" "$RESET"
-    if just --list 2>/dev/null | grep -q "^setup "; then
+    if just --show setup >/dev/null 2>&1; then
         just setup
-    elif just --list 2>/dev/null | grep -q "^setup-dev "; then
+    elif just --show setup-dev >/dev/null 2>&1; then
         just setup-dev
     else
         warn "No 'setup' recipe in Justfile — running 'just doctor' instead"
-        just doctor 2>/dev/null || true
+        just doctor
     fi
     printf "\n"
 

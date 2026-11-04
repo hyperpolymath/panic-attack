@@ -47,6 +47,29 @@ env:
   RUST_BACKTRACE: '1'
 
 jobs:
+  entrypoints:
+    name: Installation entrypoint controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify pinned task runner and exercise isolated entrypoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools_dir=$(mktemp -d)
+          trap 'rm -rf "$tools_dir"' EXIT
+          archive=just-1.36.0-x86_64-unknown-linux-musl.tar.gz
+          curl --fail --silent --show-error --location --max-time 60 \
+            "https://github.com/casey/just/releases/download/1.36.0/$archive" \
+            --output "$tools_dir/$archive"
+          (cd "$tools_dir" && printf '%s  %s\n' \
+            bc7c9f377944f8de9cd0418b11d2955adebfa25a488c0b5e3dd2d2c0e9d732da "$archive" | sha256sum --check)
+          tar --no-same-owner -xzf "$tools_dir/$archive" -C "$tools_dir" just
+          JUST_BIN="$tools_dir/just" bash scripts/ci/test-entrypoints.sh
+
   fmt:
     name: cargo fmt --check
     runs-on: ubuntu-latest
