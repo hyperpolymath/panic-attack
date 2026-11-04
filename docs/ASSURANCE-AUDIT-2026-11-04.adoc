@@ -22,3 +22,11 @@ Idris models and conditional cryptographic premises do not prove that every
 Rust scanner path refines them. In particular a proptest round-trip is bounded
 property testing, not a universal proof. Hypatia ingestion issue #117 and the
 shared execution-evidence contract remain the appropriate integration boundary.
+
+The governance, Hypatia and Rust reusable callers now name the transferred
+`metadatastician/standards` owner at their original verified commits. The
+suite's tested deonboarding script removes their caller lock registrations
+and unreachable lock dependencies. Job identifiers, permissions and pinned
+callee content are retained; no security checks are removed. This repairs the
+known caller migration mechanism; current-head hosted runs must establish
+whether callee admission or additional defects remain.

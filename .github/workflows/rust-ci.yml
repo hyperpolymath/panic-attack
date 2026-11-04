@@ -1,3 +1,4 @@
+# Reusable owner migrated; full commit and required job identifiers retained.
 # This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
 # This workflow is managed by gh actions-lock.
@@ -18,4 +19,4 @@ permissions:
 
 jobs:
   rust-ci:
-    uses: hyperpolymath/standards/.github/workflows/rust-ci-reusable.yml@333b06a01db1874ffedb2de1bfabb195640927c7 # re-pinned 2026-07-01: toolchain-required-input fix (standards#439)
+    uses: metadatastician/standards/.github/workflows/rust-ci-reusable.yml@333b06a01db1874ffedb2de1bfabb195640927c7 # re-pinned 2026-07-01: toolchain-required-input fix (standards#439)
