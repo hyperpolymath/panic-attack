@@ -33,3 +33,6 @@ repository administration is unavailable through this connection.
 The Hexad property-test ledger now describes its actual in-memory serde value
 round-trip. It does not execute the file write/load path, and therefore cannot
 be credited as on-disk persistence coverage.
+
+GitHub-facing Security and Code of Conduct entry points link the existing
+canonical AsciiDoc policies, without inventing new response commitments.
