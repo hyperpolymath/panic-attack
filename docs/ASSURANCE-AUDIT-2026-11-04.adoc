@@ -70,3 +70,13 @@ align developer/maintainer quickstarts; replace broad chmod/cache-deletion heal
 with bounded repair plans; integrate canonical provisioning DEED and generated
 provider exports; specify opt-in platform disclosure and Bustfile-based diagnosis.
 These are pending work, not capabilities supplied by this entrypoint repair.
+
+App-review follow-up: the fixture now includes the checked-in imported
+`contractile.just`; the user command saves `panic-report.json`; and probes set
+`RUSTUP_AUTO_INSTALL=0`. The expanded 16-control suite passes locally, including
+an inherited auto-install setting overridden for the Rust probes. This control
+checks environment propagation with stand-ins, not a real Rustup installation.
+Rustup documents the opt-out from 1.28.1; earlier versions and external shims
+remain outside a guaranteed no-side-effect boundary, now stated explicitly.
+See https://blog.rust-lang.org/2025/03/04/Rustup-1.28.1/ and
+https://rust-lang.github.io/rustup/environment-variables.html.

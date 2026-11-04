@@ -22,12 +22,12 @@ git clone https://github.com/hyperpolymath/panic-attack.git
 cd panic-attack
 cargo build --locked --release
 ./target/release/panic-attack --help
-./target/release/panic-attack assail . --fail-on-incomplete
+./target/release/panic-attack assail . --fail-on-incomplete --output panic-report.json
 ----
 
 A self-scan can return findings or incomplete coverage, including from deliberate
 test fixtures. Do not interpret a nonzero scan exit as an installation failure;
-inspect the report and coverage outcome.
+inspect `panic-report.json` for individual findings and the coverage outcome.
 
 == Optional task runner and installation
 
@@ -40,6 +40,9 @@ This recipe does not install prerequisites or offer a portable/prefix option.
 nonzero for a missing or broken tool. It does not check compiler compatibility,
 network connectivity, runtime safety, or prove a build will succeed.
 Use the locked build above to check compiler and dependency compatibility.
+The probe disables automatic toolchain installation with rustup 1.28.1 and
+later. Older rustup versions and external tool-manager shims may still perform
+their own setup; the diagnostic is not a sandbox around those programs.
 
 == Troubleshooting
 

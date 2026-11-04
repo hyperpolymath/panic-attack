@@ -9,7 +9,7 @@ just_bin=$(realpath "$just_bin")
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/repo/scripts"
-cp "$root/Justfile" "$root/setup.sh" "$tmp/repo/"
+cp "$root/Justfile" "$root/contractile.just" "$root/setup.sh" "$tmp/repo/"
 cp "$root/scripts/doctor.sh" "$tmp/repo/scripts/"
 ln -s /bin/sh "$tmp/bin/sh"
 ln -s "$(command -v head)" "$tmp/bin/head"
@@ -33,6 +33,10 @@ expect() {
 }
 expect 0 "$just_bin" --list
 expect 0 env PATH="$tmp/bin" "$just_bin" doctor
+for tool in cargo rustc; do
+    printf '#!/bin/sh\n[ "${RUSTUP_AUTO_INSTALL:-}" = 0 ]\n' > "$tmp/bin/$tool"
+done
+expect 0 env PATH="$tmp/bin" RUSTUP_AUTO_INSTALL=1 "$just_bin" doctor
 for tool in cargo rustc git; do
     mv "$tmp/bin/$tool" "$tmp/$tool"
     expect 1 env PATH="$tmp/bin" "$just_bin" doctor
