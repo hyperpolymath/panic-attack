@@ -126,6 +126,13 @@ fn has_colon_definition(words: &[(usize, String, bool)]) -> bool {
     complete && !open && !needs_name
 }
 
+/// Check Forth words for execution and raw-memory hazards and named string
+/// credentials. Comments, string contents and definition names are not treated
+/// as executable words. This is a lexical check, not grammar or stack validation.
+///
+/// # Errors
+/// Returns an error for unterminated comments or strings, or for an ambiguous
+/// `.fs` input without a recognised colon definition.
 pub(super) fn analyze(content: &str, file: &str) -> Result<Analysis> {
     let words = words(content)?;
     // .fs is shared with F#. Never infer Forth merely from that suffix.

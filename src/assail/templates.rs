@@ -47,6 +47,13 @@ fn finding(
     }
 }
 
+/// Check parsed HTML attributes and embedded CSS or JSON, and extract JavaScript
+/// for later analysis. Remote-script integrity checks validate metadata syntax
+/// only; they do not fetch the resource or verify its digest.
+///
+/// # Errors
+/// Propagates parser and embedded CSS/JSON errors, and rejects duplicate
+/// attributes, unsupported embedded types and encoded sensitive attributes.
 pub(super) fn html(content: &str, file: &str) -> Result<Analysis> {
     let tree = parsed(content, tree_sitter_html::LANGUAGE.into())?;
     let mut result = Analysis::default();
@@ -307,6 +314,12 @@ fn element_type(element: Node<'_>, content: &str) -> Result<String> {
     Ok(String::new())
 }
 
+/// Check parsed CSS declarations, functions and imports for selected hazards.
+/// Findings use locations relative to `content`; callers embedding CSS adjust them.
+///
+/// # Errors
+/// Propagates parser errors, including recovered syntax errors, and text decoding
+/// errors from tree-sitter nodes.
 pub(super) fn css(content: &str, file: &str) -> Result<Analysis> {
     let tree = parsed(content, tree_sitter_css::LANGUAGE.into())?;
     let mut result = Analysis::default();

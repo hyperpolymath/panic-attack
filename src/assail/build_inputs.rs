@@ -38,6 +38,13 @@ fn interpreter(command: &str) -> Result<Language> {
     }
 }
 
+/// Extract inline shell, Python or JavaScript source from an interpreter argv.
+/// Returns `None` for invocations without inline source; later arguments are not
+/// treated as source.
+///
+/// # Errors
+/// Returns an error for unsupported interpreters or options and for options
+/// requiring a missing argument or source.
 fn inline_source(name: &str, argv: &[String]) -> Result<Option<String>> {
     let language = interpreter(name)?;
     let mut index = 1;
@@ -132,6 +139,14 @@ fn inline_source(name: &str, argv: &[String]) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Append executable source from a build command, using `shell` for shell form.
+/// `line` is the one-based start of the instruction. Malformed JSON and JSON
+/// that is not an array fall back to shell form; direct exec arguments are not
+/// treated as source unless they invoke a recognised inline interpreter.
+///
+/// # Errors
+/// Returns an error for empty or non-string exec arrays and propagates inline
+/// interpreter option errors.
 fn command_input(text: &str, line: usize, shell: Language, result: &mut Analysis) -> Result<()> {
     // BuildKit's parseMaybeJSON falls back to shell form for malformed JSON
     // (including the POSIX `[` command), but rejects non-string array members.
@@ -287,6 +302,12 @@ fn literal_fields(
     Ok(())
 }
 
+/// Check supported Containerfile instructions and extract executable source.
+/// Returns findings and scripts for later interpreter checks; no build is run.
+///
+/// # Errors
+/// Returns errors for malformed instructions or command vectors, and unsupported
+/// instructions, interpreters or constructs such as heredocs and `ONBUILD`.
 pub(super) fn container(content: &str, file: &str) -> Result<Analysis> {
     let mut instructions = Vec::new();
     let mut current = String::new();
@@ -516,6 +537,12 @@ fn recipe_script(
     Ok(())
 }
 
+/// Check recognised Just declarations and extract recipe bodies for later checks.
+/// Imports and interpolation are not resolved and recipes are not run.
+///
+/// # Errors
+/// Returns errors for malformed recipe indentation or shell settings, and for
+/// unsupported declarations or interpreters.
 pub(super) fn just(content: &str, file: &str) -> Result<Analysis> {
     let mut result = Analysis::default();
     let mut default = Language::Shell;

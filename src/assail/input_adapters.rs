@@ -42,6 +42,9 @@ pub(super) enum Adapter {
 }
 
 impl Adapter {
+    /// Select an adapter from the file name or extension, without reading the file.
+    /// Containerfile and Dockerfile names, including dotted variants, take
+    /// precedence over extensions; extension matching is case-insensitive.
     pub(super) fn detect(path: &Path) -> Option<Self> {
         let name = path.file_name()?;
         let bytes = name.as_encoded_bytes();
@@ -78,6 +81,12 @@ impl Adapter {
         }
     }
 
+    /// Run the selected adapter and return findings and scripts for later analysis.
+    /// `file` supplies the location used in findings.
+    ///
+    /// # Errors
+    /// Propagates malformed-input and unsupported-dialect errors from the adapter.
+    /// The scan caller records these as coverage gaps.
     pub(super) fn analyze(self, content: &str, file: &str) -> Result<Analysis> {
         match self {
             Self::Configuration(format) => format.analyze_input(content, file),

@@ -337,6 +337,12 @@ impl Analyzer {
         Self::build(target, true, true)
     }
 
+    /// Construct an analyser for a target, selecting its source language.
+    /// Registered input adapters take precedence over source language detection.
+    ///
+    /// # Errors
+    /// Returns an error if the target does not exist, or if directory language
+    /// discovery fails or rejects a symlink root.
     fn build(target: &Path, verbose: bool, browser_extension: bool) -> Result<Self> {
         if !target.exists() {
             anyhow::bail!("Target does not exist: {}", target.display());
@@ -377,15 +383,17 @@ impl Analyzer {
         self.analyze_inner(None)
     }
 
-    /// Analyse discovered source files and return findings, statistics and coverage.
+    /// Analyse discovered inputs and return findings, statistics and coverage.
     /// UTF-8 decoding falls back to Windows-1252. Files larger than 16 MiB, read
-    /// or decoding failures, and PHP parser failures are skipped and remain
-    /// coverage gaps in a successful report.
+    /// or decoding failures, and adapter parse or unsupported-input failures are
+    /// skipped and remain coverage gaps in a successful report. Extracted scripts
+    /// receive their interpreter and cross-language checks separately.
     /// If supplied, `accumulator` records candidate parent directories and files
-    /// that were read and decoded, including PHP files that subsequently fail parsing.
+    /// that were read and decoded, including inputs that subsequently fail parsing.
     ///
     /// # Errors
     /// Propagates root metadata errors and symlink-root rejection from discovery.
+    /// Also returns an error for an extracted script with an unimplemented language.
     fn analyze_inner(
         &self,
         mut accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,
@@ -920,7 +928,8 @@ impl Analyzer {
     }
 
     /// Choose the most common language among discovered source files, or `Unknown`
-    /// if none are found. Ties favour the lexicographically greatest debug name.
+    /// if none are found. Registered input adapters do not vote. Ties favour the
+    /// lexicographically greatest debug name.
     ///
     /// # Errors
     /// Propagates root metadata errors and symlink-root rejection from discovery;
@@ -5192,7 +5201,9 @@ impl Analyzer {
     /// Operates on the project root (self.target or its parent) rather than on
     /// individual source files, because the relevant artefacts (Cargo.toml,
     /// Cargo.lock, Julia Manifest.toml, deno.json) are not source files in the
-    /// language-detection sense.
+    /// language-detection sense. Cargo git revisions are checked separately by
+    /// the per-file configuration adapter. Manifest reads are capped at 4 MiB;
+    /// failed reads are skipped. This check always returns `Ok`.
     fn analyze_supply_chain_manifests(&self, weak_points: &mut Vec<WeakPoint>) -> Result<()> {
         let project_root = if self.target.is_dir() {
             self.target.clone()

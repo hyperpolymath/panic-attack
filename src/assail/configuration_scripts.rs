@@ -119,6 +119,14 @@ fn steps(
     Ok(())
 }
 
+/// Append recognised Actions run steps or package.json scripts for later checks.
+/// `field` identifies the document within the input; npm scripts use POSIX-style
+/// heuristics without resolving the runtime shell. Actions shell selection uses
+/// step, job and workflow defaults before considering the runner.
+///
+/// # Errors
+/// Returns errors for malformed recognised structures and unsupported or
+/// unresolved interpreters. Scripts already appended are retained on error.
 pub(super) fn extract(
     format: Format,
     document: &Value,

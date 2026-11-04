@@ -40,10 +40,22 @@ impl Format {
         }
     }
 
+    /// Return configuration findings, discarding any extracted scripts.
+    ///
+    /// # Errors
+    /// Propagates parsing, conversion and script-extraction errors from
+    /// [`Self::analyze_input`].
     pub(super) fn analyze(self, content: &str, file: &str) -> Result<Vec<WeakPoint>> {
         Ok(self.analyze_input(content, file)?.findings)
     }
 
+    /// Parse configuration, check each document and extract recognised scripts.
+    /// `file` identifies findings and selects package.json script extraction.
+    /// Duplicate mapping keys are rejected; YAML may contain multiple documents.
+    ///
+    /// # Errors
+    /// Returns parsing or value-conversion errors, including duplicate keys and
+    /// non-finite numbers, and propagates script-extraction errors.
     pub(super) fn analyze_input(self, content: &str, file: &str) -> Result<Analysis> {
         let documents: Vec<Value> = match self {
             Self::Json => vec![
@@ -231,8 +243,10 @@ fn is_reference(value: &str) -> bool {
         || (value.starts_with("{{") && value.ends_with("}}"))
 }
 
+/// Flag named credential fields with values of at least eight bytes, except
+/// values enclosed in `${...}` or `{{...}}` after trimming. Key matching ignores
+/// case, underscores and hyphens. The value is absent from the diagnostic.
 /// Reused only for actual parsed/declarative literal fields, not comment text.
-/// The value is deliberately absent from the returned diagnostic.
 pub(super) fn literal_credential(
     file: &str,
     field: &str,
