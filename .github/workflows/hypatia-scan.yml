@@ -1,4 +1,3 @@
-# Reusable owner migrated; full commit and required job identifiers retained.
 # This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
 # This workflow is managed by gh actions-lock.
@@ -21,4 +20,4 @@ permissions:
 
 jobs:
   hypatia:
-    uses: metadatastician/standards/.github/workflows/hypatia-scan-reusable.yml@333b06a01db1874ffedb2de1bfabb195640927c7  # 333b06a01db1874ffedb2de1bfabb195640927c7
+    uses: hyperpolymath/standards/.github/workflows/hypatia-scan-reusable.yml@333b06a01db1874ffedb2de1bfabb195640927c7  # 333b06a01db1874ffedb2de1bfabb195640927c7

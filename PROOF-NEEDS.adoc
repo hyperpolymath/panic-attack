@@ -58,11 +58,12 @@ signature correctness.
 
 |Hexad↔Octad persistence round-trip |`+src/storage/mod.rs+` (proptest)
 |*PROOF-PROGRAMME §3.1 (2026-06-04, #122)*:
-`+hexad_json_roundtrip_is_identity+` tests the on-disk serde round-trip
-(`+write_*_hexad+` → `+load_hexad_dir+`) is the identity on the hexad
-JSON on generated samples, not by a universal theorem. The gateway octad projection is lossy by design, so the faithful
-integrity property is the persistence round-trip, not the literal
-hexad↔octad map.
+`+hexad_json_roundtrip_is_identity+` tests an in-memory
+`+serde_json::Value+` serialize/deserialize/serialize round-trip on generated
+samples, not by a universal theorem. It does not call `+write_*_hexad+` or
+`+load_hexad_dir+`; on-disk persistence correspondence remains a separate
+obligation. The gateway octad projection is lossy by design, so this property
+also does not establish a faithful hexad↔octad map.
 |===
 
 === What Still Needs Proving

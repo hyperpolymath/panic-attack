@@ -23,10 +23,13 @@ Rust scanner path refines them. In particular a proptest round-trip is bounded
 property testing, not a universal proof. Hypatia ingestion issue #117 and the
 shared execution-evidence contract remain the appropriate integration boundary.
 
-The governance, Hypatia and Rust reusable callers now name the transferred
-`metadatastician/standards` owner at their original verified commits. The
-suite's tested deonboarding script removes their caller lock registrations
-and unreachable lock dependencies. Job identifiers, permissions and pinned
-callee content are retained; no security checks are removed. This repairs the
-known caller migration mechanism; current-head hosted runs must establish
-whether callee admission or additional defects remain.
+Migration experiment `6addd22` changed three reusable callers to the transferred
+Standards owner and deonboarded their lock entries. Runs 41816637511, 41816636052
+and 41816634641 still startup-failed; CI Integrity run 41816632936 rejected the
+changed lock. The experiment was reverted, preserving the integrity gate.
+A coordinated caller/callee-lock/Actions-allowlist migration remains blocked;
+repository administration is unavailable through this connection.
+
+The Hexad property-test ledger now describes its actual in-memory serde value
+round-trip. It does not execute the file write/load path, and therefore cannot
+be credited as on-disk persistence coverage.
