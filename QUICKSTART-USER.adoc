@@ -13,8 +13,12 @@ Use a compatible compiler rather than updating every language toolchain.
 The optional GUI has additional compiler and system-library requirements.
 Scanning a language does not require installing that language's compiler.
 
-The following commands assume a POSIX shell, Git, a working native linker,
-and access to the pinned dependencies. They do not require just, mise, or Guix.
+The following commands assume a POSIX shell, Git, Zig configured to compile
+native C dependencies through `zig cc`, a working native linker, and access
+to the pinned dependencies. The default build compiles C sources from
+`tree-sitter-php`. Installing Zig alone does not select it for Cargo's native
+dependency build scripts; configure their C compiler before building.
+These commands do not require just, mise, or Guix.
 
 [source,shell]
 ----
