@@ -88,6 +88,7 @@
     "rustsec/audit-check@*",
     "shivammathur/setup-php@*",
     "slsa-framework/slsa-github-generator@*",
+    "slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a",
     "softprops/action-gh-release@*",
     "SonarSource/sonarcloud-github-action@*",
     "SonarSource/sonarqube-scan-action@*",
