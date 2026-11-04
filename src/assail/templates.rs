@@ -90,6 +90,7 @@ pub(super) fn html(content: &str, file: &str) -> Result<Analysis> {
                         });
                     }
                     if name == "style" && !value.is_empty() {
+                        ensure_attribute_decoded(&value)?;
                         let inline = css(&format!("element {{{value}}}"), file)?;
                         for mut finding in inline.findings {
                             finding.line = Some(child.start_position().row as u32 + 1);
@@ -123,22 +124,32 @@ pub(super) fn html(content: &str, file: &str) -> Result<Analysis> {
                             ));
                         }
                     }
+                    if let Some(finding) = super::configuration::literal_credential(
+                        file,
+                        &format!("HTML attribute at line {}", child.start_position().row + 1),
+                        name.strip_prefix("data-").unwrap_or(&name),
+                        &value,
+                    ) {
+                        result.findings.push(finding);
+                    }
                     attributes.insert(name, value);
                 }
                 if tag == "script"
                     && attributes.get("src").is_some_and(|src| {
-                        src.starts_with("https://")
-                            || src.starts_with("http://")
+                        src.to_ascii_lowercase().starts_with("https://")
+                            || src.to_ascii_lowercase().starts_with("http://")
                             || src.starts_with("//")
                     })
-                    && !attributes.contains_key("integrity")
+                    && !attributes
+                        .get("integrity")
+                        .is_some_and(|value| usable_integrity(value))
                 {
                     result.findings.push(finding(
                         file,
                         node,
                         WeakPointCategory::SupplyChain,
                         Severity::Medium,
-                        "Remote script has no subresource-integrity attribute",
+                        "Remote script has no syntactically usable supported integrity digest",
                     ));
                 }
             }
@@ -195,6 +206,50 @@ pub(super) fn html(content: &str, file: &str) -> Result<Analysis> {
     Ok(result)
 }
 
+// SRI metadata needs a correctly sized supported base64 digest. This checks
+// syntax only: it never fetches a resource or proves that its bytes match.
+fn usable_integrity(metadata: &str) -> bool {
+    metadata.split_ascii_whitespace().any(|token| {
+        let expression = token.split('?').next().unwrap_or(token);
+        let Some((algorithm, value)) = expression.split_once('-') else {
+            return false;
+        };
+        let bytes = match algorithm.to_ascii_lowercase().as_str() {
+            "sha256" => 32usize,
+            "sha384" => 48,
+            "sha512" => 64,
+            _ => return false,
+        };
+        let digits = value.trim_end_matches('=');
+        let padding = value.len() - digits.len();
+        if digits.len() != (bytes * 8).div_ceil(6)
+            || padding > 2
+            || (padding > 0 && value.len() % 4 != 0)
+        {
+            return false;
+        }
+        let sextet = |byte: u8| match byte {
+            b'A'..=b'Z' => Some(byte - b'A'),
+            b'a'..=b'z' => Some(byte - b'a' + 26),
+            b'0'..=b'9' => Some(byte - b'0' + 52),
+            b'+' | b'-' => Some(62),
+            b'/' | b'_' => Some(63),
+            _ => None,
+        };
+        if !digits.bytes().all(|b| sextet(b).is_some()) {
+            return false;
+        }
+        let Some(last) = digits.bytes().last().and_then(sextet) else {
+            return false;
+        };
+        match bytes % 3 {
+            1 => last & 15 == 0,
+            2 => last & 3 == 0,
+            _ => padding == 0,
+        }
+    })
+}
+
 fn ensure_attribute_decoded(value: &str) -> Result<()> {
     // The grammar does not decode character references. Refuse a sensitive
     // attribute whose interpreted bytes differ instead of checking only its
@@ -249,6 +304,23 @@ pub(super) fn css(content: &str, file: &str) -> Result<Analysis> {
     let mut result = Analysis::default();
     let mut pending = vec![tree.root_node()];
     while let Some(node) = pending.pop() {
+        if node.kind() == "declaration" {
+            let mut name = String::new();
+            for child in node.named_children(&mut node.walk()) {
+                if child.kind() == "property_name" {
+                    name = text(child, content)?.trim_start_matches('-').to_owned();
+                } else if matches!(child.kind(), "plain_value" | "string_value") {
+                    if let Some(finding) = super::configuration::literal_credential(
+                        file,
+                        &format!("CSS declaration at line {}", node.start_position().row + 1),
+                        &name,
+                        text(child, content)?.trim_matches(['\'', '"']),
+                    ) {
+                        result.findings.push(finding);
+                    }
+                }
+            }
+        }
         if node.kind() == "call_expression" {
             let value = text(node, content)?.to_ascii_lowercase();
             if value.starts_with("expression(") {
@@ -272,7 +344,11 @@ pub(super) fn css(content: &str, file: &str) -> Result<Analysis> {
                 ));
             }
         }
-        if node.kind() == "import_statement" && text(node, content)?.contains("http://") {
+        if node.kind() == "import_statement"
+            && text(node, content)?
+                .to_ascii_lowercase()
+                .contains("http://")
+        {
             result.findings.push(finding(
                 file,
                 node,

@@ -497,15 +497,20 @@ impl Analyzer {
 
             let mut file_weak_points = Vec::new();
 
-            // Dispatch to language-specific analyzer
-            let file_lang = Language::detect_path(file);
+            // Registered build/configuration names take precedence over a
+            // coincidental language suffix, exactly as they do in discovery.
+            let configuration = super::input_adapters::Adapter::detect(file);
+            let file_lang = if configuration.is_some() {
+                Language::Unknown
+            } else {
+                Language::detect_path(file)
+            };
 
             // Record this file into the attestation accumulator (zero-cost when None)
             if let Some(ref mut acc) = accumulator {
                 acc.record_file(&rel_path, &raw_bytes, &format!("{:?}", file_lang));
             }
 
-            let configuration = super::input_adapters::Adapter::detect(file);
             match file_lang {
                 Language::Unknown => {
                     let Some(format) = configuration else {
@@ -5189,31 +5194,10 @@ impl Analyzer {
                 .to_path_buf()
         };
 
-        // ── Cargo.toml: git deps without explicit rev= ────────────────────
+        // Cargo git revisions are checked once by the structured per-file
+        // adapter, including nested manifests. Keep the independent lock check.
         let cargo_toml_path = project_root.join("Cargo.toml");
         if let Some(content) = read_bounded(&cargo_toml_path, MANIFEST_FILE_READ_LIMIT) {
-            let git_dep_count =
-                content.matches("git = \"").count() + content.matches("git=\"").count();
-            let rev_count = content.matches("rev = \"").count() + content.matches("rev=\"").count();
-            if git_dep_count > 0 && rev_count < git_dep_count {
-                let unpinned = git_dep_count - rev_count;
-                weak_points.push(WeakPoint {
-                    file: None,
-                    line: None,
-                    category: WeakPointCategory::SupplyChain,
-                    location: Some("Cargo.toml".to_string()),
-                    severity: Severity::High,
-                    description: format!(
-                        "{} git dependency/ies in Cargo.toml without explicit `rev =` — \
-                         build is not reproducible",
-                        unpinned
-                    ),
-                    recommended_attack: vec![],
-                    suppressed: false,
-                    test_context: None,
-                });
-            }
-
             // ── Cargo.lock absent when Cargo.toml declares [lib] or [[bin]] ───
             let has_lib = content.contains("[lib]");
             let has_bin = content.contains("[[bin]]");

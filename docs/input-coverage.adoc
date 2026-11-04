@@ -69,7 +69,8 @@ URL checks, including embedded style blocks.
 
 |Containerfile, Dockerfile and their dotted variants
 |Logical instruction extraction, FROM/stage-reference and remote ADD digest
-checks, explicit-root-user checks, JSON exec-vector validation, and existing
+checks, COPY source-stage/image checks, literal ENV/ARG/LABEL credential fields,
+explicit-root-user checks, JSON exec-vector validation, and existing
 interpreter heuristics for executable source blocks. Plain exec argv is not
 misrepresented as shell source.
 |No full Docker grammar, image resolution, image contents or build execution.
@@ -103,6 +104,19 @@ structured input adapters does not upgrade those heuristic checks into parsers.
 See link:php-coverage.adoc[PHP and schema 2.6 coverage] for PHP and the common
 inventory/report contract.
 
+Registered build-file names take precedence over coincidental source suffixes,
+and supported ASCII extensions are recognised even when the rest of a Unix
+filename is non-UTF-8. Discovery and execution use that same choice. The shared
+literal-credential check also covers named HTML attributes, CSS declarations,
+Just literals and Forth string constants; it never scans comment text as those
+fields. A field match is a review signal, not proof that a credential is live.
+
+Container exec forms recognise clustered shell flags; script arguments remain
+arguments. Malformed JSON command text follows BuildKit's shell fallback, while
+valid arrays containing non-string elements remain errors. SRI checking requires
+a supported algorithm and correctly sized base64 metadata, without fetching or
+verifying the remote resource. Encoded inline style attributes remain unsupported.
+
 == Regression evidence
 
 `configuration_coverage_tests`, `template_coverage_tests` and
@@ -126,3 +140,8 @@ are separate from scanner completion.
 * https://docs.npmjs.com/cli/v11/using-npm/scripts/[npm script execution and runtime shell]
 * https://github.com/tree-sitter/tree-sitter-html/tree/v0.23.2[tree-sitter HTML grammar 0.23.2]
 * https://github.com/tree-sitter/tree-sitter-css/tree/v0.25.0[tree-sitter CSS grammar 0.25.0]
+* https://github.com/moby/buildkit/blob/master/frontend/dockerfile/parser/line_parsers.go[BuildKit command-form parsing]
+* https://www.gnu.org/software/bash/manual/html_node/Invoking-Bash.html[Bash invocation and option processing]
+* https://www.w3.org/TR/sri/[Subresource Integrity metadata]
+* https://forth-standard.org/standard/core/Sq[Forth plain strings]
+* https://forth-standard.org/standard/core/Seq[Forth escaped strings]

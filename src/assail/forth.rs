@@ -6,7 +6,10 @@ use super::input_adapters::{Analysis, UnsupportedInput};
 use crate::types::{Severity, WeakPoint, WeakPointCategory};
 use anyhow::{ensure, Result};
 
-fn words(content: &str) -> Result<Vec<(usize, String)>> {
+/// The final flag distinguishes literal data from executable words. Keeping the
+/// data lets named string constants receive credential checks without executing
+/// or interpreting words embedded in those strings.
+fn words(content: &str) -> Result<Vec<(usize, String, bool)>> {
     let mut result = Vec::new();
     let mut offset = 0;
     let mut line = 1;
@@ -46,16 +49,24 @@ fn words(content: &str) -> Result<Vec<(usize, String)>> {
                 }
             }
             ".\"" | "s\"" | "c\"" | "s\\\"" | ".\\\"" | "abort\"" => {
+                let escapes = matches!(word.as_str(), "s\\\"" | ".\\\"");
+                let string_start = offset;
+                let first_line = line;
+                let mut string_end = offset;
                 let mut closed = false;
                 while offset < bytes.len() {
                     if bytes[offset] == b'\n' {
                         line += 1;
                     }
-                    if bytes[offset] == b'\\' && offset + 1 < bytes.len() {
+                    if escapes && bytes[offset] == b'\\' && offset + 1 < bytes.len() {
+                        if bytes[offset + 1] == b'\n' {
+                            line += 1;
+                        }
                         offset += 2;
                         continue;
                     }
                     if bytes[offset] == b'"' {
+                        string_end = offset;
                         offset += 1;
                         closed = true;
                         break;
@@ -63,8 +74,13 @@ fn words(content: &str) -> Result<Vec<(usize, String)>> {
                     offset += 1;
                 }
                 ensure!(closed, "unterminated Forth string");
+                result.push((
+                    first_line,
+                    content[string_start..string_end].trim().into(),
+                    true,
+                ));
             }
-            _ => result.push((line, word)),
+            _ => result.push((line, word, false)),
         }
     }
     Ok(result)
@@ -77,7 +93,12 @@ pub(super) fn analyze(content: &str, file: &str) -> Result<Analysis> {
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("fs"))
-        && !(words.iter().any(|(_, word)| word == ":") && words.iter().any(|(_, word)| word == ";"))
+        && !(words
+            .iter()
+            .any(|(_, word, literal)| !literal && word == ":")
+            && words
+                .iter()
+                .any(|(_, word, literal)| !literal && word == ";"))
     {
         return Err(UnsupportedInput(
             "ambiguous .fs input has no recognised Forth colon definition; F# is unsupported"
@@ -87,7 +108,27 @@ pub(super) fn analyze(content: &str, file: &str) -> Result<Analysis> {
     }
     let mut result = Analysis::default();
     let mut definition_name = false;
-    for (line, word) in words {
+    for (index, (line, word, literal)) in words.iter().enumerate() {
+        if *literal {
+            if let (Some((_, binding, false)), Some((_, name, false))) =
+                (words.get(index + 1), words.get(index + 2))
+            {
+                if matches!(
+                    binding.as_str(),
+                    "constant" | "2constant" | "value" | "2value"
+                ) {
+                    if let Some(finding) = super::configuration::literal_credential(
+                        file,
+                        &format!("Forth string binding at line {line}"),
+                        name,
+                        word,
+                    ) {
+                        result.findings.push(finding);
+                    }
+                }
+            }
+            continue;
+        }
         if definition_name {
             definition_name = false;
             continue;
@@ -114,7 +155,7 @@ pub(super) fn analyze(content: &str, file: &str) -> Result<Analysis> {
         if let Some((category, description)) = hazard {
             result.findings.push(WeakPoint {
                 file: Some(file.into()),
-                line: Some(line as u32),
+                line: Some(*line as u32),
                 category,
                 location: Some(format!("{file}:{line}")),
                 severity: Severity::High,

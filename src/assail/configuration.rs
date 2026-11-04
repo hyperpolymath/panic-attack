@@ -231,37 +231,44 @@ fn is_reference(value: &str) -> bool {
         || (value.starts_with("{{") && value.ends_with("}}"))
 }
 
+/// Reused only for actual parsed/declarative literal fields, not comment text.
+/// The value is deliberately absent from the returned diagnostic.
+pub(super) fn literal_credential(
+    file: &str,
+    field: &str,
+    key: &str,
+    value: &str,
+) -> Option<WeakPoint> {
+    let name = key_name(key);
+    if matches!(
+        name.as_str(),
+        "password" | "passwd" | "apikey" | "apisecret" | "secretkey" | "accesstoken" | "privatekey"
+    ) && value.len() >= 8
+        && !is_reference(value)
+    {
+        Some(finding(
+            file,
+            field,
+            WeakPointCategory::HardcodedSecret,
+            Severity::Critical,
+            "literal credential in a named field",
+        ))
+    } else {
+        None
+    }
+}
+
 fn inspect_value(value: &Value, field: &str, file: &str, findings: &mut Vec<WeakPoint>) {
     match value {
         Value::Object(map) => {
             for (key, value) in map {
                 let child = format!("{field}/{}", key.replace('~', "~0").replace('/', "~1"));
                 let normal = key_name(key);
-                if matches!(
-                    normal.as_str(),
-                    "password"
-                        | "passwd"
-                        | "apikey"
-                        | "apisecret"
-                        | "secretkey"
-                        | "accesstoken"
-                        | "privatekey"
-                ) {
-                    if let Some(secret) = value
-                        .as_str()
-                        .filter(|secret| !secret.is_empty() && !is_reference(secret))
-                    {
-                        // Do not repeat a possible credential in the report.
-                        if secret.len() >= 8 {
-                            findings.push(finding(
-                                file,
-                                &child,
-                                WeakPointCategory::HardcodedSecret,
-                                Severity::Critical,
-                                "literal credential in a configuration field",
-                            ));
-                        }
-                    }
+                if let Some(finding) = value
+                    .as_str()
+                    .and_then(|secret| literal_credential(file, &child, key, secret))
+                {
+                    findings.push(finding);
                 }
                 if matches!(
                     normal.as_str(),
@@ -332,23 +339,27 @@ fn inspect_value(value: &Value, field: &str, file: &str, findings: &mut Vec<Weak
                 inspect_value(value, &format!("{field}/{index}"), file, findings);
             }
         }
-        Value::String(text) => {
-            if let Some(rest) = text.strip_prefix("http://") {
-                let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-                let loopback = matches!(
-                    authority.split(':').next(),
-                    Some("localhost" | "127.0.0.1" | "0.0.0.0")
-                ) || authority == "[::1]"
-                    || authority.starts_with("[::1]:");
-                if !loopback {
-                    findings.push(finding(
-                        file,
-                        field,
-                        WeakPointCategory::InsecureProtocol,
-                        Severity::Medium,
-                        "plaintext HTTP endpoint",
-                    ));
-                }
+        Value::String(text)
+            if text
+                .get(..7)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http://")) =>
+        {
+            let rest = &text[7..];
+            let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+            let authority = authority.to_ascii_lowercase();
+            let loopback = matches!(
+                authority.split(':').next(),
+                Some("localhost" | "127.0.0.1" | "0.0.0.0")
+            ) || authority == "[::1]"
+                || authority.starts_with("[::1]:");
+            if !loopback {
+                findings.push(finding(
+                    file,
+                    field,
+                    WeakPointCategory::InsecureProtocol,
+                    Severity::Medium,
+                    "plaintext HTTP endpoint",
+                ));
             }
         }
         _ => {}

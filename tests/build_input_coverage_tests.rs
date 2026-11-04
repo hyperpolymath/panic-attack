@@ -55,7 +55,7 @@ fn digest_pinned_images_are_not_floating_and_exec_interpreters_are_analyzed() {
 fn invalid_or_unhandled_build_dialects_remain_gaps() {
     for source in [
         "RUN echo no-base\n",
-        "FROM scratch\nRUN [\"bash\",]\n",
+        "FROM scratch\nRUN [\"bash\",7]\n",
         "FROM scratch\nRUN echo incomplete \\\n",
         "FROM scratch\nRUN <<EOF\necho unhandled\nEOF\n",
         "FROM scratch\nSHELL [\"powershell\",\"-Command\"]\nRUN example\n",

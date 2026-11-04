@@ -282,8 +282,12 @@ pub fn discover(root: &Path) -> anyhow::Result<(Vec<PathBuf>, AnalysisCoverage)>
             continue;
         }
         let path = entry.path();
-        let language = Language::detect_path(path);
         let configuration = super::input_adapters::Adapter::detect(path);
+        let language = if configuration.is_some() {
+            Language::Unknown
+        } else {
+            Language::detect_path(path)
+        };
         let (status, reason, kind) = if !entry.file_type().is_file() {
             (
                 "excluded",

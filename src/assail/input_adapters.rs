@@ -46,15 +46,16 @@ impl Adapter {
         if let Some(format) = configuration::Format::detect(path) {
             return Some(Self::Configuration(format));
         }
-        let name = path.file_name()?.to_str()?;
-        if name == "Containerfile"
-            || name == "Dockerfile"
-            || name.starts_with("Containerfile.")
-            || name.starts_with("Dockerfile.")
+        let name = path.file_name()?;
+        let bytes = name.as_encoded_bytes();
+        if bytes == b"Containerfile"
+            || bytes == b"Dockerfile"
+            || bytes.starts_with(b"Containerfile.")
+            || bytes.starts_with(b"Dockerfile.")
         {
             return Some(Self::Container);
         }
-        if matches!(name, "Justfile" | "justfile") {
+        if matches!(name.to_str(), Some("Justfile" | "justfile")) {
             return Some(Self::Just);
         }
         match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
