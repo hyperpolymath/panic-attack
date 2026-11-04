@@ -118,6 +118,37 @@ fn comments_references_and_scalar_namespace_identifiers_are_not_credentials_or_e
 }
 
 #[test]
+fn plaintext_endpoint_checks_use_the_host_after_userinfo() {
+    for (endpoint, insecure) in [
+        ("http://localhost@remote.invalid/path", true),
+        ("http://localhost:123@remote.invalid?query", true),
+        ("http://first@localhost@remote.invalid#fragment", true),
+        ("http://user@LOCALHOST:9099/path", false),
+        ("http://first@second@127.0.0.1?query", false),
+        ("http://user@[::1]:8080#fragment", false),
+        ("http://localhost/path@remote.invalid", false),
+        ("http://localhost?query=@remote.invalid", false),
+        ("http://localhost#fragment@remote.invalid", false),
+        ("http://remote.invalid/path@localhost", true),
+        ("http://remote.invalid?query=@localhost", true),
+        ("http://remote.invalid#fragment@localhost", true),
+        ("http://user@localhost.attacker.invalid", true),
+    ] {
+        let report = scan("config.json", &format!(r#"{{"endpoint":"{endpoint}"}}"#));
+        assert_eq!(report.coverage.status, "complete", "{endpoint}");
+        assert_eq!(
+            report
+                .weak_points
+                .iter()
+                .any(|finding| finding.category == WeakPointCategory::InsecureProtocol),
+            insecure,
+            "{endpoint}: {:?}",
+            report.weak_points
+        );
+    }
+}
+
+#[test]
 fn cargo_revision_checks_cover_nested_dependencies_and_reject_fake_pins() {
     for rev in ["", "rev = ''", "rev = 'main'", "rev = false"] {
         let report = scan(

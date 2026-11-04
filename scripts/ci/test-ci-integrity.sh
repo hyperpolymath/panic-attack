@@ -45,6 +45,23 @@ for name in mirror scorecard; do
   workflow "metadatastician/standards/.github/workflows/$name-reusable.yml@$old_pin"
   expect 0 "exact canonical $name coordinate" check
 done
+digest=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+for ref in './local/action' './local/action@main' "docker://registry.example/image:tag@sha256:$digest"; do
+  workflow "$ref"
+  expect 0 "accept local or digest-pinned coordinate: $ref" check
+done
+for ref in \
+  'docker://registry.example/image' \
+  'docker://registry.example/image:latest' \
+  "docker://registry.example/image@sha256:${digest:0:63}" \
+  "docker://registry.example/image@sha256:${digest}0" \
+  "docker://registry.example/image@sha256:${digest:0:63}g" \
+  "docker://registry.example/image@sha512:$digest" \
+  "docker://@sha256:$digest" \
+  "docker://registry.example/image@sha256:$digest:tag"; do
+  workflow "$ref"
+  expect 1 "reject unpinned or malformed Docker coordinate: $ref" check
+done
 workflow "METADATastician/STANDARDS/.github/workflows/rust-ci-reusable.yml@$current_pin"
 expect 0 'owner and repository case is immaterial' check
 for ref in \

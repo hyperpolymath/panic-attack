@@ -360,7 +360,11 @@ fn inspect_value(value: &Value, field: &str, file: &str, findings: &mut Vec<Weak
         {
             let rest = &text[7..];
             let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-            let authority = authority.to_ascii_lowercase();
+            let authority = authority
+                .rsplit('@')
+                .next()
+                .unwrap_or("")
+                .to_ascii_lowercase();
             let loopback = matches!(
                 authority.split(':').next(),
                 Some("localhost" | "127.0.0.1" | "0.0.0.0")

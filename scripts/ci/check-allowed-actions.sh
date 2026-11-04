@@ -29,7 +29,8 @@ probe="$(printf '%s\n' '{jobs: {probe: {steps: [{uses: "Fixture/Action@012345678
 covered() {
   local ref=$1 action sha owner tail repo suffix pattern base allowed_ref p_owner p_tail p_repo p_suffix
   case "$ref" in
-    ./*|docker://*) return 0 ;;
+    ./*) return 0 ;;
+    docker://*) [[ "$ref" =~ ^docker://[^@]+@sha256:[0-9a-f]{64}$ ]]; return $? ;;
     '$/'*) return 1 ;;
     *) : ;; # Remote coordinates must pass the immutable-ref checks below.
   esac
