@@ -43,9 +43,6 @@ pub(super) enum Adapter {
 
 impl Adapter {
     pub(super) fn detect(path: &Path) -> Option<Self> {
-        if let Some(format) = configuration::Format::detect(path) {
-            return Some(Self::Configuration(format));
-        }
         let name = path.file_name()?;
         let bytes = name.as_encoded_bytes();
         if bytes == b"Containerfile"
@@ -57,6 +54,9 @@ impl Adapter {
         }
         if matches!(name.to_str(), Some("Justfile" | "justfile")) {
             return Some(Self::Just);
+        }
+        if let Some(format) = configuration::Format::detect(path) {
+            return Some(Self::Configuration(format));
         }
         match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
             "html" | "htm" => Some(Self::Html),

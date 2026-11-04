@@ -343,7 +343,11 @@ impl Analyzer {
         }
 
         let language = if target.is_file() {
-            Language::detect_path(target)
+            if super::input_adapters::Adapter::detect(target).is_some() {
+                Language::Unknown
+            } else {
+                Language::detect_path(target)
+            }
         } else {
             Self::detect_directory_language(target)?
         };
@@ -925,6 +929,11 @@ impl Analyzer {
         let (files, _) = super::coverage::discover(dir)?;
         let mut counts = std::collections::HashMap::new();
         for path in files {
+            // Adapter inputs are covered, but do not vote for the source
+            // language or disable language-specific report metrics.
+            if super::input_adapters::Adapter::detect(&path).is_some() {
+                continue;
+            }
             let language = Language::detect_path(&path);
             *counts.entry(language).or_insert(0usize) += 1;
         }

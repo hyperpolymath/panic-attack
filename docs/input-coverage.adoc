@@ -88,8 +88,9 @@ they are inside the declared traversal.
 
 |Forth .fs, .fth, .forth, .4th
 |Word-level evaluate/system/raw-memory hazards with comments and quoted data
-masked. Ambiguous .fs requires a definition witness; unfinished lexical forms
-remain gaps.
+masked. Ambiguous .fs conservatively requires a leading named colon definition
+with matched definition boundaries; independent type/list punctuation, a
+different prelude, and unfinished lexical forms remain gaps.
 |No Forth grammar, dictionary/stack interpretation or execution proof. A lexical
 witness distinguishes this adapter's bounded scope; it is not a type check.
 |===
@@ -110,6 +111,10 @@ filename is non-UTF-8. Discovery and execution use that same choice. The shared
 literal-credential check also covers named HTML attributes, CSS declarations,
 Just literals and Forth string constants; it never scans comment text as those
 fields. A field match is a review signal, not proof that a credential is live.
+Build-input environment references are distinguished from literal values only
+in their format context; escaped or single-quoted dollar signs remain literal.
+Adapter inputs remain in coverage but do not vote for a repository's source
+language or disable its language-specific metrics.
 
 Container exec forms recognise clustered shell flags; script arguments remain
 arguments. Malformed JSON command text follows BuildKit's shell fallback, while

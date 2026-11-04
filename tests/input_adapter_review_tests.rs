@@ -164,6 +164,7 @@ fn container_variant_dispatch_matches_the_inventory_adapter() {
     for name in ["Dockerfile.d", "Containerfile.sh", "Dockerfile.pl"] {
         let report = scan(name, "FROM scratch\nRUN eval \"$INPUT\"\n");
         assert_eq!(report.coverage.status, "complete");
+        assert_eq!(report.language, panic_attack::types::Language::Unknown);
         assert!(report.coverage.inputs[0]
             .analysis
             .as_ref()
@@ -277,4 +278,128 @@ fn plain_forth_strings_do_not_escape_their_closing_quote() {
     );
     assert_eq!(report.coverage.status, "complete");
     assert!(!category(&report, WeakPointCategory::CommandInjection));
+}
+
+#[test]
+fn fs_type_annotations_do_not_supply_a_forth_definition() {
+    for content in [
+        "let f (x : int) = [x ; 1]\n",
+        "; : unfinished\n",
+        ": ;\n",
+        ": outer : nested ; ;\n",
+    ] {
+        let report = scan("input.fs", content);
+        assert!(report.coverage.incomplete(), "{content}");
+    }
+    let report = scan("input.fs", "\\ comment with : and ;\n: run system ;\n");
+    assert_eq!(report.coverage.status, "complete");
+    assert!(category(&report, WeakPointCategory::CommandInjection));
+}
+
+#[test]
+fn adapter_inputs_do_not_vote_for_the_repository_source_language() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("Main.res"), "let answer = 42\n").unwrap();
+    for (name, source) in [
+        ("config.json", "{}"),
+        ("config.yaml", "enabled: true"),
+        ("config.toml", "enabled = true"),
+        ("index.html", "<p>text</p>"),
+        ("style.css", "p { color: blue; }"),
+        ("Dockerfile.d", "FROM scratch\n"),
+    ] {
+        std::fs::write(dir.path().join(name), source).unwrap();
+    }
+    let report = assail::analyze(dir.path()).unwrap();
+    assert_eq!(report.language, panic_attack::types::Language::ReScript);
+    assert!(report.migration_metrics.is_some());
+    assert_eq!(report.coverage.candidate_files, 7);
+    assert_eq!(report.coverage.analyzed_files, 7);
+}
+
+#[test]
+fn remote_script_urls_are_normalized_before_integrity_checks() {
+    for src in [
+        " https://cdn.invalid/app.js",
+        "\tHTTPS://cdn.invalid/app.js\n",
+        "\r//cdn.invalid/app.js ",
+        "ht\ntps://cdn.invalid/app.js",
+    ] {
+        let report = scan("index.html", &format!("<script src='{src}'></script>"));
+        assert!(category(&report, WeakPointCategory::SupplyChain), "{src:?}");
+    }
+    let report = scan("index.html", "<script src=' /local/app.js '></script>");
+    assert!(!category(&report, WeakPointCategory::SupplyChain));
+}
+
+#[test]
+fn container_environment_references_are_not_literal_credentials() {
+    for value in ["$SERVICE_TOKEN", "${SERVICE_TOKEN}", "\"$SERVICE_TOKEN\""] {
+        let report = scan(
+            "Containerfile",
+            &format!("FROM scratch\nENV API_KEY={value}\n"),
+        );
+        assert_eq!(report.coverage.status, "complete");
+        assert!(
+            !category(&report, WeakPointCategory::HardcodedSecret),
+            "{value}"
+        );
+    }
+    for value in [
+        "$9not-a-variable",
+        "$SERVICE_TOKEN-suffix",
+        "literal-$SERVICE_TOKEN",
+        "\\$SERVICE_TOKEN",
+        "'$SERVICE_TOKEN'",
+        "'${SERVICE_TOKEN}'",
+    ] {
+        let report = scan(
+            "Containerfile",
+            &format!("FROM scratch\nENV API_KEY={value}\n"),
+        );
+        assert!(
+            category(&report, WeakPointCategory::HardcodedSecret),
+            "{value}"
+        );
+    }
+    // JSON has no built-in environment expansion; a leading dollar sign alone
+    // must not waive a literal configuration credential.
+    let report = scan("config.json", r#"{"api_key":"$SERVICE_TOKEN"}"#);
+    assert!(category(&report, WeakPointCategory::HardcodedSecret));
+}
+
+#[test]
+fn reserved_build_names_take_precedence_over_configuration_suffixes() {
+    for name in ["Dockerfile.json", "Containerfile.yaml", "Dockerfile.toml"] {
+        let report = scan(name, "FROM scratch\nRUN eval \"$INPUT\"\n");
+        assert_eq!(report.coverage.status, "complete", "{name}");
+        assert!(
+            category(&report, WeakPointCategory::CommandInjection),
+            "{name}"
+        );
+        assert!(report.coverage.inputs[0]
+            .analysis
+            .as_ref()
+            .unwrap()
+            .starts_with("Containerfile"));
+    }
+}
+
+#[test]
+fn numeric_root_user_spellings_are_not_missed() {
+    for user in ["0", "00", "000:1000", "root:root"] {
+        let report = scan("Containerfile", &format!("FROM scratch\nUSER {user}\n"));
+        assert_eq!(report.coverage.status, "complete");
+        assert!(
+            category(&report, WeakPointCategory::ExcessivePermissions),
+            "{user}"
+        );
+    }
+    for user in ["1000", "001000", "00service"] {
+        let report = scan("Containerfile", &format!("FROM scratch\nUSER {user}\n"));
+        assert!(
+            !category(&report, WeakPointCategory::ExcessivePermissions),
+            "{user}"
+        );
+    }
 }

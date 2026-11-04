@@ -86,6 +86,46 @@ fn words(content: &str) -> Result<Vec<(usize, String, bool)>> {
     Ok(result)
 }
 
+/// A conservative witness for the ambiguous .fs suffix, not a Forth grammar.
+/// Begin with a named colon definition and require matched definition
+/// boundaries; independent F# annotation/list tokens are not a witness.
+fn has_colon_definition(words: &[(usize, String, bool)]) -> bool {
+    if !matches!(words.first(), Some((_, word, false)) if word == ":") {
+        return false;
+    }
+    let mut open = false;
+    let mut needs_name = false;
+    let mut complete = false;
+    for (_, word, literal) in words {
+        if *literal {
+            if needs_name {
+                return false;
+            }
+            continue;
+        }
+        if needs_name {
+            if matches!(word.as_str(), ":" | ";") {
+                return false;
+            }
+            needs_name = false;
+            continue;
+        }
+        match word.as_str() {
+            ":" if !open => {
+                open = true;
+                needs_name = true;
+            }
+            ";" if open => {
+                open = false;
+                complete = true;
+            }
+            ":" | ";" => return false,
+            _ => {}
+        }
+    }
+    complete && !open && !needs_name
+}
+
 pub(super) fn analyze(content: &str, file: &str) -> Result<Analysis> {
     let words = words(content)?;
     // .fs is shared with F#. Never infer Forth merely from that suffix.
@@ -93,12 +133,7 @@ pub(super) fn analyze(content: &str, file: &str) -> Result<Analysis> {
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("fs"))
-        && !(words
-            .iter()
-            .any(|(_, word, literal)| !literal && word == ":")
-            && words
-                .iter()
-                .any(|(_, word, literal)| !literal && word == ";"))
+        && !has_colon_definition(&words)
     {
         return Err(UnsupportedInput(
             "ambiguous .fs input has no recognised Forth colon definition; F# is unsupported"

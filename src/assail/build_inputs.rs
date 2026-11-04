@@ -181,7 +181,9 @@ fn image_pinned(image: &str) -> bool {
 }
 
 /// Declarative instruction words, with quotes/backslashes removed but no
-/// environment expansion or command execution. Comments were removed earlier.
+/// environment expansion or command execution. Keep a backslash marker on a
+/// literal dollar sign so reference recognition cannot erase escaped values.
+/// Comments were removed earlier.
 fn field_words(text: &str) -> Result<Vec<String>> {
     let mut words = Vec::new();
     let mut word = String::new();
@@ -189,6 +191,9 @@ fn field_words(text: &str) -> Result<Vec<String>> {
     let mut escaped = false;
     for ch in text.chars() {
         if escaped {
+            if ch == '$' {
+                word.push('\\');
+            }
             word.push(ch);
             escaped = false;
             continue;
@@ -201,6 +206,9 @@ fn field_words(text: &str) -> Result<Vec<String>> {
             if ch == delimiter {
                 quote = None;
             } else {
+                if delimiter == '\'' && ch == '$' {
+                    word.push('\\');
+                }
                 word.push(ch);
             }
         } else if ch == '\'' || ch == '"' {
@@ -221,6 +229,16 @@ fn field_words(text: &str) -> Result<Vec<String>> {
         words.push(word);
     }
     Ok(words)
+}
+
+fn simple_environment_reference(value: &str) -> bool {
+    value.strip_prefix('$').is_some_and(|name| {
+        let mut bytes = name.bytes();
+        bytes
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic() || first == b'_')
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    })
 }
 
 fn literal_fields(
@@ -252,6 +270,11 @@ fn literal_fields(
         fields
     };
     for (name, value) in fields {
+        // This syntax is expanded by the build-input format, unlike a plain
+        // JSON string. Do not broaden the shared literal predicate for it.
+        if simple_environment_reference(&value) {
+            continue;
+        }
         if let Some(finding) = super::configuration::literal_credential(
             file,
             &format!("build field at line {line}"),
@@ -419,7 +442,8 @@ pub(super) fn container(content: &str, file: &str) -> Result<Analysis> {
                 }
             }
             "USER" => {
-                if matches!(args.split(':').next(), Some("root" | "0")) {
+                let user = args.split(':').next().unwrap_or("");
+                if user == "root" || user.parse::<u32>().ok() == Some(0) {
                     result.findings.push(finding(
                         file,
                         line,

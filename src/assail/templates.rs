@@ -104,7 +104,15 @@ pub(super) fn html(content: &str, file: &str) -> Result<Analysis> {
                         "src" | "href" | "action" | "formaction" | "poster"
                     ) {
                         ensure_attribute_decoded(&value)?;
-                        let lower = value.trim().to_ascii_lowercase();
+                        // WHATWG URL parsing trims outer C0 controls/spaces
+                        // and removes ASCII tab/newline characters before
+                        // scheme parsing. Keep the same value for SRI below.
+                        value = value
+                            .trim_matches(|ch: char| ch <= '\u{20}')
+                            .chars()
+                            .filter(|ch| !matches!(ch, '\t' | '\n' | '\r'))
+                            .collect();
+                        let lower = value.to_ascii_lowercase();
                         if lower.starts_with("javascript:") || lower.starts_with("vbscript:") {
                             result.findings.push(finding(
                                 file,
