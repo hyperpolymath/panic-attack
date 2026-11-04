@@ -8,7 +8,7 @@ default: build test
 
 # Build release binary
 build:
-    cargo build --release
+    cargo build --locked --release
 
 # Run all tests
 test:
@@ -57,8 +57,9 @@ readiness-summary:
 clean:
     cargo clean
 
-# Install to system
+# Install for this user (does not modify PATH)
 install: build
+    mkdir -p ~/.local/bin
     cp target/release/panic-attack ~/.local/bin/
 
 # Scan self (dogfood)
@@ -73,15 +74,9 @@ assemblyline:
 lint:
     cargo clippy --all-targets
 
-# Format check
+# Format check (compatibility name)
 fmt:
-    cargo fmt -- --check
-
-# Check formatting without modifying
-fmt-check:
-    cargo fmt --all --check
-# Full CI check (fmt + lint + test)
-ci: fmt lint test
+    cargo fmt --all -- --check
 
 # Tag and push a release (usage: just release 2.1.0)
 release version:
@@ -204,17 +199,11 @@ chapel-diff:
 
 # Run panic-attacker pre-commit scan
 assail:
-    @command -v panic-attack >/dev/null 2>&1 && panic-attack assail . || echo "panic-attack not found — install from https://github.com/hyperpolymath/panic-attacker"
+    panic-attack assail .
 
-# Self-diagnostic — checks dependencies, permissions, paths
+# Local tool availability only; does not establish build or runtime compatibility
 doctor:
-    @echo "Running diagnostics for panic-attacker..."
-    @echo "Checking required tools..."
-    @command -v just >/dev/null 2>&1 && echo "  [OK] just" || echo "  [FAIL] just not found"
-    @command -v git >/dev/null 2>&1 && echo "  [OK] git" || echo "  [FAIL] git not found"
-    @echo "Checking for hardcoded paths..."
-    @grep -rn '$HOME\|$ECLIPSE_DIR' --include='*.rs' --include='*.ex' --include='*.res' --include='*.gleam' --include='*.sh' . 2>/dev/null | head -5 || echo "  [OK] No hardcoded paths"
-    @echo "Diagnostics complete."
+    sh scripts/doctor.sh
 
 # Auto-repair common issues
 heal:

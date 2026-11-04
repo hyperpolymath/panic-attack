@@ -205,13 +205,13 @@ main() {
 
     # Step 3: Run just setup
     printf "%sStep 2: Project setup%s\n" "$BOLD" "$RESET"
-    if just --list 2>/dev/null | grep -q "^setup "; then
+    if just --show setup >/dev/null 2>&1; then
         just setup
-    elif just --list 2>/dev/null | grep -q "^setup-dev "; then
+    elif just --show setup-dev >/dev/null 2>&1; then
         just setup-dev
     else
         warn "No 'setup' recipe in Justfile — running 'just doctor' instead"
-        just doctor 2>/dev/null || true
+        just doctor
     fi
     printf "\n"
 

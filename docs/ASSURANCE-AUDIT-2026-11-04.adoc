@@ -36,3 +36,37 @@ be credited as on-disk persistence coverage.
 
 GitHub-facing Security and Code of Conduct entry points link the existing
 canonical AsciiDoc policies, without inventing new response commitments.
+
+== Installation entrypoint follow-up
+
+At `a61696431a31e5810240ea5b102ce9a57bb7d611`, just 1.36.0 rejects the
+Justfile because `ci` is duplicated; `fmt-check` is duplicated too. Neither
+recipe is suppressed: the fuller CI dependency list and all-target formatting
+check remain. `just assail` no longer converts scanner failures into a
+successful "not found" message. Installation creates the user-local bin directory
+and builds with the lockfile enforced.
+
+The read-only doctor now fails for absent or nonfunctional tools. It checks
+availability, not minimum-version compliance or successful compilation.
+Bootstrap recipe selection uses `just --show`; a failed fallback doctor stops
+setup before its success report. The user quickstart documents actual commands
+and separates the default Rust MSRV from optional GUI requirements.
+
+Local evidence: 15 isolated entrypoint controls pass with upstream just 1.36.0
+Linux x86_64 musl archive SHA-256
+`bc7c9f377944f8de9cd0418b11d2955adebfa25a488c0b5e3dd2d2c0e9d732da`.
+The controls reject each of three counterexamples independently: original
+Justfile, original setup.sh with the corrected Justfile, and an always-successful
+doctor. POSIX/Bash syntax checks and git diff whitespace checks pass. CI runs
+the same controls using the checksum-pinned task runner under a five-minute
+job deadline. No Rust compilation, native macOS/Windows execution, actual
+package installation, or installer privilege escalation was performed in this
+follow-up. Action-lock verification could not run locally without GitHub
+authentication; existing action references are unchanged and hosted verification
+remains required.
+
+Remaining provisioning work: replace generic latest-tool mise boilerplate;
+align developer/maintainer quickstarts; replace broad chmod/cache-deletion heal
+with bounded repair plans; integrate canonical provisioning DEED and generated
+provider exports; specify opt-in platform disclosure and Bustfile-based diagnosis.
+These are pending work, not capabilities supplied by this entrypoint repair.
