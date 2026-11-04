@@ -38,6 +38,91 @@ fn interpreter(command: &str) -> Result<Language> {
     }
 }
 
+/// Consume shell options without changing when the caller selects inline source.
+fn shell_option(
+    arg: &str,
+    argv: &[String],
+    index: &mut usize,
+    shell_command: &mut bool,
+) -> Result<()> {
+    match arg {
+        "--noprofile" | "--norc" | "--posix" | "--restricted" | "--verbose" | "--login" => {}
+        "--rcfile" | "--init-file" => {
+            *index += 1;
+            ensure!(argv.get(*index).is_some(), "shell option lacks its argument");
+        }
+        _ if !arg.starts_with("--") => {
+            let flags = &arg[1..];
+            for (offset, flag) in flags.char_indices() {
+                match flag {
+                    'c' if arg.starts_with('-') => *shell_command = true,
+                    'o' | 'O' => {
+                        if offset + 1 != flags.len() {
+                            return Err(unsupported(
+                                "attached named shell option is not extracted",
+                            ));
+                        }
+                        *index += 1;
+                        ensure!(
+                            argv.get(*index).is_some(),
+                            "named shell option lacks its argument"
+                        );
+                    }
+                    'a' | 'b' | 'e' | 'f' | 'h' | 'k' | 'm' | 'n' | 'p' | 't' | 'u'
+                    | 'v' | 'x' | 'B' | 'C' | 'E' | 'H' | 'P' | 'T' | 'i' | 'l' | 'r'
+                    | 's' | 'D' => {}
+                    _ => return Err(unsupported("unrecognised shell invocation option")),
+                }
+            }
+        }
+        _ => return Err(unsupported("unrecognised shell invocation option")),
+    }
+    Ok(())
+}
+
+/// A non-shell interpreter option either identifies its source, terminates
+/// extraction, or remains unsupported; later argv words are never scanned.
+fn interpreter_option(
+    language: Language,
+    arg: &str,
+    argv: &[String],
+    index: usize,
+) -> Result<Option<String>> {
+    let option = if language == Language::Python {
+        "-c"
+    } else {
+        "-e"
+    };
+    if arg == option
+        || language == Language::JavaScript
+            && matches!(arg, "--eval" | "--print" | "-p")
+    {
+        return Ok(Some(
+            argv.get(index + 1)
+                .ok_or_else(|| anyhow!("inline interpreter option has no source"))?
+                .clone(),
+        ));
+    }
+    if let Some(source) = arg.strip_prefix(option).filter(|s| !s.is_empty()) {
+        return Ok(Some(source.into()));
+    }
+    if language == Language::JavaScript {
+        if let Some(source) = arg
+            .strip_prefix("--eval=")
+            .or_else(|| arg.strip_prefix("--print="))
+            .or_else(|| arg.strip_prefix("-p").filter(|s| !s.is_empty()))
+        {
+            return Ok(Some(source.into()));
+        }
+    }
+    if matches!(arg, "-m" | "--version" | "--help") {
+        return Ok(None);
+    }
+    Err(unsupported(
+        "inline interpreter invocation options require an adapter",
+    ))
+}
+
 /// Extract inline shell, Python or JavaScript source from an interpreter argv.
 /// Returns `None` for invocations without inline source; later arguments are not
 /// treated as source.
@@ -65,73 +150,9 @@ fn inline_source(name: &str, argv: &[String]) -> Result<Option<String>> {
             return Ok(shell_command.then(|| arg.clone()));
         }
         if language == Language::Shell {
-            match arg.as_str() {
-                "--noprofile" | "--norc" | "--posix" | "--restricted" | "--verbose" | "--login" => {
-                }
-                "--rcfile" | "--init-file" => {
-                    index += 1;
-                    ensure!(argv.get(index).is_some(), "shell option lacks its argument");
-                }
-                _ if !arg.starts_with("--") => {
-                    let flags = &arg[1..];
-                    for (offset, flag) in flags.char_indices() {
-                        match flag {
-                            'c' if arg.starts_with('-') => shell_command = true,
-                            'o' | 'O' => {
-                                if offset + 1 != flags.len() {
-                                    return Err(unsupported(
-                                        "attached named shell option is not extracted",
-                                    ));
-                                }
-                                index += 1;
-                                ensure!(
-                                    argv.get(index).is_some(),
-                                    "named shell option lacks its argument"
-                                );
-                            }
-                            'a' | 'b' | 'e' | 'f' | 'h' | 'k' | 'm' | 'n' | 'p' | 't' | 'u'
-                            | 'v' | 'x' | 'B' | 'C' | 'E' | 'H' | 'P' | 'T' | 'i' | 'l' | 'r'
-                            | 's' | 'D' => {}
-                            _ => return Err(unsupported("unrecognised shell invocation option")),
-                        }
-                    }
-                }
-                _ => return Err(unsupported("unrecognised shell invocation option")),
-            }
+            shell_option(arg, argv, &mut index, &mut shell_command)?;
         } else {
-            let option = if language == Language::Python {
-                "-c"
-            } else {
-                "-e"
-            };
-            if arg == option
-                || language == Language::JavaScript
-                    && matches!(arg.as_str(), "--eval" | "--print" | "-p")
-            {
-                return Ok(Some(
-                    argv.get(index + 1)
-                        .ok_or_else(|| anyhow!("inline interpreter option has no source"))?
-                        .clone(),
-                ));
-            }
-            if let Some(source) = arg.strip_prefix(option).filter(|s| !s.is_empty()) {
-                return Ok(Some(source.into()));
-            }
-            if language == Language::JavaScript {
-                if let Some(source) = arg
-                    .strip_prefix("--eval=")
-                    .or_else(|| arg.strip_prefix("--print="))
-                    .or_else(|| arg.strip_prefix("-p").filter(|s| !s.is_empty()))
-                {
-                    return Ok(Some(source.into()));
-                }
-            }
-            if matches!(arg.as_str(), "-m" | "--version" | "--help") {
-                return Ok(None);
-            }
-            return Err(unsupported(
-                "inline interpreter invocation options require an adapter",
-            ));
+            return interpreter_option(language, arg, argv, index);
         }
         index += 1;
     }
@@ -302,13 +323,9 @@ fn literal_fields(
     Ok(())
 }
 
-/// Check supported Containerfile instructions and extract executable source.
-/// Returns findings and scripts for later interpreter checks; no build is run.
-///
-/// # Errors
-/// Returns errors for malformed instructions or command vectors, and unsupported
-/// instructions, interpreters or constructs such as heredocs and `ONBUILD`.
-pub(super) fn container(content: &str, file: &str) -> Result<Analysis> {
+/// Join physical lines in their original order before interpreting instructions.
+/// Unsupported escapes and unfinished continuations remain errors.
+fn container_instructions(content: &str) -> Result<Vec<(usize, String)>> {
     let mut instructions = Vec::new();
     let mut current = String::new();
     let mut first_line = 0;
@@ -332,6 +349,135 @@ pub(super) fn container(content: &str, file: &str) -> Result<Analysis> {
         }
     }
     ensure!(current.is_empty(), "unfinished Containerfile continuation");
+    Ok(instructions)
+}
+
+/// Validate and record one FROM stage before the caller resets its shell.
+fn container_from(
+    args: &str,
+    file: &str,
+    line: usize,
+    stages: &mut BTreeSet<String>,
+    result: &mut Analysis,
+) -> Result<()> {
+    let fields: Vec<_> = args
+        .split_whitespace()
+        .filter(|field| !field.starts_with("--platform="))
+        .collect();
+    ensure!(
+        fields.len() == 1 || fields.len() == 3 && fields[1].eq_ignore_ascii_case("as"),
+        "invalid FROM instruction at line {line}"
+    );
+    let image = fields[0];
+    let pinned = image_pinned(image);
+    if image != "scratch" && !stages.contains(&image.to_ascii_lowercase()) && !pinned {
+        result.findings.push(finding(file, line, WeakPointCategory::SupplyChain, "Container base image lacks a complete SHA256 digest; local stage aliases are accepted"));
+    }
+    if fields.len() == 3 {
+        stages.insert(fields[2].to_ascii_lowercase());
+    }
+    Ok(())
+}
+
+/// Remove instruction options before checking heredocs and executable source.
+fn container_command(
+    args: &str,
+    line: usize,
+    shell: Language,
+    result: &mut Analysis,
+) -> Result<()> {
+    let mut command = args;
+    while command.starts_with("--") {
+        command = command
+            .split_once(char::is_whitespace)
+            .ok_or_else(|| anyhow!("build command has only options"))?
+            .1
+            .trim_start();
+    }
+    if command.contains("<<") {
+        return Err(unsupported(
+            "Containerfile heredoc extraction is not implemented",
+        ));
+    }
+    command_input(command, line, shell, result)
+}
+
+/// Check remote ADD pinning without fetching or interpreting the resource.
+fn container_add(args: &str, file: &str, line: usize, result: &mut Analysis) {
+    let checksum = args
+        .split_whitespace()
+        .find_map(|arg| arg.strip_prefix("--checksum=sha256:"));
+    let pinned = checksum.is_some_and(|digest| {
+        digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+    });
+    if (args.contains("https://") || args.contains("http://")) && !pinned {
+        result.findings.push(finding(
+            file,
+            line,
+            WeakPointCategory::SupplyChain,
+            "Remote ADD has no SHA256 checksum",
+        ));
+    }
+}
+
+/// Resolve only already-declared stages or literal external image coordinates.
+/// Duplicate, missing and unresolved COPY sources keep their existing errors.
+fn container_copy(
+    args: &str,
+    file: &str,
+    line: usize,
+    stages: &BTreeSet<String>,
+    stage_count: usize,
+    result: &mut Analysis,
+) -> Result<()> {
+    let words = field_words(args)?;
+    let mut source = None;
+    let mut fields = words.iter();
+    while let Some(field) = fields.next().filter(|field| field.starts_with("--")) {
+        let value = if field == "--from" {
+            Some(
+                fields
+                    .next()
+                    .ok_or_else(|| anyhow!("COPY --from has no value"))?
+                    .as_str(),
+            )
+        } else {
+            field.strip_prefix("--from=")
+        };
+        if let Some(value) = value {
+            ensure!(
+                source.is_none() && !value.is_empty(),
+                "duplicate or empty COPY --from"
+            );
+            source = Some(value);
+        }
+    }
+    if let Some(source) = source {
+        if let Ok(index) = source.parse::<usize>() {
+            ensure!(index < stage_count, "COPY stage index does not exist");
+        } else if !stages.contains(&source.to_ascii_lowercase()) && !image_pinned(source) {
+            if source.contains('$') || !source.contains([':', '/', '@']) {
+                return Err(unsupported("COPY source is an unresolved external image or named build context"));
+            }
+            result.findings.push(finding(
+                file,
+                line,
+                WeakPointCategory::SupplyChain,
+                "COPY external image lacks a complete SHA256 digest",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Check supported Containerfile instructions and extract executable source.
+/// Returns findings and scripts for later interpreter checks; no build is run.
+///
+/// # Errors
+/// Returns errors for malformed instructions or command vectors, and unsupported
+/// instructions, interpreters or constructs such as heredocs and `ONBUILD`.
+pub(super) fn container(content: &str, file: &str) -> Result<Analysis> {
+    let instructions = container_instructions(content)?;
     let mut result = Analysis::default();
     let mut stages = BTreeSet::new();
     let mut shell = Language::Shell;
@@ -354,22 +500,7 @@ pub(super) fn container(content: &str, file: &str) -> Result<Analysis> {
         }
         match name.as_str() {
             "FROM" => {
-                let fields: Vec<_> = args
-                    .split_whitespace()
-                    .filter(|field| !field.starts_with("--platform="))
-                    .collect();
-                ensure!(
-                    fields.len() == 1 || fields.len() == 3 && fields[1].eq_ignore_ascii_case("as"),
-                    "invalid FROM instruction at line {line}"
-                );
-                let image = fields[0];
-                let pinned = image_pinned(image);
-                if image != "scratch" && !stages.contains(&image.to_ascii_lowercase()) && !pinned {
-                    result.findings.push(finding(file, line, WeakPointCategory::SupplyChain, "Container base image lacks a complete SHA256 digest; local stage aliases are accepted"));
-                }
-                if fields.len() == 3 {
-                    stages.insert(fields[2].to_ascii_lowercase());
-                }
+                container_from(args, file, line, &mut stages, &mut result)?;
                 seen_from = true;
                 stage_count += 1;
                 shell = Language::Shell;
@@ -382,20 +513,7 @@ pub(super) fn container(content: &str, file: &str) -> Result<Analysis> {
                 )?;
             }
             "RUN" | "CMD" | "ENTRYPOINT" => {
-                let mut command = args;
-                while command.starts_with("--") {
-                    command = command
-                        .split_once(char::is_whitespace)
-                        .ok_or_else(|| anyhow!("build command has only options"))?
-                        .1
-                        .trim_start();
-                }
-                if command.contains("<<") {
-                    return Err(unsupported(
-                        "Containerfile heredoc extraction is not implemented",
-                    ));
-                }
-                command_input(command, line, shell, &mut result)?;
+                container_command(args, line, shell, &mut result)?;
             }
             "HEALTHCHECK" => {
                 if !args.eq_ignore_ascii_case("NONE") {
@@ -405,62 +523,9 @@ pub(super) fn container(content: &str, file: &str) -> Result<Analysis> {
                     command_input(command.trim(), line, shell, &mut result)?;
                 }
             }
-            "ADD" => {
-                let checksum = args
-                    .split_whitespace()
-                    .find_map(|arg| arg.strip_prefix("--checksum=sha256:"));
-                let pinned = checksum.is_some_and(|digest| {
-                    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-                });
-                if (args.contains("https://") || args.contains("http://")) && !pinned {
-                    result.findings.push(finding(
-                        file,
-                        line,
-                        WeakPointCategory::SupplyChain,
-                        "Remote ADD has no SHA256 checksum",
-                    ));
-                }
-            }
+            "ADD" => container_add(args, file, line, &mut result),
             "COPY" => {
-                let words = field_words(args)?;
-                let mut source = None;
-                let mut fields = words.iter();
-                while let Some(field) = fields.next().filter(|field| field.starts_with("--")) {
-                    let value = if field == "--from" {
-                        Some(
-                            fields
-                                .next()
-                                .ok_or_else(|| anyhow!("COPY --from has no value"))?
-                                .as_str(),
-                        )
-                    } else {
-                        field.strip_prefix("--from=")
-                    };
-                    if let Some(value) = value {
-                        ensure!(
-                            source.is_none() && !value.is_empty(),
-                            "duplicate or empty COPY --from"
-                        );
-                        source = Some(value);
-                    }
-                }
-                if let Some(source) = source {
-                    if let Ok(index) = source.parse::<usize>() {
-                        ensure!(index < stage_count, "COPY stage index does not exist");
-                    } else if !stages.contains(&source.to_ascii_lowercase())
-                        && !image_pinned(source)
-                    {
-                        if source.contains('$') || !source.contains([':', '/', '@']) {
-                            return Err(unsupported("COPY source is an unresolved external image or named build context"));
-                        }
-                        result.findings.push(finding(
-                            file,
-                            line,
-                            WeakPointCategory::SupplyChain,
-                            "COPY external image lacks a complete SHA256 digest",
-                        ));
-                    }
-                }
+                container_copy(args, file, line, &stages, stage_count, &mut result)?;
             }
             "USER" => {
                 let user = args.split(':').next().unwrap_or("");
@@ -537,6 +602,87 @@ fn recipe_script(
     Ok(())
 }
 
+/// Check one literal Just assignment without evaluating backticks or shell().
+fn just_assignment(text: &str, file: &str, line: usize, result: &mut Analysis) -> Result<()> {
+    if text.contains('`') || text.contains("shell(") {
+        return Err(unsupported(
+            "executable Just variable expression is not extracted",
+        ));
+    }
+    let (name, value) = text.split_once(":=").expect("assignment matched");
+    let value = value.trim();
+    if value.len() >= 2
+        && (value.starts_with('"') && value.ends_with('"')
+            || value.starts_with('\'') && value.ends_with('\''))
+    {
+        if let Some(finding) = super::configuration::literal_credential(
+            file,
+            &format!("Just declaration at line {}", line),
+            name.trim().trim_start_matches("export ").trim(),
+            &value[1..value.len() - 1],
+        ) {
+            result.findings.push(finding);
+        }
+    }
+    Ok(())
+}
+
+/// Process a top-level declaration after the preceding recipe was flushed.
+/// Only a recipe header returns true; unsupported declarations remain errors.
+fn just_declaration(
+    text: &str,
+    file: &str,
+    line: usize,
+    default: &mut Language,
+    result: &mut Analysis,
+) -> Result<bool> {
+    let setting = text
+        .strip_prefix("set")
+        .filter(|rest| rest.starts_with(char::is_whitespace))
+        .map(str::trim_start);
+    let shell_setting = setting
+        .and_then(|rest| rest.strip_prefix("shell"))
+        .map(str::trim_start)
+        .and_then(|rest| rest.strip_prefix(":="));
+    if let Some(value) = shell_setting {
+        let argv: Vec<String> = serde_json::from_str(value.trim())?;
+        *default = interpreter(argv.first().ok_or_else(|| anyhow!("empty Just shell"))?)?;
+    } else if let Some(setting) = setting {
+        if setting.starts_with("shell")
+            || setting.contains("interpreter")
+            || setting.contains("windows-shell")
+        {
+            return Err(unsupported(
+                "additional Just interpreter setting requires an adapter",
+            ));
+        }
+    } else if text.starts_with("import ")
+        || text.starts_with("import? ")
+        || text.starts_with("mod ")
+        || text.starts_with("mod? ")
+        || text.starts_with("alias ")
+    {
+        // Inventory covers local *.just files independently. Imports and
+        // variable interpolation are never executed or presented as checked.
+    } else if text.starts_with('[') && text.ends_with(']') {
+        if text.contains("script") {
+            return Err(unsupported(
+                "Just script attributes require interpreter extraction",
+            ));
+        }
+    } else if text.contains(":=") {
+        just_assignment(text, file, line, result)?;
+    } else if text.contains(':') {
+        return Ok(true);
+    } else {
+        return Err(unsupported(&format!(
+            "unrecognised Just declaration at line {}",
+            line
+        )));
+    }
+    Ok(false)
+}
+
 /// Check recognised Just declarations and extract recipe bodies for later checks.
 /// Imports and interpolation are not resolved and recipes are not run.
 ///
@@ -576,70 +722,7 @@ pub(super) fn just(content: &str, file: &str) -> Result<Analysis> {
         recipe_script(&body, default, &mut result)?;
         body.clear();
         indentation = None;
-        in_recipe = false;
-        let setting = text
-            .strip_prefix("set")
-            .filter(|rest| rest.starts_with(char::is_whitespace))
-            .map(str::trim_start);
-        let shell_setting = setting
-            .and_then(|rest| rest.strip_prefix("shell"))
-            .map(str::trim_start)
-            .and_then(|rest| rest.strip_prefix(":="));
-        if let Some(value) = shell_setting {
-            let argv: Vec<String> = serde_json::from_str(value.trim())?;
-            default = interpreter(argv.first().ok_or_else(|| anyhow!("empty Just shell"))?)?;
-        } else if let Some(setting) = setting {
-            if setting.starts_with("shell")
-                || setting.contains("interpreter")
-                || setting.contains("windows-shell")
-            {
-                return Err(unsupported(
-                    "additional Just interpreter setting requires an adapter",
-                ));
-            }
-        } else if text.starts_with("import ")
-            || text.starts_with("import? ")
-            || text.starts_with("mod ")
-            || text.starts_with("mod? ")
-            || text.starts_with("alias ")
-        {
-            // Inventory covers local *.just files independently. Imports and
-            // variable interpolation are never executed or presented as checked.
-        } else if text.starts_with('[') && text.ends_with(']') {
-            if text.contains("script") {
-                return Err(unsupported(
-                    "Just script attributes require interpreter extraction",
-                ));
-            }
-        } else if text.contains(":=") {
-            if text.contains('`') || text.contains("shell(") {
-                return Err(unsupported(
-                    "executable Just variable expression is not extracted",
-                ));
-            }
-            let (name, value) = text.split_once(":=").expect("assignment matched");
-            let value = value.trim();
-            if value.len() >= 2
-                && (value.starts_with('"') && value.ends_with('"')
-                    || value.starts_with('\'') && value.ends_with('\''))
-            {
-                if let Some(finding) = super::configuration::literal_credential(
-                    file,
-                    &format!("Just declaration at line {}", offset + 1),
-                    name.trim().trim_start_matches("export ").trim(),
-                    &value[1..value.len() - 1],
-                ) {
-                    result.findings.push(finding);
-                }
-            }
-        } else if text.contains(':') {
-            in_recipe = true;
-        } else {
-            return Err(unsupported(&format!(
-                "unrecognised Just declaration at line {}",
-                offset + 1
-            )));
-        }
+        in_recipe = just_declaration(text, file, offset + 1, &mut default, &mut result)?;
     }
     recipe_script(&body, default, &mut result)?;
     Ok(result)

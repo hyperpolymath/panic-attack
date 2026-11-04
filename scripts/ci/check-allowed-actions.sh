@@ -31,12 +31,16 @@ covered() {
   case "$ref" in
     ./*|docker://*) return 0 ;;
     '$/'*) return 1 ;;
+    *) : ;; # Remote coordinates must pass the immutable-ref checks below.
   esac
   [[ "$ref" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*@[0-9a-fA-F]{40}$ ]] || return 1
   action="${ref%@*}"
   sha="${ref##*@}"
   sha="${sha,,}"
-  case "$action" in */../*|*/./*|*/..|*/.) return 1 ;; esac
+  case "$action" in
+    */../*|*/./*|*/..|*/.) return 1 ;;
+    *) : ;; # Ordinary coordinates still require a full policy match.
+  esac
   owner="${action%%/*}"; tail="${action#*/}"; repo="${tail%%/*}"
   suffix="${tail#"$repo"}"
   action="${owner,,}/${repo,,}$suffix"

@@ -6,6 +6,64 @@ use super::input_adapters::{Analysis, UnsupportedInput};
 use crate::types::{Severity, WeakPoint, WeakPointCategory};
 use anyhow::{ensure, Result};
 
+/// Advance through one parenthesised comment, retaining source line positions.
+fn parenthesised_comment(bytes: &[u8], offset: &mut usize, line: &mut usize) -> Result<()> {
+    while *offset < bytes.len() && bytes[*offset] != b')' {
+        if bytes[*offset] == b'\n' {
+            *line += 1;
+        }
+        *offset += 1;
+    }
+    ensure!(
+        *offset < bytes.len(),
+        "unterminated Forth parenthesised comment"
+    );
+    if *offset < bytes.len() {
+        *offset += 1;
+    }
+    Ok(())
+}
+
+/// Read one literal without interpreting its words; escaped newlines retain
+/// the same line accounting as ordinary string bytes.
+fn string_literal(
+    content: &str,
+    offset: &mut usize,
+    line: &mut usize,
+    escapes: bool,
+) -> Result<(usize, String, bool)> {
+    let bytes = content.as_bytes();
+    let string_start = *offset;
+    let first_line = *line;
+    let mut string_end = *offset;
+    let mut closed = false;
+    while *offset < bytes.len() {
+        if bytes[*offset] == b'\n' {
+            *line += 1;
+        }
+        if escapes && bytes[*offset] == b'\\' && *offset + 1 < bytes.len() {
+            if bytes[*offset + 1] == b'\n' {
+                *line += 1;
+            }
+            *offset += 2;
+            continue;
+        }
+        if bytes[*offset] == b'"' {
+            string_end = *offset;
+            *offset += 1;
+            closed = true;
+            break;
+        }
+        *offset += 1;
+    }
+    ensure!(closed, "unterminated Forth string");
+    Ok((
+        first_line,
+        content[string_start..string_end].trim().into(),
+        true,
+    ))
+}
+
 /// The final flag distinguishes literal data from executable words. Keeping the
 /// data lets named string constants receive credential checks without executing
 /// or interpreting words embedded in those strings.
@@ -33,52 +91,10 @@ fn words(content: &str) -> Result<Vec<(usize, String, bool)>> {
                     offset += 1;
                 }
             }
-            "(" => {
-                while offset < bytes.len() && bytes[offset] != b')' {
-                    if bytes[offset] == b'\n' {
-                        line += 1;
-                    }
-                    offset += 1;
-                }
-                ensure!(
-                    offset < bytes.len(),
-                    "unterminated Forth parenthesised comment"
-                );
-                if offset < bytes.len() {
-                    offset += 1;
-                }
-            }
+            "(" => parenthesised_comment(bytes, &mut offset, &mut line)?,
             ".\"" | "s\"" | "c\"" | "s\\\"" | ".\\\"" | "abort\"" => {
                 let escapes = matches!(word.as_str(), "s\\\"" | ".\\\"");
-                let string_start = offset;
-                let first_line = line;
-                let mut string_end = offset;
-                let mut closed = false;
-                while offset < bytes.len() {
-                    if bytes[offset] == b'\n' {
-                        line += 1;
-                    }
-                    if escapes && bytes[offset] == b'\\' && offset + 1 < bytes.len() {
-                        if bytes[offset + 1] == b'\n' {
-                            line += 1;
-                        }
-                        offset += 2;
-                        continue;
-                    }
-                    if bytes[offset] == b'"' {
-                        string_end = offset;
-                        offset += 1;
-                        closed = true;
-                        break;
-                    }
-                    offset += 1;
-                }
-                ensure!(closed, "unterminated Forth string");
-                result.push((
-                    first_line,
-                    content[string_start..string_end].trim().into(),
-                    true,
-                ));
+                result.push(string_literal(content, &mut offset, &mut line, escapes)?);
             }
             _ => result.push((line, word, false)),
         }
@@ -138,7 +154,7 @@ pub(super) fn analyze(content: &str, file: &str) -> Result<Analysis> {
     // .fs is shared with F#. Never infer Forth merely from that suffix.
     if std::path::Path::new(file)
         .extension()
-        .and_then(|extension| extension.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .is_some_and(|extension| extension.eq_ignore_ascii_case("fs"))
         && !has_colon_definition(&words)
     {

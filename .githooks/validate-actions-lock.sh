@@ -17,6 +17,7 @@ assert_clean_checkout() {
           echo "validate-actions-lock: unsafe index flags in $checkout; source bytes are unqualified" >&2
           exit 2
           ;;
+        *) : ;; # Other index flags continue through the full cleanliness check.
       esac
     done
   git_state="$(git -C "$checkout" status --porcelain --untracked-files=all --ignored=matching)" ||

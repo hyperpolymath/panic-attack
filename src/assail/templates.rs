@@ -47,6 +47,183 @@ fn finding(
     }
 }
 
+/// Read raw attribute spelling without decoding character references.
+fn html_attribute(child: Node<'_>, content: &str) -> Result<(String, String)> {
+    let mut name = String::new();
+    let mut value = String::new();
+    for part in child.named_children(&mut child.walk()) {
+        match part.kind() {
+            "attribute_name" => name = text(part, content)?.to_ascii_lowercase(),
+            "attribute_value" | "quoted_attribute_value" => {
+                value = text(part, content)?.trim_matches(['\'', '"']).to_owned()
+            }
+            _ => {}
+        }
+    }
+    Ok((name, value))
+}
+
+/// Preserve attribute check order: embedded code, URLs, then literal credentials.
+/// URL normalization also supplies the value used by the tag's SRI check.
+fn check_html_attribute(
+    file: &str,
+    child: Node<'_>,
+    name: &str,
+    value: &mut String,
+    result: &mut Analysis,
+) -> Result<()> {
+    if name.starts_with("on") && name.len() > 2 {
+        ensure_attribute_decoded(value)?;
+        result.scripts.push(EmbeddedScript {
+            content: value.clone(),
+            language: Language::JavaScript,
+            origin: format!(
+                "source block beginning at line {}",
+                child.start_position().row + 1
+            ),
+        });
+    }
+    if name == "style" && !value.is_empty() {
+        ensure_attribute_decoded(value)?;
+        let inline = css(&format!("element {{{value}}}"), file)?;
+        for mut finding in inline.findings {
+            finding.line = Some(child.start_position().row as u32 + 1);
+            finding.location = Some(format!("{file}:{}", child.start_position().row + 1));
+            result.findings.push(finding);
+        }
+    }
+    if matches!(name, "src" | "href" | "action" | "formaction" | "poster") {
+        ensure_attribute_decoded(value)?;
+        // WHATWG URL parsing trims outer C0 controls/spaces
+        // and removes ASCII tab/newline characters before
+        // scheme parsing. Keep the same value for SRI below.
+        *value = value
+            .trim_matches(|ch: char| ch <= '\u{20}')
+            .chars()
+            .filter(|ch| !matches!(ch, '\t' | '\n' | '\r'))
+            .collect();
+        let lower = value.to_ascii_lowercase();
+        if lower.starts_with("javascript:") || lower.starts_with("vbscript:") {
+            result.findings.push(finding(
+                file,
+                child,
+                WeakPointCategory::DynamicCodeExecution,
+                Severity::High,
+                "HTML attribute contains an executable URL scheme",
+            ));
+        }
+        if lower.starts_with("http://") {
+            result.findings.push(finding(
+                file,
+                child,
+                WeakPointCategory::InsecureProtocol,
+                Severity::Medium,
+                "HTML resource or navigation uses plaintext HTTP",
+            ));
+        }
+    }
+    if let Some(finding) = super::configuration::literal_credential(
+        file,
+        &format!("HTML attribute at line {}", child.start_position().row + 1),
+        name.strip_prefix("data-").unwrap_or(name),
+        value,
+    ) {
+        result.findings.push(finding);
+    }
+    Ok(())
+}
+
+/// Reject duplicates before examining each attribute and check remote-script
+/// integrity only after the normalized attribute map is complete.
+fn html_start_tag(node: Node<'_>, content: &str, file: &str, result: &mut Analysis) -> Result<()> {
+    let mut tag = String::new();
+    let mut attributes = BTreeMap::new();
+    for child in node.named_children(&mut node.walk()) {
+        if child.kind() == "tag_name" {
+            tag = text(child, content)?.to_ascii_lowercase();
+        }
+        if child.kind() != "attribute" {
+            continue;
+        }
+        let (name, mut value) = html_attribute(child, content)?;
+        ensure!(
+            !attributes.contains_key(&name),
+            "duplicate HTML attribute {name}; browser interpretation is ambiguous"
+        );
+        check_html_attribute(file, child, &name, &mut value, result)?;
+        attributes.insert(name, value);
+    }
+    if tag == "script"
+        && attributes.get("src").is_some_and(|src| {
+            src.to_ascii_lowercase().starts_with("https://")
+                || src.to_ascii_lowercase().starts_with("http://")
+                || src.starts_with("//")
+        })
+        && !attributes
+            .get("integrity")
+            .is_some_and(|value| usable_integrity(value))
+    {
+        result.findings.push(finding(
+            file,
+            node,
+            WeakPointCategory::SupplyChain,
+            Severity::Medium,
+            "Remote script has no syntactically usable supported integrity digest",
+        ));
+    }
+    Ok(())
+}
+
+/// Preserve the source type and relative line mapping of embedded HTML blocks.
+fn html_raw_text(node: Node<'_>, content: &str, file: &str, result: &mut Analysis) -> Result<()> {
+    match node.parent().map(|parent| parent.kind()) {
+        Some("script_element") => {
+            let kind = element_type(node.parent().expect("parent matched"), content)?;
+            match kind.as_str() {
+                "" | "module" | "text/javascript" | "application/javascript" => {
+                    result.scripts.push(EmbeddedScript {
+                        content: text(node, content)?.into(),
+                        language: Language::JavaScript,
+                        origin: format!(
+                            "source block beginning at line {}",
+                            node.start_position().row + 1
+                        ),
+                    })
+                }
+                "application/json" | "application/ld+json" | "importmap" => {
+                    result.findings.extend(
+                        super::configuration::Format::Json.analyze(text(node, content)?, file)?,
+                    )
+                }
+                _ => {
+                    return Err(UnsupportedInput(format!(
+                        "embedded script type {kind:?} has no selected adapter"
+                    ))
+                    .into())
+                }
+            }
+        }
+        Some("style_element") => {
+            let kind = element_type(node.parent().expect("parent matched"), content)?;
+            if !kind.is_empty() && kind != "text/css" {
+                return Err(UnsupportedInput(format!(
+                    "embedded style type {kind:?} is not CSS"
+                ))
+                .into());
+            }
+            let nested = css(text(node, content)?, file)?;
+            for mut finding in nested.findings {
+                let line = finding.line.unwrap_or(1) + node.start_position().row as u32;
+                finding.line = Some(line);
+                finding.location = Some(format!("{file}:{line}"));
+                result.findings.push(finding);
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 /// Check parsed HTML attributes and embedded CSS or JSON, and extract JavaScript
 /// for later analysis. Remote-script integrity checks validate metadata syntax
 /// only; they do not fetch the resource or verify its digest.
@@ -61,159 +238,9 @@ pub(super) fn html(content: &str, file: &str) -> Result<Analysis> {
     while let Some(node) = pending.pop() {
         match node.kind() {
             "start_tag" | "self_closing_tag" => {
-                let mut tag = String::new();
-                let mut attributes = BTreeMap::new();
-                for child in node.named_children(&mut node.walk()) {
-                    if child.kind() == "tag_name" {
-                        tag = text(child, content)?.to_ascii_lowercase();
-                    }
-                    if child.kind() != "attribute" {
-                        continue;
-                    }
-                    let mut name = String::new();
-                    let mut value = String::new();
-                    for part in child.named_children(&mut child.walk()) {
-                        match part.kind() {
-                            "attribute_name" => name = text(part, content)?.to_ascii_lowercase(),
-                            "attribute_value" | "quoted_attribute_value" => {
-                                value = text(part, content)?.trim_matches(['\'', '"']).to_owned()
-                            }
-                            _ => {}
-                        }
-                    }
-                    ensure!(
-                        !attributes.contains_key(&name),
-                        "duplicate HTML attribute {name}; browser interpretation is ambiguous"
-                    );
-                    if name.starts_with("on") && name.len() > 2 {
-                        ensure_attribute_decoded(&value)?;
-                        result.scripts.push(EmbeddedScript {
-                            content: value.clone(),
-                            language: Language::JavaScript,
-                            origin: format!(
-                                "source block beginning at line {}",
-                                child.start_position().row + 1
-                            ),
-                        });
-                    }
-                    if name == "style" && !value.is_empty() {
-                        ensure_attribute_decoded(&value)?;
-                        let inline = css(&format!("element {{{value}}}"), file)?;
-                        for mut finding in inline.findings {
-                            finding.line = Some(child.start_position().row as u32 + 1);
-                            finding.location =
-                                Some(format!("{file}:{}", child.start_position().row + 1));
-                            result.findings.push(finding);
-                        }
-                    }
-                    if matches!(
-                        name.as_str(),
-                        "src" | "href" | "action" | "formaction" | "poster"
-                    ) {
-                        ensure_attribute_decoded(&value)?;
-                        // WHATWG URL parsing trims outer C0 controls/spaces
-                        // and removes ASCII tab/newline characters before
-                        // scheme parsing. Keep the same value for SRI below.
-                        value = value
-                            .trim_matches(|ch: char| ch <= '\u{20}')
-                            .chars()
-                            .filter(|ch| !matches!(ch, '\t' | '\n' | '\r'))
-                            .collect();
-                        let lower = value.to_ascii_lowercase();
-                        if lower.starts_with("javascript:") || lower.starts_with("vbscript:") {
-                            result.findings.push(finding(
-                                file,
-                                child,
-                                WeakPointCategory::DynamicCodeExecution,
-                                Severity::High,
-                                "HTML attribute contains an executable URL scheme",
-                            ));
-                        }
-                        if lower.starts_with("http://") {
-                            result.findings.push(finding(
-                                file,
-                                child,
-                                WeakPointCategory::InsecureProtocol,
-                                Severity::Medium,
-                                "HTML resource or navigation uses plaintext HTTP",
-                            ));
-                        }
-                    }
-                    if let Some(finding) = super::configuration::literal_credential(
-                        file,
-                        &format!("HTML attribute at line {}", child.start_position().row + 1),
-                        name.strip_prefix("data-").unwrap_or(&name),
-                        &value,
-                    ) {
-                        result.findings.push(finding);
-                    }
-                    attributes.insert(name, value);
-                }
-                if tag == "script"
-                    && attributes.get("src").is_some_and(|src| {
-                        src.to_ascii_lowercase().starts_with("https://")
-                            || src.to_ascii_lowercase().starts_with("http://")
-                            || src.starts_with("//")
-                    })
-                    && !attributes
-                        .get("integrity")
-                        .is_some_and(|value| usable_integrity(value))
-                {
-                    result.findings.push(finding(
-                        file,
-                        node,
-                        WeakPointCategory::SupplyChain,
-                        Severity::Medium,
-                        "Remote script has no syntactically usable supported integrity digest",
-                    ));
-                }
+                html_start_tag(node, content, file, &mut result)?;
             }
-            "raw_text" => match node.parent().map(|parent| parent.kind()) {
-                Some("script_element") => {
-                    let kind = element_type(node.parent().expect("parent matched"), content)?;
-                    match kind.as_str() {
-                        "" | "module" | "text/javascript" | "application/javascript" => {
-                            result.scripts.push(EmbeddedScript {
-                                content: text(node, content)?.into(),
-                                language: Language::JavaScript,
-                                origin: format!(
-                                    "source block beginning at line {}",
-                                    node.start_position().row + 1
-                                ),
-                            })
-                        }
-                        "application/json" | "application/ld+json" | "importmap" => {
-                            result.findings.extend(
-                                super::configuration::Format::Json
-                                    .analyze(text(node, content)?, file)?,
-                            )
-                        }
-                        _ => {
-                            return Err(UnsupportedInput(format!(
-                                "embedded script type {kind:?} has no selected adapter"
-                            ))
-                            .into())
-                        }
-                    }
-                }
-                Some("style_element") => {
-                    let kind = element_type(node.parent().expect("parent matched"), content)?;
-                    if !kind.is_empty() && kind != "text/css" {
-                        return Err(UnsupportedInput(format!(
-                            "embedded style type {kind:?} is not CSS"
-                        ))
-                        .into());
-                    }
-                    let nested = css(text(node, content)?, file)?;
-                    for mut finding in nested.findings {
-                        let line = finding.line.unwrap_or(1) + node.start_position().row as u32;
-                        finding.line = Some(line);
-                        finding.location = Some(format!("{file}:{line}"));
-                        result.findings.push(finding);
-                    }
-                }
-                _ => {}
-            },
+            "raw_text" => html_raw_text(node, content, file, &mut result)?,
             _ => {}
         }
         pending.extend(node.named_children(&mut node.walk()));

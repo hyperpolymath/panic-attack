@@ -167,7 +167,7 @@ pub(super) fn extract(
         }
     }
     if format == Format::Json
-        && Path::new(file).file_name().and_then(|s| s.to_str()) == Some("package.json")
+        && Path::new(file).file_name().and_then(std::ffi::OsStr::to_str) == Some("package.json")
     {
         if let Some(values) = document.get("scripts") {
             let values = values

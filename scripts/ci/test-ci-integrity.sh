@@ -29,7 +29,8 @@ expect() {
   printf 'PASS %s\n' "$label"
 }
 workflow() {
-  jq -n --arg ref "$1" \
+  local ref=$1
+  jq -n --arg ref "$ref" \
     '{on:{push:{}},jobs:{gate:{uses:$ref}}}' > "$work/workflows/test.yml"
 }
 check() { bash "$checker" "$policy" "$work/workflows"; }
