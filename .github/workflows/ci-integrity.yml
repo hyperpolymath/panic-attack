@@ -24,8 +24,6 @@ concurrency:
 env:
   YQ_VERSION: v4.54.1
   STANDARDS_REF: 087f6bff5135ce3da6f287c83752256ce4a8efc1
-  STANDARDS_ROOT: ${{ runner.temp }}/panic-ci-integrity-standards
-  ACTIONS_LOCK_EVIDENCE_DIR: ${{ runner.temp }}/panic-ci-integrity-evidence
 
 jobs:
   integrity:
@@ -33,6 +31,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Initialize runner-local paths and evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          standards_root="$RUNNER_TEMP/panic-ci-integrity-standards"
+          evidence_dir="$RUNNER_TEMP/panic-ci-integrity-evidence"
+          mkdir -p "$evidence_dir"
+          printf 'not_run\n' > "$evidence_dir/native.exit"
+          {
+            printf 'STANDARDS_ROOT=%s\n' "$standards_root"
+            printf 'ACTIONS_LOCK_EVIDENCE_DIR=%s\n' "$evidence_dir"
+          } >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -41,8 +52,6 @@ jobs:
       - name: Install checksum-qualified YAML and native lock tools
         run: |
           set -euo pipefail
-          mkdir -p "$ACTIONS_LOCK_EVIDENCE_DIR"
-          printf 'not_run\n' > "$ACTIONS_LOCK_EVIDENCE_DIR/native.exit"
           tool_dir="$RUNNER_TEMP/panic-ci-integrity-bin"
           mkdir -p "$tool_dir"
           curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --max-time 60 \
