@@ -1,68 +1,103 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
-# check-allowed-actions.sh — make the un-squabble-able startup_failure legible.
-#
-# When a repo sets `allowed_actions: selected` (RSR default) and a workflow
-# `uses:` an action or reusable-workflow the allowlist does not permit, the run
-# dies at STARTUP with no job and no log — an opaque red you cannot "squabble"
-# with (RSR-PHILOSOPHY: reach green by satisfying the gate, never admin-override).
-#
-# This check turns that into a concrete, satisfiable gate: it lists exactly which
-# `uses:` are not covered by the canonical allowlist, so the fix is obvious
-# (add the pattern, or run set-allowed-actions.sh). Needs NO API and NO admin —
-# safe to run in CI, in rhodibot, or locally.
-#
-# Usage:  check-allowed-actions.sh [ALLOWED_ACTIONS_JSON] [WORKFLOWS_DIR]
-# Exit:   0 = every `uses:` is covered; 1 = one or more gaps (printed).
+# Offline tree policy: match the whole action/reusable coordinate and ref.
+# This cannot read effective GitHub Settings or verify Marketplace publishers.
 set -euo pipefail
-CANON="${1:-rhodium-standard-repositories/actions-allowlist/allowed-actions.json}"
+POLICY="${1:-.github/actions-allowlist.json}"
 WF_DIR="${2:-.github/workflows}"
-
-if [ ! -f "$CANON" ]; then
-  # fall back to the published canonical list in standards
-  CANON_URL="https://raw.githubusercontent.com/hyperpolymath/standards/main/rhodium-standard-repositories/actions-allowlist/allowed-actions.json"
-  TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
-  curl -fsSL "$CANON_URL" -o "$TMP" && CANON="$TMP" || { echo "!! no allowlist ($CANON)"; exit 2; }
+YQ_BIN="${YQ_BIN:-yq}"
+[[ -f "$POLICY" && -d "$WF_DIR" ]] ||
+  { echo 'check-allowed-actions: policy file and workflow directory are required' >&2; exit 2; }
+command -v "$YQ_BIN" >/dev/null && command -v jq >/dev/null ||
+  { echo 'check-allowed-actions: mikefarah yq v4 and jq are required' >&2; exit 2; }
+if ! jq -e -s 'length == 1 and (.[0] | type == "object" and
+  (.github_owned_allowed | type == "boolean") and
+  (.patterns_allowed | type == "array" and all(.[]; type == "string" and length > 0 and
+    (test("\\s") | not) and (contains("\u0000") | not))))
+' "$POLICY" >/dev/null; then
+  echo 'check-allowed-actions: malformed tree policy' >&2
+  exit 2
 fi
+owned="$(jq -r '.github_owned_allowed' "$POLICY")"
+mapfile -t patterns < <(jq -r '.patterns_allowed[]' "$POLICY")
+probe="$(printf '%s\n' '{jobs: {probe: {steps: [{uses: "Fixture/Action@0123456789012345678901234567890123456789"}]}}}' |
+  "$YQ_BIN" -o=json 'explode(.)' - | jq -r '.jobs.probe.steps[0].uses')" ||
+  { echo 'check-allowed-actions: YAML parser probe failed' >&2; exit 2; }
+[[ "$probe" = 'Fixture/Action@0123456789012345678901234567890123456789' ]] ||
+  { echo 'check-allowed-actions: YAML parser did not read the known ref' >&2; exit 2; }
 
-python3 - "$CANON" "$WF_DIR" <<'PY'
-import json, sys, os, re, glob, fnmatch
-canon = json.load(open(sys.argv[1]))
-patterns = canon.get("patterns_allowed", [])
-gh_owned = {"actions", "github"}  # github_owned_allowed
+covered() {
+  local ref=$1 action sha owner tail repo suffix pattern base allowed_ref p_owner p_tail p_repo p_suffix
+  case "$ref" in
+    ./*|docker://*) return 0 ;;
+    '$/'*) return 1 ;;
+  esac
+  [[ "$ref" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*@[0-9a-fA-F]{40}$ ]] || return 1
+  action="${ref%@*}"
+  sha="${ref##*@}"
+  sha="${sha,,}"
+  case "$action" in */../*|*/./*|*/..|*/.) return 1 ;; esac
+  owner="${action%%/*}"; tail="${action#*/}"; repo="${tail%%/*}"
+  suffix="${tail#"$repo"}"
+  action="${owner,,}/${repo,,}$suffix"
+  if [[ "$owned" = true && ( "${owner,,}" = actions || "${owner,,}" = github ) ]]; then
+    return 0
+  fi
+  for pattern in "${patterns[@]}"; do
+    base="${pattern%%@*}"
+    if [[ "$pattern" = *@* ]]; then
+      allowed_ref="${pattern#*@}"
+      if [[ "$allowed_ref" =~ ^[0-9a-fA-F]{40}$ ]]; then
+        allowed_ref="${allowed_ref,,}"
+      fi
+      [[ "$sha" = $allowed_ref ]] || continue
+    fi
+    [[ "$base" = */* ]] || continue
+    p_owner="${base%%/*}"; p_tail="${base#*/}"; p_repo="${p_tail%%/*}"
+    p_suffix="${p_tail#"$p_repo"}"
+    base="${p_owner,,}/${p_repo,,}$p_suffix"
+    [[ "$action" = $base ]] && return 0
+  done
+  return 1
+}
 
-def owner_repo(u):
-    base = u.split('@', 1)[0]
-    # GitHub owner/repository names are case-insensitive.
-    parts = base.lower().split('/')
-    return '/'.join(parts[:2]), parts[0]
-
-def covered(u):
-    # $/ is gh actions-lock's inherently-pinned same-repo form (like ./)
-    if u.startswith('./') or u.startswith('$/') or u.startswith('docker://'):
-        return True
-    orp, owner = owner_repo(u)
-    if owner in gh_owned:                       # github-owned (actions/*, github/*)
-        return True
-    for p in patterns:
-        base = p.split('@', 1)[0].lower()
-        if base == f"{owner}/*":                # owner-wide (covers reusable workflows)
-            return True
-        if base == orp or fnmatch.fnmatch(orp, base):
-            return True
-    return False
-
-uses = set()
-for f in sorted(glob.glob(os.path.join(sys.argv[2], '*.yml')) +
-                glob.glob(os.path.join(sys.argv[2], '*.yaml'))):
-    for line in open(f, encoding='utf-8'):
-        m = re.search(r'^\s*(?:-\s*)?uses:\s*([^\s#]+)', line)
-        if m:
-            uses.add(m.group(1).strip().strip('"\''))
-
-gaps = sorted(u for u in uses if not covered(u))
-for u in gaps:
-    print(f"GAP  {u}   (add its owner/* or owner/repo@* pattern, or run set-allowed-actions.sh)")
-print(f"checked {len(uses)} `uses:` refs across {sys.argv[2]} — {len(gaps)} not covered by the allowlist")
-sys.exit(1 if gaps else 0)
-PY
+scratch="$(mktemp)"
+trap 'rm -f "$scratch"' EXIT
+shopt -s nullglob
+files=("$WF_DIR"/*.yml "$WF_DIR"/*.yaml)
+[[ ${#files[@]} -gt 0 ]] ||
+  { echo 'check-allowed-actions: no workflow files examined' >&2; exit 2; }
+checked=0
+gaps=0
+for file in "${files[@]}"; do
+  if ! "$YQ_BIN" -o=json 'explode(.)' "$file" > "$scratch"; then
+    echo "check-allowed-actions: unparseable workflow: $file" >&2
+    exit 2
+  fi
+  # A scalar, invalid jobs/steps node, null/non-string uses, or whitespace in
+  # a coordinate is unexamined input, never an empty passing ref population.
+  if ! jq -e -s '
+    def nodes: .jobs[] | ., ((.steps // [])[]);
+    length == 1 and (.[0] |
+      type == "object" and (.jobs | type == "object" and length > 0) and
+      all(.jobs[]; type == "object" and
+        ((has("steps") | not) or (.steps | type == "array" and all(.[]; type == "object")))) and
+      all(nodes | select(has("uses")); .uses | type == "string" and length > 0 and
+        (test("\\s") | not) and (contains("\u0000") | not)))
+  ' "$scratch" >/dev/null; then
+    echo "check-allowed-actions: invalid workflow/ref structure: $file" >&2
+    exit 2
+  fi
+  refs="$(jq -r '.jobs[] | ., ((.steps // [])[]) | select(has("uses")) | .uses' "$scratch")"
+  while IFS= read -r ref; do
+    [[ -n "$ref" ]] || continue
+    checked=$((checked + 1))
+    if ! covered "$ref"; then
+      printf 'GAP  %s: %s (requires an immutable ref and an exact tree-policy match)\n' "$file" "$ref" >&2
+      gaps=$((gaps + 1))
+    fi
+  done <<< "$refs"
+done
+printf 'checked %s executable uses refs in %s workflow files; %s tree-policy gaps (live policy unverified)\n' \
+  "$checked" "${#files[@]}" "$gaps"
+[[ "$gaps" -eq 0 ]]

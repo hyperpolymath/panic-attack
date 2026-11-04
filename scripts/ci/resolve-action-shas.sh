@@ -3,7 +3,8 @@
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 #
 # Resolve every tag/branch `uses:` ref in .github/workflows to a full commit
-# SHA and write the mapping to a JSON file for scripts/ci/pin-workflow-uses.py.
+# SHA and write a legacy tag-reference index. This is not a native lock
+# generator; native updates use the canonical recovery route in docs/CI-CD.adoc.
 #
 # Needs `gh` (authenticated) and `jq`. One API call per distinct ref.
 #
