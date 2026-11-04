@@ -26,6 +26,18 @@ fn text<'a>(node: Node<'_>, source: &'a str) -> Result<&'a str> {
     Ok(node.utf8_text(source.as_bytes())?)
 }
 
+fn unquote(value: &str) -> &str {
+    for quote in ['\'', '"'] {
+        if let Some(inner) = value
+            .strip_prefix(quote)
+            .and_then(|v| v.strip_suffix(quote))
+        {
+            return inner;
+        }
+    }
+    value
+}
+
 fn finding(
     file: &str,
     node: Node<'_>,
@@ -55,7 +67,7 @@ fn html_attribute(child: Node<'_>, content: &str) -> Result<(String, String)> {
         match part.kind() {
             "attribute_name" => name = text(part, content)?.to_ascii_lowercase(),
             "attribute_value" | "quoted_attribute_value" => {
-                value = text(part, content)?.trim_matches(['\'', '"']).to_owned()
+                value = unquote(text(part, content)?).to_owned()
             }
             _ => {}
         }
@@ -323,9 +335,7 @@ fn element_type(element: Node<'_>, content: &str) -> Result<String> {
                 match part.kind() {
                     "attribute_name" => name = text(part, content)?.to_ascii_lowercase(),
                     "attribute_value" | "quoted_attribute_value" => {
-                        value = text(part, content)?
-                            .trim_matches(['\'', '"'])
-                            .to_ascii_lowercase()
+                        value = unquote(text(part, content)?).to_ascii_lowercase()
                     }
                     _ => {}
                 }
@@ -359,7 +369,7 @@ pub(super) fn css(content: &str, file: &str) -> Result<Analysis> {
                         file,
                         &format!("CSS declaration at line {}", node.start_position().row + 1),
                         &name,
-                        text(child, content)?.trim_matches(['\'', '"']),
+                        unquote(text(child, content)?),
                     ) {
                         result.findings.push(finding);
                     }
@@ -405,4 +415,30 @@ pub(super) fn css(content: &str, file: &str) -> Result<Analysis> {
         pending.extend(node.named_children(&mut node.walk()));
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{html, unquote};
+
+    #[test]
+    fn unquote_removes_only_a_matching_outer_pair() {
+        for (input, expected) in [
+            ("\"'value'\"", "'value'"),
+            ("'\"value\"'", "\"value\""),
+            ("\"\"", ""),
+            ("plain", "plain"),
+            ("\"mismatched'", "\"mismatched'"),
+            ("'", "'"),
+            ("", ""),
+        ] {
+            assert_eq!(unquote(input), expected);
+        }
+    }
+
+    #[test]
+    fn html_event_handler_keeps_quotes_inside_attribute() {
+        let result = html(r#"<button onclick="'value'">run</button>"#, "index.html").unwrap();
+        assert_eq!(result.scripts[0].content, "'value'");
+    }
 }

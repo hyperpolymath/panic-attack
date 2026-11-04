@@ -102,3 +102,31 @@ fn script_types_and_encoded_attributes_cannot_silently_bypass_an_adapter() {
         assert_eq!(report.coverage.inputs[0].status, "unsupported");
     }
 }
+
+#[test]
+fn nested_quotes_remain_part_of_attribute_and_css_values() {
+    for (name, source) in [
+        ("secret.html", r#"<div password="'1234567'"></div>"#),
+        ("secret.css", r#"p { password: "'1234567'"; }"#),
+    ] {
+        let report = scan(name, source);
+        assert_eq!(report.coverage.status, "complete", "{name}");
+        assert!(
+            report
+                .weak_points
+                .iter()
+                .any(|f| f.category == WeakPointCategory::HardcodedSecret),
+            "{name}: {:?}",
+            report.weak_points
+        );
+    }
+
+    let report = scan(
+        "type.html",
+        r#"<script type="'text/javascript'">code</script>"#,
+    );
+    assert_eq!(report.coverage.inputs[0].status, "unsupported");
+
+    let report = scan("type.html", "<script type=text/javascript>code</script>");
+    assert_eq!(report.coverage.status, "complete");
+}
