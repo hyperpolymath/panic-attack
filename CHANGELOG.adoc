@@ -2,13 +2,14 @@
 
 === [Unreleased]
 
-==== Changed — evidence hash is platform-independent
+==== Fixed — JCS numbers on decimal ties
 
-* The attestation evidence hash now feeds `+files_read+` to SHA-256 as an 8-byte
-little-endian `+u64+`, like the other counts, instead of a platform-sized
-`+usize+`. Hashes are unchanged on 64-bit platforms; 32-bit builds now agree
-with them. The computation lives in `+attestation::evidence::evidence_hash+`,
-with a known-answer test whose value comes from coreutils `+sha256sum+`.
+* `+ijson-jcs+` is bumped from 3a9a4ee to 03df9ed, which formats numbers with
+`+ryu-js+` (ECMAScript `+Number::toString+`). The old pin printed RFC 8785
+Appendix B vector 0x43143ff3c1cb0959 as `+1424953923781206.3+`; JCS requires
+`+1424953923781206.2+` (ties to even). Any report or attestation holding such a
+float now hashes to the value other JCS implementations compute. A test in
+`+crate::json+` pins the vector.
 
 ==== Fixed — KYAML keys holding a line separator
 
