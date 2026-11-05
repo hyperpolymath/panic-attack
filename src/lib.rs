@@ -24,7 +24,6 @@ pub mod amuck;
 pub mod assail;
 pub mod assay;
 pub mod assemblyline;
-pub mod atomic_write;
 pub mod attack;
 pub mod attestation;
 pub mod axial;

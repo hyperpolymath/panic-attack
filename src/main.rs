@@ -1366,10 +1366,10 @@ fn attestation_sidecar_path(output: Option<&Path>) -> PathBuf {
 ///   a dangling link that an earlier write would bring into existence;
 /// - two existing paths that are already one file, such as hard links.
 ///
-/// These checks run before the writes, so a link swapped in afterwards would
-/// slip past them; the writes therefore go through
-/// [`panic_attack::atomic_write::write_replacing`], which replaces a path's
-/// directory entry instead of writing through it.
+/// These checks run before the writes, so a link swapped in between a check
+/// and its write (a time-of-check/time-of-use race) still slips past them.
+/// Closing that race, and keeping a crash from leaving a partial report, is
+/// the job of the generation-directory publish planned as a follow-up.
 fn kyaml_copy_path(out: &Path, sidecar: Option<&Path>) -> Result<PathBuf> {
     let path = out.with_extension("kyaml");
     let named_json = out
@@ -1399,8 +1399,8 @@ fn kyaml_copy_path(out: &Path, sidecar: Option<&Path>) -> Result<PathBuf> {
                      (it could alias another output)",
                     candidate.display()
                 );
-                // A directory or other special entry can't be replaced by a
-                // rename, so the write would fail after earlier ones landed.
+                // A directory or other special entry can't be written as a
+                // file, so the write would fail after earlier ones landed.
                 anyhow::ensure!(
                     meta.is_file(),
                     "the {role} path {} exists and is not a regular file; \
@@ -1598,33 +1598,16 @@ fn run_main() -> Result<()> {
                 }
                 _ => None,
             };
-            // In KYAML mode every output is written by renaming a finished
-            // temporary file into place, so a link swapped in after the checks
-            // above is replaced, never written through. A new copy or sidecar
-            // takes the report's permissions (`like`), so a private report's
-            // companions are private too.
-            let write_output =
-                |path: &Path, bytes: &[u8], like: Option<&Path>| -> std::io::Result<()> {
-                    if kyaml_path.is_some() {
-                        panic_attack::atomic_write::write_replacing_like(path, bytes, like)
-                    } else {
-                        fs::write(path, bytes)
-                    }
-                };
 
             if let Some(output_path) = &output {
-                write_output(output_path, report_json.as_bytes(), None)?;
+                fs::write(output_path, &report_json)?;
                 qprintln!(
                     cli.quiet || headless,
                     "Report saved to: {}",
                     output_path.display()
                 );
                 if let Some(kyaml_path) = &kyaml_path {
-                    write_output(
-                        kyaml_path,
-                        panic_attack::kyaml::to_string(&report)?.as_bytes(),
-                        Some(output_path),
-                    )?;
+                    fs::write(kyaml_path, panic_attack::kyaml::to_string(&report)?)?;
                     qprintln!(
                         cli.quiet || headless,
                         "KYAML copy saved to: {}",
@@ -1653,11 +1636,7 @@ fn run_main() -> Result<()> {
                 let envelope = builder.seal(report_json.as_bytes(), signing_key.as_deref())?;
                 let attestation_json = panic_attack::json::to_canonical_string(&envelope)?;
 
-                write_output(
-                    &sidecar_path,
-                    attestation_json.as_bytes(),
-                    output.as_deref(),
-                )?;
+                fs::write(&sidecar_path, attestation_json)?;
                 qprintln!(
                     cli.quiet || headless,
                     "Attestation written to: {}",
