@@ -75,7 +75,7 @@ their results are not upgraded to AST/dataflow evidence by PHP's parser.
 
 The fixtures reproduce empty WordPress crypto implementations and the Aegis
 algorithm-substitution pattern from the 25 October 2026 audit. CLI tests cover
-clean PHP without finding counters, malformed PHP, unsupported config input,
+clean PHP without finding counters, malformed PHP, unsupported source input,
 empty roots, symlink cycles and legacy report decoding.
 
 Next: contextual PHP taint, Composer/WordPress bootstrap and symbol resolution,
@@ -86,4 +86,9 @@ this change does not claim native parsing for them.
 
 Do not infer PHP engine patch status from these source checks. Runtime provenance,
 startup configuration and deployment isolation require independent evidence.
+
+Configuration, template and build-file adapters are described separately in
+link:input-coverage.adoc[Input coverage]. Unsupported source controls still
+exercise the same inventory boundary; adding an adapter does not exclude a
+previously failing candidate or upgrade parser acceptance into a security proof.
 

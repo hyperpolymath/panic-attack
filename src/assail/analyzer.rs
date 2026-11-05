@@ -337,13 +337,23 @@ impl Analyzer {
         Self::build(target, true, true)
     }
 
+    /// Construct an analyser for a target, selecting its source language.
+    /// Registered input adapters take precedence over source language detection.
+    ///
+    /// # Errors
+    /// Returns an error if the target does not exist, or if directory language
+    /// discovery fails or rejects a symlink root.
     fn build(target: &Path, verbose: bool, browser_extension: bool) -> Result<Self> {
         if !target.exists() {
             anyhow::bail!("Target does not exist: {}", target.display());
         }
 
         let language = if target.is_file() {
-            Language::detect_path(target)
+            if super::input_adapters::Adapter::detect(target).is_some() {
+                Language::Unknown
+            } else {
+                Language::detect_path(target)
+            }
         } else {
             Self::detect_directory_language(target)?
         };
@@ -373,15 +383,17 @@ impl Analyzer {
         self.analyze_inner(None)
     }
 
-    /// Analyse discovered source files and return findings, statistics and coverage.
+    /// Analyse discovered inputs and return findings, statistics and coverage.
     /// UTF-8 decoding falls back to Windows-1252. Files larger than 16 MiB, read
-    /// or decoding failures, and PHP parser failures are skipped and remain
-    /// coverage gaps in a successful report.
+    /// or decoding failures, and adapter parse or unsupported-input failures are
+    /// skipped and remain coverage gaps in a successful report. Extracted scripts
+    /// receive their interpreter and cross-language checks separately.
     /// If supplied, `accumulator` records candidate parent directories and files
-    /// that were read and decoded, including PHP files that subsequently fail parsing.
+    /// that were read and decoded, including inputs that subsequently fail parsing.
     ///
     /// # Errors
     /// Propagates root metadata errors and symlink-root rejection from discovery.
+    /// Also returns an error for an extracted script with an unimplemented language.
     fn analyze_inner(
         &self,
         mut accumulator: Option<&mut crate::attestation::EvidenceAccumulator>,
@@ -497,8 +509,14 @@ impl Analyzer {
 
             let mut file_weak_points = Vec::new();
 
-            // Dispatch to language-specific analyzer
-            let file_lang = Language::detect_path(file);
+            // Registered build/configuration names take precedence over a
+            // coincidental language suffix, exactly as they do in discovery.
+            let configuration = super::input_adapters::Adapter::detect(file);
+            let file_lang = if configuration.is_some() {
+                Language::Unknown
+            } else {
+                Language::detect_path(file)
+            };
 
             // Record this file into the attestation accumulator (zero-cost when None)
             if let Some(ref mut acc) = accumulator {
@@ -506,6 +524,71 @@ impl Analyzer {
             }
 
             match file_lang {
+                Language::Unknown => {
+                    let Some(format) = configuration else {
+                        coverage.mark(
+                            file,
+                            "unsupported",
+                            Some("no selected input adapter".into()),
+                            Some(&raw_bytes),
+                        );
+                        continue;
+                    };
+                    match format.analyze(&content, &rel_path) {
+                        Ok(analysis) => {
+                            file_weak_points.extend(analysis.findings);
+                            for script in analysis.scripts {
+                                let start = file_weak_points.len();
+                                match script.language {
+                                    Language::JavaScript => self.analyze_javascript(
+                                        &script.content,
+                                        &mut file_stats,
+                                        &mut file_weak_points,
+                                        &rel_path,
+                                    )?,
+                                    Language::Shell => self.analyze_shell(
+                                        &script.content,
+                                        &mut file_stats,
+                                        &mut file_weak_points,
+                                        &rel_path,
+                                    )?,
+                                    Language::Python => self.analyze_python(
+                                        &script.content,
+                                        &mut file_stats,
+                                        &mut file_weak_points,
+                                        &rel_path,
+                                    )?,
+                                    _ => anyhow::bail!("unimplemented embedded input adapter"),
+                                }
+                                self.analyze_cross_language(
+                                    &script.content,
+                                    &mut file_weak_points,
+                                    &rel_path,
+                                )?;
+                                for finding in &mut file_weak_points[start..] {
+                                    finding.description.push_str(&format!(
+                                        " (embedded {:?} input at {})",
+                                        script.language, script.origin
+                                    ));
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            let status = if error.is::<super::input_adapters::UnsupportedInput>() {
+                                "unsupported"
+                            } else {
+                                "parse_error"
+                            };
+                            coverage.mark(
+                                file,
+                                status,
+                                Some(format!("{error:#}")),
+                                Some(&raw_bytes),
+                            );
+                            continue;
+                        }
+                    }
+                }
                 Language::Php => match super::php::analyze(&content, &rel_path) {
                     Ok(findings) => file_weak_points.extend(findings),
                     Err(error) => {
@@ -734,8 +817,12 @@ impl Analyzer {
                 }
             }
 
-            // Cross-language security checks (run on all files)
-            self.analyze_cross_language(&content, &mut file_weak_points, &rel_path)?;
+            // Structured configuration uses parsed keys and values; treating
+            // comments or schema identifiers as executable source creates false
+            // findings. Source-language adapters retain their existing checks.
+            if configuration.is_none() {
+                self.analyze_cross_language(&content, &mut file_weak_points, &rel_path)?;
+            }
 
             coverage.mark(file, "analyzed", None, Some(&raw_bytes));
             // Accumulate global stats
@@ -841,7 +928,8 @@ impl Analyzer {
     }
 
     /// Choose the most common language among discovered source files, or `Unknown`
-    /// if none are found. Ties favour the lexicographically greatest debug name.
+    /// if none are found. Registered input adapters do not vote. Ties favour the
+    /// lexicographically greatest debug name.
     ///
     /// # Errors
     /// Propagates root metadata errors and symlink-root rejection from discovery;
@@ -850,6 +938,11 @@ impl Analyzer {
         let (files, _) = super::coverage::discover(dir)?;
         let mut counts = std::collections::HashMap::new();
         for path in files {
+            // Adapter inputs are covered, but do not vote for the source
+            // language or disable language-specific report metrics.
+            if super::input_adapters::Adapter::detect(&path).is_some() {
+                continue;
+            }
             let language = Language::detect_path(&path);
             *counts.entry(language).or_insert(0usize) += 1;
         }
@@ -5108,7 +5201,9 @@ impl Analyzer {
     /// Operates on the project root (self.target or its parent) rather than on
     /// individual source files, because the relevant artefacts (Cargo.toml,
     /// Cargo.lock, Julia Manifest.toml, deno.json) are not source files in the
-    /// language-detection sense.
+    /// language-detection sense. Cargo git revisions are checked separately by
+    /// the per-file configuration adapter. Manifest reads are capped at 4 MiB;
+    /// failed reads are skipped. This check always returns `Ok`.
     fn analyze_supply_chain_manifests(&self, weak_points: &mut Vec<WeakPoint>) -> Result<()> {
         let project_root = if self.target.is_dir() {
             self.target.clone()
@@ -5119,31 +5214,10 @@ impl Analyzer {
                 .to_path_buf()
         };
 
-        // ── Cargo.toml: git deps without explicit rev= ────────────────────
+        // Cargo git revisions are checked once by the structured per-file
+        // adapter, including nested manifests. Keep the independent lock check.
         let cargo_toml_path = project_root.join("Cargo.toml");
         if let Some(content) = read_bounded(&cargo_toml_path, MANIFEST_FILE_READ_LIMIT) {
-            let git_dep_count =
-                content.matches("git = \"").count() + content.matches("git=\"").count();
-            let rev_count = content.matches("rev = \"").count() + content.matches("rev=\"").count();
-            if git_dep_count > 0 && rev_count < git_dep_count {
-                let unpinned = git_dep_count - rev_count;
-                weak_points.push(WeakPoint {
-                    file: None,
-                    line: None,
-                    category: WeakPointCategory::SupplyChain,
-                    location: Some("Cargo.toml".to_string()),
-                    severity: Severity::High,
-                    description: format!(
-                        "{} git dependency/ies in Cargo.toml without explicit `rev =` — \
-                         build is not reproducible",
-                        unpinned
-                    ),
-                    recommended_attack: vec![],
-                    suppressed: false,
-                    test_context: None,
-                });
-            }
-
             // ── Cargo.lock absent when Cargo.toml declares [lib] or [[bin]] ───
             let has_lib = content.contains("[lib]");
             let has_bin = content.contains("[[bin]]");

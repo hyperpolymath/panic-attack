@@ -5,60 +5,31 @@
 :toclevels: 3
 :sectnums:
 
-== The failure this replaces
+== What the observed startup failures establish
 
-On 2026-10-25 this repository's CI went dark for four hours. Twelve
-`pull_request` workflows concluded `startup_failure`: **zero jobs, no log, no
-annotation, no check run**. Nothing in the GitHub UI said why, and the only
-diagnosis available was to read the estate's settings canon and compare it with
-our own workflow files.
+At source `5dfc5c70a74190706312d87343959615ac77484a`, the fourteen
+pull-request runs created on 2026-11-04 conclude `startup_failure` and have
+empty job lists. For example,
+https://github.com/hyperpolymath/panic-attack/actions/runs/41912719217[CI Integrity]
+has no job log to inspect. These observations do not identify the platform's
+rejection reason. Effective GitHub Actions Settings and the actual startup
+diagnostic have not been verified.
 
-Four causes, all policy-level, none visible from the code:
+There are independently observable source defects. The five Standards callers
+now use canonical `metadatastician/standards` coordinates, but their committed
+lock entries still name `hyperpolymath/standards@333b06a...`. Three callers
+also changed their source pin to `a797d308...`. The tree allowlist omits the
+canonical calls, and its former checker discarded both subpaths and refs.
+The removed Python generator manufactured native dependency records by
+combining old identity fields with newly inferred pins. Those facts require
+repair; they do not by themselves prove the cause of all fourteen startup
+failures.
 
-tag-pinned `uses:`, e.g. `actions/checkout@v7.0.1`:: The estate posture is
-`sha_pinning_required = true`. Under it a tag-pinned `uses:` is refused **at
-startup** — the same opaque death. The control is worth having, so the fix is to
-pin properly: every `uses:` in this repository now names a 40-hex commit with a
-`# <version>` comment, and `ci-integrity.yml` refuses a regression.
-
-this repository's allowed-actions policy:: The remaining six — `rust-ci`,
-`governance`, `hypatia-scan`, `secret-scanner`, `scorecard`, `mirror` — call the
-estate's reusable workflows, and every run of them concludes `startup_failure`
-with zero jobs. The estate allowlist already covers `hyperpolymath/*`, and
-sibling repositories call the *same* reusable at the *same* pin successfully, so
-the refusal is scoped to this repository: `allowed_actions: selected` with
-`verified_allowed` passes GitHub-owned and marketplace-verified actions and
-refuses a non-verified cross-repository `uses:`. That is the exact pattern here —
-checkout, cache and `dtolnay/rust-toolchain` work; every estate call dies.
-`secret-scanner.yml` is the serious one: `main` requires the context
-**`scan / gitleaks`**, which can therefore never arrive, and no pull request can
-merge until it does. This needs repository admin (`allowed_actions: all`, the
-canon default, or `hyperpolymath/*` in `patterns_allowed`); the policy endpoints
-are 403 for an ordinary token. See `docs/ci/PROMPT-actions-policy.md`.
-
-a `uses:` pinned to a commit that no longer exists upstream:: The caller dies
-before its first job, exactly like the other two. Cheap to check, so it is.
-
-The signature that distinguishes all three from an ordinary build failure is in
-the runs API: `jobs: []` and `referenced_workflows: []` on a run whose workflow
-has a job at all. `scripts/ci/triage-startup-failure.sh` (run by
-`ci-integrity.yml`, strict on `workflow_dispatch`) resolves every referenced
-repository's canonical name and every reusable pin, so the next occurrence is one
-command away from a sentence:
-
-[source,sh]
-----
-scripts/ci/triage-startup-failure.sh
-# hyperpolymath/standards is now metadatastician/standards — allowlist patterns
-# match the canonical name, so a `uses:` written with the old owner is refused at
-# startup (signature: startup_failure with referenced_workflows: []).
-----
-
-The lesson generalises and is the reason this document exists: *a run that never
-starts is invisible to every gate that watches runs*. It produces no check run,
-so a required context silently stops arriving and the branch looks **healthier**
-than a broken one. Two of the three causes are now gated before they can bite
-(see <<integrity>>); the third is named, tracked, and evidenced.
+The source gates below distinguish immutable references, native coverage,
+canonical coordinate identity and offline policy matching. A successful source
+check does not certify live admission, billing, or a particular GitHub startup
+diagnostic. Missing required contexts remain missing until real runs publish
+them; source repairs are not substitutes for those runs.
 
 == The shape of the pipeline
 
@@ -72,8 +43,8 @@ than a broken one. Two of the three causes are now gated before they can bite
 | every PR, every push
 
 | `ci-integrity.yml`
-| Can the CI itself start? SHA pins, lockfile coverage, allowlist coverage,
-  YAML parseability.
+| Are immutable source refs, native coverage, exact tree policy and YAML
+  consistent? Live GitHub admission remains a separate observation.
 | every PR, every push, Mondays
 
 | `proven-tests.yml`
@@ -114,52 +85,112 @@ another repository can remove this repository's entire build signal. `verify`
 depends on nothing but actions this repository pins itself, so the "does it
 compile and pass" answer survives any policy change elsewhere.
 
-<<integrity>> === CI integrity
+[[integrity]]
+=== CI integrity
 
-`ci-integrity.yml` runs four gates, each of which corresponds to a way a
-workflow dies before its first job:
+The required job context remains `CI integrity (pins, lock, allowlist, YAML)`,
+with the same triggers and read-only repository permission.
 
-SHA pins:: `.githooks/validate-sha-pins.sh` (canon). Every third-party `uses:`
-names a 40-hex commit plus a `# <version>` comment.
-Lockfile coverage:: `.githooks/validate-actions-lock.sh` (canon), plus
-`scripts/ci/pin-workflow-uses.py --check`, which derives the lockfile from the
-workflows. A caller pinned to a commit whose lockfile has drifted dies with
-`failure`, 0 jobs and *no reason in the API* - which is why this is a gate and
-not a courtesy.
-Allowlist coverage:: `scripts/ci/check-allowed-actions.sh` (canon) against the
-vendored `.github/actions-allowlist.json`. No API, no admin: it lists exactly
-which `uses:` the estate policy does not cover.
-YAML parseability:: every workflow parses *and* declares a `jobs:` map. A file
-whose quoting swallowed the document parses to a scalar and never runs.
-Startup-failure triage:: `scripts/ci/triage-startup-failure.sh` checks every
-`uses:`: 40-hex pin, canonical repository name after any rename, and that each
-reusable pin still exists. It also states the one cause no file can show — a
-repository-scoped allowed-actions policy refusing a cross-repository reference —
-and can print sibling repositories' run conclusions as the discriminator.
-Report-only on a pull request (the finding is an owner action, not a code
-change), strict on `workflow_dispatch`.
+SHA pins:: `.githooks/validate-sha-pins.sh` checks external action and
+reusable refs. The offline allowlist also requires a complete 40-hex SHA before
+matching an external coordinate.
 
-Maintenance: after changing any `uses:`, run
+Canonical names:: The unchanged published Standards
+`scripts/check-workflow-coordinates.sh` rejects executable former-owner
+`hyperpolymath/standards` coordinates, including runtime checkouts.
+Historical comments are not executable references.
 
-[source,sh]
+Native lock coverage:: `.githooks/validate-actions-lock.sh` invokes the
+official `gh-actions-lock v0.2.0` binary through the unchanged published
+`scripts/update-actions-lock.sh --verify-local`, then
+`scripts/check-lock-sync.sh`. The latter checks reusable and local composite
+references in both directions. No consumer code emits native lock records.
+The gate checks the native executable digest, the exact clean Standards
+checkout, a clean consumer commit, and unchanged workflow/lock bytes. Both
+checkouts reject assume-unchanged/skip-worktree index flags and ignored inputs;
+Git status alone cannot bind hidden working bytes to the recorded commit.
+
+Tree allowlist:: `scripts/ci/check-allowed-actions.sh` parses YAML, resolves
+aliases, and reads job/step `uses` values. Owner/repository spelling is
+case-insensitive; the complete subpath and ref must match. The five canonical
+Standards permissions name only the existing reviewed paths and SHAs.
+Existing unrelated patterns are retained. The GitHub-owned flag is respected;
+Marketplace verification and effective service Settings are not inferred.
+
+YAML and triage:: Unparseable workflows, invalid ref structures and an empty
+input population fail. Printed/commented examples are not executable refs.
+The source/API triage reports observations rather than claiming that zero jobs
+prove an allowlist failure.
+
+The helper source is
+https://github.com/metadatastician/standards/tree/087f6bff5135ce3da6f287c83752256ce4a8efc1[Standards `087f6bff...`].
+CI fetches that immutable public commit outside the consumer checkout.
+The official Linux amd64 executable is release asset 634768078, with SHA-256
+`79ec84c191667fd935a277e6fd3662cf5d3669cccc9e99998731d8f306f373b6`.
+The YAML reader is mikefarah yq v4.54.1, release asset 597222595, SHA-256
+`8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f`.
+
+For local verification, supply absolute paths to the same clean helper
+checkout and checksum-matching binary, with yq, jq, Bash and Git available:
+
+[source,shell]
 ----
-bash scripts/ci/resolve-action-shas.sh      # network: resolves tag -> commit
-python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json
+export STANDARDS_ROOT=/absolute/path/to/standards
+export GH_ACTIONS_LOCK_BIN=/absolute/path/to/gh-actions-lock
+just integrity
 ----
 
-`action-pins.json` is committed on purpose: it records which tag a pin stood for
-on the day it was taken, so a reviewer can tell an intentional bump from a
-silent re-point.
+==== Temporary process-status adapter
 
-One hard-won rule about `actions.lock`: it is a **superset** of what `grep
-uses:` finds. `gh actions-lock` also records actions that composite actions
-resolve internally — `actions/upload-pages-artifact` runs
-`actions/upload-artifact@bbbca2dd…` itself — and GitHub validates the lockfile
-at *job setup*. A regenerator that rebuilds the file from the workflows deletes
-those entries, and the only symptom is `lockfile missing pin for …` in a job
-that never runs a step. `scripts/ci/pin-workflow-uses.py` therefore MERGES its
-`dependencies:` section instead of rebuilding it, and `--check` (which CI runs)
-is idempotent over the merged form.
+The published helper can promote a valid-looking report even when the native
+process exits 2 or higher. The separate upstream repair is tracked in
+https://github.com/metadatastician/standards/pull/1394[Standards #1394].
+Its unsigned, unqualified candidate is not copied into this consumer.
+
+`scripts/ci/actions-lock-transport.sh` accepts only
+`actions-lock --verify-local` and the same command with
+`--json=valid,findings`. It invokes the official binary without ambient
+authentication or alternate workflow-directory settings. Native exit 0/1 and
+their unmodified stdout reach the published helper. For every other exit,
+stdout is retained as raw failure evidence but is not offered to that helper
+as a reconcilable report. The native status remains nonzero. This adapter
+neither parses findings nor changes the published reconciliation rules.
+
+The artifact retains actual stdout, stderr, exit status, consumer commit/tree,
+helper revision and executable digest. `not_run` means consumer verification
+did not execute; `running` means no native exit was recorded after invocation. A native exit 1 can pass only through the existing canonical
+source reconciliation and its actual findings. No report is replaced with an
+empty success. This status guard does not claim to repair every upstream
+report-shape defect. Remove it after #1394's signed, hosted-qualified fix is
+adopted at a reviewed canonical pin.
+
+`scripts/ci/test-ci-integrity.sh` includes exact path/SHA negatives,
+quoted/flow YAML controls, deliberately injected valid-JSON/exit-2 and
+missing-tool/timeout statuses, malformed reports and unsupported argv.
+Those mocked protocol cases are distinguished from the real official
+malformed-lock control and from actual consumer verification. Their presence
+in source is not an execution receipt; hosted results must record execution.
+
+==== Updating the native lock
+
+Commit the reviewed source change first. Use the existing
+https://github.com/hyperpolymath/proven-cicd/actions/workflows/actions-lock-recovery.yml[canonical Actions Lock Recovery workflow]
+for `hyperpolymath/panic-attack` at that exact 40-character commit.
+Dispatch is a separate authorized operation; `just pins` prints the
+candidate SHA and exits nonzero without generating or dispatching anything.
+
+The recovery workflow runs the official binary and the published canonical
+`regen_lock` chain in its isolated subject checkout. It restores workflow
+bytes and produces a candidate artifact. Before applying that artifact,
+verify its exact source identity, actual execution result, canonical lock-sync
+result, preserved workflow bytes and native dependency identities. Commit only
+the reviewed generated lock after those checks. Reconcile a changed subject
+before generating again.
+
+The legacy `action-pins.json` and resolver record historical tag references;
+they are not native identity evidence and no longer drive generation.
+Do not reconstruct native owner/repository IDs, transitive edges or ref fields,
+and do not remove workflow coverage to obtain a passing report.
 
 == Testing: evidence-graded, not declared
 

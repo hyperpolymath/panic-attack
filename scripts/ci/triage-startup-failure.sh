@@ -9,34 +9,14 @@
 # `referenced_workflows: []` even when the workflow's only job is `uses:` a
 # reusable workflow from another repository. Nothing in the API says why.
 #
-# There are five causes, and they are distinguishable with the files plus a
-# read-only API call:
+# This command reports source/API observations: pin shape, repository
+# canonical name and whether a reusable commit can be read. Zero jobs and
+# referenced_workflows: [] do not identify a cause. API reachability is not
+# GitHub admission, and sibling runs are comparative evidence, not a read of
+# this repository's effective Actions Settings or startup diagnostic.
 #
-#   1. a `uses:` that is not a 40-hex commit, under `sha_pinning_required`;
-#   2. a `uses:` whose repository is NOT the one the workflow names — i.e. the
-#      repo was renamed (or transferred) and the allowlist patterns match the
-#      *canonical* owner, not the spelling in the file;
-#   3. a reusable workflow pinned to a commit that no longer exists upstream;
-#   4. a workflow file that does not parse as a workflow (GitHub's parser is
-#      stricter than YAML: duplicate job keys, `on:` shapes, unknown keys);
-#   5. THIS REPOSITORY's allowed-actions policy refusing a non-verified
-#      cross-repository `uses:`. Under `allowed_actions: selected` with
-#      `verified_allowed`, GitHub-owned and marketplace-verified actions pass and
-#      a `uses: some-org/some-repo/...` does not — so checkout, cache and
-#      dtolnay/rust-toolchain work while every call into the estate's own
-#      reusable workflows dies at startup. The signature is exactly the one above
-#      (zero jobs, `referenced_workflows: []`), and the discriminator is that
-#      sibling repositories calling the SAME reusable at the SAME pin succeed.
-#      Only a repository admin can change it (GET /actions/permissions is 403 for
-#      an ordinary token), which is why this script reports rather than fixes.
-
-# Set TRIAGE_SIBLINGS to a space-separated list of repositories that use the same
-# reusable workflows, to have the script state the discriminator explicitly:
-#   TRIAGE_SIBLINGS="hyperpolymath/hypatia hyperpolymath/verisimdb"
-#
-# This script checks 1–3 against the live GitHub API (read-only, no admin
-# permission needed: public repository metadata is enough) and leaves 4 to
-# `ci-integrity.yml`, which parses every workflow with PyYAML.
+# TRIAGE_SIBLINGS optionally lists space-separated repositories whose recent
+# run conclusions will be printed without inferring a policy failure.
 #
 # Usage:
 #   scripts/ci/triage-startup-failure.sh             # exit 1 on any finding
@@ -144,43 +124,38 @@ for ref in "${refs[@]}"; do
     repo="$owner/$second"
 
     if ! printf '%s' "$at" | grep -qE '^[0-9a-f]{40}$'; then
-        emit error "$ref: not pinned to a 40-hex commit — refused at startup under sha_pinning_required"
+        emit error "$ref: not pinned to a 40-hex commit — source violates the immutable-ref policy"
         continue
     fi
 
     canon="$(canonical_name "$repo")"
     if [ -z "$canon" ]; then
-        emit error "$repo: repository not found (or API unreachable) for \`$ref\` — the run cannot start"
+        emit error "$repo: repository not found or API unreachable for \`$ref\` — source identity could not be verified"
         continue
     fi
     if [ "$canon" != "$repo" ]; then
-        # A rename is reported, not condemned: what matters is whether the
-        # reference is permitted, and a rename only bites when the allowlist
-        # pattern matches the old owner and not the new one.
-        emit warning "$repo now resolves to $canon — a \`uses:\` keeps working across a rename as long as an allowlist pattern matches the canonical name; check \`patterns_allowed\` before assuming this is the cause"
+        # A metadata redirect does not qualify executable coordinates or the
+        # identity records in the consumer's generated native lock.
+        emit warning "$repo now resolves to $canon — review the canonical executable coordinate and generated lock identity; this metadata redirect does not prove startup admission"
         repo="$canon"
     fi
 
     case "$subpath" in
         .github/workflows/*)
             if ! ref_exists "$repo" "$at"; then
-                emit error "$ref: reusable workflow pinned to $at, which no longer exists in $repo — the caller dies before its first job"
+                emit error "$ref: could not verify reusable commit $at in $repo — absence and API failure are not distinguished"
                 continue
             fi
-            # The pin exists. If runs of the calling workflow still die at
-            # startup, the reference is being refused by this repository's
-            # allowed-actions policy — the one cause no file can show.
             echo "  cross-repo reusable: $ref"
-            echo "    if the calling workflow reports startup_failure with referenced_workflows: [], this"
-            echo "    repository's allowed-actions policy is refusing it. Sibling repos calling the same"
-            echo "    reusable at the same pin are the discriminator; the fix needs repository admin"
-            echo "    (allowed_actions=all, or add \`$owner/*\` to patterns_allowed)."
+            echo "    commit metadata is readable; this does not verify the reusable file,"
+            echo "    native lock closure, effective Actions Settings or startup admission."
+            echo "    use the actual platform diagnostic before attributing a zero-job failure."
             ;;
     esac
 done
 
 if [ -n "${TRIAGE_SIBLINGS:-}" ]; then
-    echo "== discriminator: do siblings actually run this? =="
+    echo "== comparative sibling run observations =="
     for sib in $TRIAGE_SIBLINGS; do
         summary="$(api "repos/$sib/actions/runs?per_page=20")"
         printf '%s\n' "$summary" | python3 -c '
@@ -193,15 +168,15 @@ counts = collections.Counter((r.get("conclusion") or r.get("status")) for r in d
 print("  " + ", ".join(f"{k}={v}" for k, v in counts.most_common()) or "  (no runs)")
 ' | sed "s|^|  $sib: |"
     done
-    echo "  A sibling whose reusable-workflow runs SUCCEED, at the same pin, means the"
-    echo "  estate allowlist is fine and the refusal is scoped to this repository."
+    echo "  Sibling conclusions are comparative observations only; they do not establish"
+    echo "  this repository's effective Actions policy or the cause of its startup failure."
 fi
 
 echo "== summary =="
 if [ "$findings" -eq 0 ]; then
-    echo "no startup-failure causes found in $WORKFLOWS_DIR"
+    echo "No source/API findings in $WORKFLOWS_DIR; live admission and startup cause remain unverified."
 else
-    echo "$findings finding(s) — see above. Each one produces a run with zero jobs and no log."
+    echo "$findings source/API finding(s) — see above; platform causation is not established."
 fi
 
 if [ "$REPORT_ONLY" -eq 1 ]; then
