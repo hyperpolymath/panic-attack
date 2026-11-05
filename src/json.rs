@@ -62,6 +62,14 @@ mod tests {
     }
 
     #[test]
+    fn numbers_follow_rfc_8785_on_decimal_ties() {
+        // RFC 8785 Appendix B: binary64 0x43143ff3c1cb0959 must print as
+        // ECMAScript does, choosing the even digit on a decimal tie.
+        let tie = f64::from_bits(0x4314_3ff3_c1cb_0959);
+        assert_eq!(to_canonical_string(&tie).unwrap(), "1424953923781206.2\n");
+    }
+
+    #[test]
     fn rejects_integers_outside_i_json_range() {
         // I-JSON safe integers: [-(2^53 - 1), 2^53 - 1].
         assert!(to_canonical_string(&((1u64 << 53) - 1)).is_ok());

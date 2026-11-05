@@ -29,7 +29,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # JCS (RFC 8785) for JSON artefacts: the estate tool behind JSON-POLICY rule
 # J-1. Not on crates.io, so pinned to a full commit SHA.
-ijson-jcs = { git = "https://github.com/hyperpolymath/ijson-jcs", rev = "3a9a4ee326a968a32b2f152b4faec243a2d00765" }
+ijson-jcs = { git = "https://github.com/hyperpolymath/ijson-jcs", rev = "03df9ed20c1a2e1d6d913b8b20cf0874651bb61a" }
 # Pure safe-Rust YAML (replaces serde_yaml + unsafe-libyaml, RUSTSEC-2024-0449).
 serde-saphyr = "2.0"
 regex = "1.10"
@@ -44,7 +44,7 @@ sha2 = "0.11"
 hex = "0.4"
 getrandom = "0.4"
 walkdir = "2.5"
-toml_edit = { version = "0.23", default-features = false, features = ["parse"] }
+toml_edit = { version = "0.25", default-features = false, features = ["parse"] }
 dirs = "7.0"
 ed25519-dalek = { version = "3.0", optional = true }
 ureq = { version = "3.3", optional = true }
