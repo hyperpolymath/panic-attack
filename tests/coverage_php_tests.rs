@@ -311,3 +311,68 @@ fn kyaml_output_format_refuses_a_kyaml_named_report() {
     assert!(!output.status.success());
     assert!(!out.exists(), "nothing is written when the name is refused");
 }
+
+/// Run `assail --output-format kyaml --output <out>` on a one-file project.
+fn assail_kyaml(project: &std::path::Path, out: &std::path::Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_panic-attack"))
+        .args(["--output-format", "kyaml", "assail"])
+        .arg(project)
+        .arg("--output")
+        .arg(out)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_kyaml_name_in_any_case() {
+    // On a case-insensitive filesystem report.KYAML and report.kyaml are
+    // one file, so the copy would overwrite the report.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.KYAML");
+    let output = assail_kyaml(dir.path(), &out);
+    assert!(!output.status.success());
+    assert!(!out.exists(), "nothing is written when the name is refused");
+    assert!(!dir.path().join("report.kyaml").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn kyaml_output_format_refuses_a_symlinked_copy_path() {
+    // A report.kyaml symlink to report.json would route the copy onto the
+    // sealed report, even when the report does not exist yet.
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.json");
+    std::os::unix::fs::symlink(&out, dir.path().join("report.kyaml")).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("symbolic link"), "{stderr}");
+    assert!(
+        !out.exists(),
+        "nothing is written when the copy path is refused"
+    );
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_copy_path_hard_linked_to_the_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.json");
+    std::fs::write(&out, "previous report\n").unwrap();
+    std::fs::hard_link(&out, dir.path().join("report.kyaml")).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("same file as the report"), "{stderr}");
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        "previous report\n",
+        "the report is untouched"
+    );
+}

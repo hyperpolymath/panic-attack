@@ -3061,6 +3061,7 @@ dependencies = [
  "proptest",
  "rayon",
  "regex",
+ "same-file",
  "serde",
  "serde-saphyr",
  "serde_json",

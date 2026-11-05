@@ -1335,6 +1335,52 @@ fn parse_axis(value: &str) -> Option<AttackAxis> {
     }
 }
 
+/// Where `assail --output-format kyaml` writes its KYAML copy of the report
+/// at `out`: beside it, with a `.kyaml` extension.
+///
+/// The JSON at `out` is the report of record, and an attestation seals its
+/// bytes, so the copy must never land on it. This refuses, before anything
+/// is written:
+/// - an `--output` already named `.kyaml` in any letter case, since on a
+///   case-insensitive filesystem `report.KYAML` and `report.kyaml` are one
+///   file;
+/// - a copy path that is a symbolic link, which could point at the report
+///   (even before the report exists);
+/// - a copy path that is already the same file as the report, such as a
+///   hard link to it.
+fn kyaml_copy_path(out: &Path) -> Result<PathBuf> {
+    let path = out.with_extension("kyaml");
+    let named_kyaml = out
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("kyaml"));
+    anyhow::ensure!(
+        !named_kyaml,
+        "assail --output names the JSON report; use a .json name and the \
+         KYAML copy is written beside it as {}",
+        path.display()
+    );
+    if let Ok(meta) = fs::symlink_metadata(&path) {
+        anyhow::ensure!(
+            !meta.file_type().is_symlink(),
+            "refusing to write the KYAML copy through the symbolic link {}",
+            path.display()
+        );
+        if out.exists() {
+            anyhow::ensure!(
+                !same_file::is_same_file(out, &path).with_context(|| format!(
+                    "comparing {} with {}",
+                    out.display(),
+                    path.display()
+                ))?,
+                "{} is the same file as the report {}; refusing to overwrite the report",
+                path.display(),
+                out.display()
+            );
+        }
+    }
+    Ok(path)
+}
+
 fn default_amuck_report_path() -> PathBuf {
     let ts = chrono::Utc::now().format("%Y%m%d%H%M%S");
     PathBuf::from(format!("reports/amuck-{}.json", ts))
@@ -1489,14 +1535,7 @@ fn run_main() -> Result<()> {
             // The JSON stays the report of record: the seal covers its bytes.
             let kyaml_path = match &output {
                 Some(out) if cli.output_format == ReportOutputFormat::Kyaml => {
-                    let path = out.with_extension("kyaml");
-                    anyhow::ensure!(
-                        path != *out,
-                        "assail --output names the JSON report; use a .json name and the \
-                         KYAML copy is written beside it as {}",
-                        path.display()
-                    );
-                    Some(path)
+                    Some(kyaml_copy_path(out)?)
                 }
                 _ => None,
             };
