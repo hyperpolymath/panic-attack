@@ -29,7 +29,7 @@ fn malformed_php_and_unsupported_inputs_are_visible() {
     )
     .unwrap();
     std::fs::write(dir.path().join("bad.php"), "<?php function broken( {").unwrap();
-    std::fs::write(dir.path().join("config.toml"), "enabled = true\n").unwrap();
+    std::fs::write(dir.path().join("unsupported.swift"), "let enabled = true\n").unwrap();
     std::fs::write(dir.path().join("README.md"), "Documentation").unwrap();
     let report = assail::analyze(dir.path()).unwrap();
     assert_eq!(report.coverage.status, "partial");
