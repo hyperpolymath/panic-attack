@@ -2212,8 +2212,9 @@ dependencies = [
 [[package]]
 name = "ijson-jcs"
 version = "0.1.0"
-source = "git+https://github.com/hyperpolymath/ijson-jcs?rev=3a9a4ee326a968a32b2f152b4faec243a2d00765#3a9a4ee326a968a32b2f152b4faec243a2d00765"
+source = "git+https://github.com/hyperpolymath/ijson-jcs?rev=03df9ed20c1a2e1d6d913b8b20cf0874651bb61a#03df9ed20c1a2e1d6d913b8b20cf0874651bb61a"
 dependencies = [
+ "ryu-js",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -3707,6 +3708,12 @@ dependencies = [
  "tempfile",
  "wait-timeout",
 ]
+
+[[package]]
+name = "ryu-js"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
 
 [[package]]
 name = "same-file"

@@ -2,6 +2,15 @@
 
 === [Unreleased]
 
+==== Fixed — JCS numbers on decimal ties
+
+* `+ijson-jcs+` is bumped from 3a9a4ee to 03df9ed, which formats numbers with
+`+ryu-js+` (ECMAScript `+Number::toString+`). The old pin printed RFC 8785
+Appendix B vector 0x43143ff3c1cb0959 as `+1424953923781206.3+`; JCS requires
+`+1424953923781206.2+` (ties to even). Any report or attestation holding such a
+float now hashes to the value other JCS implementations compute. A test in
+`+crate::json+` pins the vector.
+
 ==== Fixed — KYAML keys holding a line separator
 
 * KYAML output now escapes U+2028 (LS) and U+2029 (PS) as `+\uXXXX+`, as it
