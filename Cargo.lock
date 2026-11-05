@@ -2212,8 +2212,9 @@ dependencies = [
 [[package]]
 name = "ijson-jcs"
 version = "0.1.0"
-source = "git+https://github.com/hyperpolymath/ijson-jcs?rev=3a9a4ee326a968a32b2f152b4faec243a2d00765#3a9a4ee326a968a32b2f152b4faec243a2d00765"
+source = "git+https://github.com/hyperpolymath/ijson-jcs?rev=03df9ed20c1a2e1d6d913b8b20cf0874651bb61a#03df9ed20c1a2e1d6d913b8b20cf0874651bb61a"
 dependencies = [
+ "ryu-js",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -3067,8 +3068,10 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "toml_edit",
+ "toml_edit 0.25.0+spec-1.1.0",
  "tree-sitter",
+ "tree-sitter-css",
+ "tree-sitter-html",
  "tree-sitter-php",
  "ureq",
  "walkdir",
@@ -3347,7 +3350,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219cb19e96be00ab2e37d6e299658a0cfa83e52429179969b0f0121b4ac46983"
 dependencies = [
- "toml_edit",
+ "toml_edit 0.23.10+spec-1.0.0",
 ]
 
 [[package]]
@@ -3708,6 +3711,12 @@ dependencies = [
  "tempfile",
  "wait-timeout",
 ]
+
+[[package]]
+name = "ryu-js"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
 
 [[package]]
 name = "same-file"
@@ -4237,13 +4246,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml_datetime"
+version = "1.1.2+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "toml_edit"
 version = "0.23.10+spec-1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "84c8b9f757e028cee9fa244aea147aab2a9ec09d5325a9b01e0a49730c2b5269"
 dependencies = [
  "indexmap",
- "toml_datetime",
+ "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_parser",
+ "winnow 0.7.14",
+]
+
+[[package]]
+name = "toml_edit"
+version = "0.25.0+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caee3f6e1c6f2025affe9191e6e6f66ade10b48f36b1a1b3cd92dfe405ffd260"
+dependencies = [
+ "indexmap",
+ "toml_datetime 1.1.2+spec-1.1.0",
  "toml_parser",
  "winnow 0.7.14",
 ]
@@ -4299,6 +4329,26 @@ dependencies = [
  "regex",
  "serde_json",
  "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-css"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5cbc5e18f29a2c6d6435891f42569525cf95435a3e01c2f1947abcde178686f"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-html"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "261b708e5d92061ede329babaaa427b819329a9d427a1d710abb0f67bbef63ee"
+dependencies = [
+ "cc",
  "tree-sitter-language",
 ]
 

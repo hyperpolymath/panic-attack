@@ -1,35 +1,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 #
-# ci-integrity.yml — gates on the CI *system* itself, not on the code.
-#
-# WHY THIS WORKFLOW EXISTS
-# ------------------------
-# On 2026-10-25 this repository's CI went dark for four hours and the red was
-# unreadable: 12 of 12 pull_request workflows concluded `startup_failure` with
-# zero jobs and no log. The cause was not code. It was two policy mismatches
-# between this repo and the estate's own settings canon:
-#
-#   1. `uses: metadatastician/standards/...` — the canonical allowlist
-#      (rhodium-standard-repositories/actions-allowlist/allowed-actions.json)
-#      permits `hyperpolymath/*` and does NOT permit `metadatastician/*`.
-#   2. tag-pinned `uses:` (actions/checkout@v7.0.1) while the estate posture is
-#      `sha_pinning_required = true`.
-#
-# A run that never starts cannot be diagnosed from its log, cannot be
-# satisfyingly re-run, and does not report a check at all — so a required
-# context silently stops arriving and the branch looks healthier than it is.
-# These four gates make each cause of that failure legible *before* it happens:
-#
-#   sha-pins      every third-party `uses:` names a 40-hex commit
-#   lock-coverage every SHA-pinned action is keyed in .github/workflows/actions.lock
-#   allowlist     every `uses:` is covered by the estate allowlist
-#   yaml-parse    every workflow actually parses, and has a jobs: map
-#
-# NO `paths:` FILTER, deliberately: this check is meant to be REQUIRED, and a
-# required check that filters itself off never reports (see standards
-# required-contexts.yml). It is a checkout plus a few seconds of bash.
-
+# Source integrity checks cannot establish GitHub's effective live Actions
+# policy or explain a zero-job startup failure without its actual diagnostic.
+# Native lock generation belongs to the published canonical recovery chain.
 name: CI Integrity
 
 on:
@@ -37,7 +11,7 @@ on:
   push:
     branches: [main, master]
   schedule:
-    - cron: '17 5 * * 1'   # Mondays, off the hour
+    - cron: '17 5 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -48,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Pinned: this is the parser the canon validators require (YAML-POLICY Y-1).
   YQ_VERSION: v4.54.1
+  STANDARDS_REF: 087f6bff5135ce3da6f287c83752256ce4a8efc1
 
 jobs:
   integrity:
@@ -57,41 +31,69 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Initialize runner-local paths and evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          standards_root="$RUNNER_TEMP/panic-ci-integrity-standards"
+          evidence_dir="$RUNNER_TEMP/panic-ci-integrity-evidence"
+          mkdir -p "$evidence_dir"
+          printf 'not_run\n' > "$evidence_dir/native.exit"
+          {
+            printf 'STANDARDS_ROOT=%s\n' "$standards_root"
+            printf 'ACTIONS_LOCK_EVIDENCE_DIR=%s\n' "$evidence_dir"
+          } >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install yq
+      - name: Install checksum-qualified YAML and native lock tools
         run: |
           set -euo pipefail
-          url="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
-          curl -fsSL "$url" -o /usr/local/bin/yq
-          chmod +x /usr/local/bin/yq
-          yq --version
+          tool_dir="$RUNNER_TEMP/panic-ci-integrity-bin"
+          mkdir -p "$tool_dir"
+          curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --max-time 60 \
+            "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64" -o "$tool_dir/yq"
+          printf '%s  %s\n' '8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f' "$tool_dir/yq" | sha256sum --check
+          curl --fail --show-error --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 --max-time 60 \
+            https://github.com/github/gh-actions-lock/releases/download/v0.2.0/linux-amd64 -o "$tool_dir/gh-actions-lock"
+          printf '%s  %s\n' '79ec84c191667fd935a277e6fd3662cf5d3669cccc9e99998731d8f306f373b6' "$tool_dir/gh-actions-lock" | sha256sum --check
+          chmod u+x "$tool_dir/yq" "$tool_dir/gh-actions-lock"
+          "$tool_dir/yq" --version
+          printf '%s\n' "$tool_dir" >> "$GITHUB_PATH"
+          printf 'GH_ACTIONS_LOCK_BIN=%s\n' "$tool_dir/gh-actions-lock" >> "$GITHUB_ENV"
+
+      - name: Fetch unchanged published canonical helpers
+        run: |
+          set -euo pipefail
+          git init --quiet "$STANDARDS_ROOT"
+          timeout 120 git -C "$STANDARDS_ROOT" fetch --quiet --no-tags --depth=1 \
+            https://github.com/metadatastician/standards.git "$STANDARDS_REF"
+          git -C "$STANDARDS_ROOT" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$STANDARDS_ROOT" rev-parse HEAD)" = "$STANDARDS_REF"
+
+      - name: CI integrity regression controls
+        run: bash scripts/ci/test-ci-integrity.sh
 
       - name: SHA pins (canon rule 10)
         run: bash .githooks/validate-sha-pins.sh
 
-      - name: Lockfile is derived from the workflows
-        run: python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json --check
+      - name: Canonical executable workflow coordinates
+        run: bash "$STANDARDS_ROOT/scripts/check-workflow-coordinates.sh" .github/workflows
 
-      - name: Lockfile covers every SHA-pinned action
+      - name: Native lock coverage and canonical lock sync
         run: bash .githooks/validate-actions-lock.sh
 
-      - name: Actions allowlist (would this run start?)
+      - name: Exact tree allowlist (live Settings unverified)
         run: bash scripts/ci/check-allowed-actions.sh .github/actions-allowlist.json .github/workflows
 
-      # The cause no file scan can see: a `uses:` that is well-formed, correctly
-      # pinned, and still refused at startup (`referenced_workflows: []`, zero
-      # jobs, no log) because the repository's allowed-actions policy does not
-      # cover it — or because the referenced repository was renamed and nothing
-      # covers the new owner. Both are named here, with the evidence.
-      - name: Startup-failure triage
+      - name: Startup-failure source triage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
             bash scripts/ci/triage-startup-failure.sh
           else
             bash scripts/ci/triage-startup-failure.sh --report
@@ -103,32 +105,42 @@ jobs:
           fail=0
           for f in .github/workflows/*.yml .github/workflows/*.yaml; do
             [ -e "$f" ] || continue
-            case "$f" in *.lock) continue ;; esac
             if ! yq -e '.' "$f" >/dev/null 2>&1; then
               echo "::error file=$f::does not parse as YAML"
               fail=1
               continue
             fi
-            # A file that parses to a scalar (unclosed quote swallowing the
-            # document) has no jobs at all and dies at startup. Refuse it.
-            if [ "$(yq -r '.jobs | tag' "$f" 2>/dev/null)" != '!!map' ]; then
+            if [ "$(yq -r '.jobs | tag' "$f")" != '!!map' ]; then
               echo "::error file=$f::parses but declares no jobs: map"
               fail=1
             fi
           done
           exit "$fail"
 
+      - name: Retain raw native result and immutable source identity
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ci-integrity-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/panic-ci-integrity-evidence
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Summary
         if: always()
         run: |
           {
-            echo "## CI integrity"
-            echo ""
-            echo "| Gate | What it prevents |"
-            echo "|------|------------------|"
-            echo "| SHA pins | tag-pinned \`uses:\` refused at startup under \`sha_pinning_required\` |"
-            echo "| Lockfile | a reusable caller dying with \`failure\`, 0 jobs, no reason |"
-            echo "| Allowlist | \`startup_failure\` from an action outside the estate allowlist |"
-            echo "| YAML parse | a workflow that parses to nothing and never runs |"
-            echo "| Startup triage | \`startup_failure\` with zero jobs: unpinned, renamed, missing pin, or refused by the repo's actions policy |"
+            echo '## CI integrity'
+            echo ''
+            echo 'Step conclusions record the result; this table describes each gate.'
+            echo ''
+            echo '| Gate | Scope |'
+            echo '|------|-------|'
+            echo '| SHA pins and coordinates | Immutable refs and canonical executable repository names |'
+            echo '| Native lock | Official v0.2.0 result, unchanged published reconciliation and bidirectional lock sync |'
+            echo '| Tree allowlist | Complete action/workflow path and exact SHA, without a live Settings claim |'
+            echo '| YAML parse | Readable workflow documents with a jobs map |'
+            echo '| Startup triage | Source/API observations; no inferred platform root cause from zero jobs alone |'
+            echo ''
+            echo 'The raw artifact records not_run if consumer verification never executed, or running if no native exit was recorded.'
           } >> "$GITHUB_STEP_SUMMARY"

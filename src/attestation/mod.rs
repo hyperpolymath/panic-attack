@@ -54,10 +54,45 @@ pub enum VerifyResult {
         /// The embedded intent and evidence were rehashed and match the
         /// seal. False for legacy seals, whose hashes cannot be recomputed.
         content_bound: bool,
+        /// A report was supplied and its SHA-256 matches `seal.report_hash`.
+        report_checked: bool,
         signature_verified: bool,
     },
     /// One or more chain invariants failed.
     Failed(Vec<String>),
+}
+
+/// Optional checks on top of the chain invariants.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VerifyOptions<'a> {
+    /// SHA-256 of the report file, as 64 lowercase hex characters (see
+    /// [`sha256_reader`]). When given, it must equal `seal.report_hash`, so
+    /// the attestation is checked against the report itself rather than only
+    /// against the digest stored beside it. A digest rather than the bytes,
+    /// so a caller can hash a large report as a stream.
+    pub report_sha256: Option<&'a str>,
+    /// Reject legacy seals, whose intent and evidence cannot be rehashed.
+    pub require_bound: bool,
+}
+
+/// SHA-256 of everything `reader` yields, as 64 lowercase hex characters.
+///
+/// Hashes through a fixed-size buffer, so memory use does not grow with the
+/// input. Use it to fill [`VerifyOptions::report_sha256`]; a byte slice is a
+/// reader too.
+pub fn sha256_reader<R: std::io::Read>(mut reader: R) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    let mut buf = [0_u8; 8192];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Verify an attestation sidecar file.
@@ -72,6 +107,14 @@ pub enum VerifyResult {
 /// Returns `VerifyResult::Ok` when all checks pass, `VerifyResult::Failed`
 /// with a list of failure reasons otherwise.
 pub fn verify_attestation_file(path: &std::path::Path) -> anyhow::Result<VerifyResult> {
+    verify_attestation_file_with(path, &VerifyOptions::default())
+}
+
+/// [`verify_attestation_file`] with the optional checks in `options`.
+pub fn verify_attestation_file_with(
+    path: &std::path::Path,
+    options: &VerifyOptions<'_>,
+) -> anyhow::Result<VerifyResult> {
     use std::io::Read;
 
     // Attestation envelopes are JSON. They embed three hashes plus a small
@@ -87,12 +130,20 @@ pub fn verify_attestation_file(path: &std::path::Path) -> anyhow::Result<VerifyR
         .read_to_string(&mut content)
         .map_err(|e| anyhow::anyhow!("reading {}: {}", path.display(), e))?;
 
-    verify_attestation_str(&content)
+    verify_attestation_str_with(&content, options)
 }
 
 /// Verify an attestation envelope held in memory. See
 /// [`verify_attestation_file`].
 pub fn verify_attestation_str(content: &str) -> anyhow::Result<VerifyResult> {
+    verify_attestation_str_with(content, &VerifyOptions::default())
+}
+
+/// [`verify_attestation_str`] with the optional checks in `options`.
+pub fn verify_attestation_str_with(
+    content: &str,
+    options: &VerifyOptions<'_>,
+) -> anyhow::Result<VerifyResult> {
     let tree: serde_json::Value = serde_json::from_str(content)
         .map_err(|e| anyhow::anyhow!("parsing attestation envelope: {}", e))?;
     let envelope: A2mlEnvelope = serde_json::from_value(tree.clone())
@@ -165,6 +216,25 @@ pub fn verify_attestation_str(content: &str) -> anyhow::Result<VerifyResult> {
         }
     };
 
+    if options.require_bound && seal.hash_scheme == seal::HASH_SCHEME_LEGACY {
+        failures
+            .push("legacy hash scheme: intent and evidence are not bound to the seal".to_string());
+    }
+
+    // The report itself, when supplied, must hash to seal.report_hash.
+    let report_checked = match options.report_sha256 {
+        Some(computed) => {
+            if computed != seal.report_hash {
+                failures.push(format!(
+                    "report_hash mismatch: stored={} computed={}",
+                    seal.report_hash, computed
+                ));
+            }
+            true
+        }
+        None => false,
+    };
+
     // decision_hash in the envelope must match seal.report_hash
     if envelope.decision_hash != seal.report_hash {
         failures.push(format!(
@@ -185,6 +255,7 @@ pub fn verify_attestation_str(content: &str) -> anyhow::Result<VerifyResult> {
         issued_at: envelope.issued_at.clone(),
         chain_hash: seal.chain_hash.clone(),
         content_bound,
+        report_checked,
         signature_verified,
     })
 }
@@ -270,6 +341,11 @@ mod tests {
     /// Seal a small scan of a temporary directory and return the sidecar
     /// exactly as `assail --attest` writes it.
     fn sealed_sidecar() -> String {
+        sealed_sidecar_and_report().0
+    }
+
+    /// The sidecar plus the exact report bytes it seals.
+    fn sealed_sidecar_and_report() -> (String, String) {
         let dir = tempfile::tempdir().expect("tempdir");
         let args = vec!["--verbose".to_string()];
         let mut builder = AttestationChainBuilder::begin(dir.path(), &args).expect("begin");
@@ -280,7 +356,8 @@ mod tests {
         let report = crate::json::to_canonical_string(&serde_json::json!({"weak_points": []}))
             .expect("report");
         let envelope = builder.seal(report.as_bytes(), None).expect("seal");
-        crate::json::to_canonical_string(&envelope).expect("sidecar")
+        let sidecar = crate::json::to_canonical_string(&envelope).expect("sidecar");
+        (sidecar, report)
     }
 
     fn edit(sidecar: &str, change: impl FnOnce(&mut serde_json::Value)) -> String {
@@ -444,5 +521,91 @@ mod tests {
             reasons.iter().any(|r| r == "unknown hash_scheme: md5"),
             "{reasons:?}"
         );
+    }
+
+    fn verify_with(sidecar: &str, options: &VerifyOptions<'_>) -> VerifyResult {
+        verify_attestation_str_with(sidecar, options).expect("verify")
+    }
+
+    #[test]
+    fn sha256_reader_matches_the_one_shot_hash() {
+        // FIPS 180-2 "abc" vector, and a stream longer than the read buffer.
+        assert_eq!(
+            sha256_reader(&b"abc"[..]).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let big = vec![0x5a_u8; 64 * 1024 + 7];
+        assert_eq!(sha256_reader(&big[..]).unwrap(), intent::sha256_str(&big));
+    }
+
+    #[test]
+    fn the_sealed_report_verifies() {
+        let (sidecar, report) = sealed_sidecar_and_report();
+        let options = VerifyOptions {
+            report_sha256: Some(&sha256_reader(report.as_bytes()).expect("hash")),
+            ..VerifyOptions::default()
+        };
+        match verify_with(&sidecar, &options) {
+            VerifyResult::Ok { report_checked, .. } => assert!(report_checked),
+            VerifyResult::Failed(reasons) => panic!("{reasons:?}"),
+        }
+        // Without --report the report is not claimed as checked.
+        match verify_with(&sidecar, &VerifyOptions::default()) {
+            VerifyResult::Ok { report_checked, .. } => assert!(!report_checked),
+            VerifyResult::Failed(reasons) => panic!("{reasons:?}"),
+        }
+    }
+
+    #[test]
+    fn an_edited_report_is_detected() {
+        // The seal and decision_hash agree with each other, so only
+        // rehashing the report itself can catch this.
+        let (sidecar, report) = sealed_sidecar_and_report();
+        let tampered = report.replace("[]", "[{}]");
+        assert_ne!(tampered, report);
+        let options = VerifyOptions {
+            report_sha256: Some(&sha256_reader(tampered.as_bytes()).expect("hash")),
+            ..VerifyOptions::default()
+        };
+        match verify_with(&sidecar, &options) {
+            VerifyResult::Failed(reasons) => assert!(
+                reasons
+                    .iter()
+                    .any(|r| r.starts_with("report_hash mismatch")),
+                "{reasons:?}"
+            ),
+            VerifyResult::Ok { .. } => panic!("edited report verified"),
+        }
+    }
+
+    #[test]
+    fn require_bound_rejects_legacy_seals_only() {
+        let options = VerifyOptions {
+            require_bound: true,
+            ..VerifyOptions::default()
+        };
+        let legacy = edit(&sealed_sidecar(), |tree| {
+            strip_scheme(tree);
+            let seal = &tree["attestation"]["seal"];
+            let digest = |k: &str| seal[k].as_str().expect(k).to_string();
+            let chain = seal::chain_hash(
+                seal::HASH_SCHEME_LEGACY,
+                &digest("intent_hash"),
+                &digest("evidence_hash"),
+                &digest("report_hash"),
+            );
+            tree["attestation"]["seal"]["chain_hash"] = serde_json::json!(chain);
+        });
+        match verify_with(&legacy, &options) {
+            VerifyResult::Failed(reasons) => assert_eq!(
+                reasons,
+                ["legacy hash scheme: intent and evidence are not bound to the seal"]
+            ),
+            VerifyResult::Ok { .. } => panic!("legacy seal passed --require-bound"),
+        }
+        match verify_with(&sealed_sidecar(), &options) {
+            VerifyResult::Ok { content_bound, .. } => assert!(content_bound),
+            VerifyResult::Failed(reasons) => panic!("{reasons:?}"),
+        }
     }
 }
