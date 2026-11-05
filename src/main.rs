@@ -1339,15 +1339,16 @@ fn parse_axis(value: &str) -> Option<AttackAxis> {
 /// at `out`: beside it, with a `.kyaml` extension.
 ///
 /// The JSON at `out` is the report of record, and an attestation seals its
-/// bytes, so the copy must never land on it. This refuses, before anything
-/// is written:
-/// - an `--output` already named `.kyaml` in any letter case, since on a
-///   case-insensitive filesystem `report.KYAML` and `report.kyaml` are one
-///   file;
-/// - a copy path that is a symbolic link, which could point at the report
-///   (even before the report exists);
-/// - a copy path that is already the same file as the report, such as a
-///   hard link to it.
+/// bytes, so the two writes must never reach the same file. Both paths share
+/// a directory and differ only in extension, so they can alias in exactly
+/// three ways, and each is refused before anything is written:
+/// - the names are equal ignoring letter case (`--output report.KYAML` on a
+///   case-insensitive filesystem), so an `--output` named `.kyaml` in any
+///   case is refused;
+/// - either path is a symbolic link, which could point at the other, even a
+///   dangling link that the first write would bring into existence;
+/// - the copy path is already the same file as the report, such as a hard
+///   link to it.
 fn kyaml_copy_path(out: &Path) -> Result<PathBuf> {
     let path = out.with_extension("kyaml");
     let named_kyaml = out
@@ -1359,24 +1360,29 @@ fn kyaml_copy_path(out: &Path) -> Result<PathBuf> {
          KYAML copy is written beside it as {}",
         path.display()
     );
-    if let Ok(meta) = fs::symlink_metadata(&path) {
+    for (role, candidate) in [("report", out), ("KYAML copy", path.as_path())] {
+        let is_symlink = fs::symlink_metadata(candidate)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false);
         anyhow::ensure!(
-            !meta.file_type().is_symlink(),
-            "refusing to write the KYAML copy through the symbolic link {}",
-            path.display()
+            !is_symlink,
+            "refusing to write the {role} through the symbolic link {} \
+             (it could alias the other output)",
+            candidate.display()
         );
-        if out.exists() {
-            anyhow::ensure!(
-                !same_file::is_same_file(out, &path).with_context(|| format!(
-                    "comparing {} with {}",
-                    out.display(),
-                    path.display()
-                ))?,
-                "{} is the same file as the report {}; refusing to overwrite the report",
-                path.display(),
-                out.display()
-            );
-        }
+    }
+    // Neither path is a symlink now, so only a hard link can join them.
+    if out.exists() && path.exists() {
+        anyhow::ensure!(
+            !same_file::is_same_file(out, &path).with_context(|| format!(
+                "comparing {} with {}",
+                out.display(),
+                path.display()
+            ))?,
+            "{} is the same file as the report {}; refusing to overwrite the report",
+            path.display(),
+            out.display()
+        );
     }
     Ok(path)
 }

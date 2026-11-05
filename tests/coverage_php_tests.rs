@@ -376,3 +376,23 @@ fn kyaml_output_format_refuses_a_copy_path_hard_linked_to_the_report() {
         "the report is untouched"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn kyaml_output_format_refuses_a_symlinked_report_path() {
+    // The reverse alias: a dangling report.json -> report.kyaml link. The JSON
+    // write would create report.kyaml and the KYAML write would then
+    // overwrite the sealed bytes.
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.json");
+    let copy = dir.path().join("report.kyaml");
+    std::os::unix::fs::symlink(&copy, &out).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("symbolic link"), "{stderr}");
+    assert!(!copy.exists(), "nothing is written through the link");
+}
