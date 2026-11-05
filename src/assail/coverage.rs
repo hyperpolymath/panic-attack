@@ -215,7 +215,8 @@ fn unsupported_candidate(path: &Path) -> bool {
     )
 }
 
-/// Inventory a file or directory tree and return sorted paths with known languages.
+/// Inventory a file or directory tree and return sorted paths with registered
+/// language or input adapters.
 /// Named build/vendor subdirectories are recorded without enumerating their
 /// contents; symlinks and other non-regular inputs are excluded. Selected unknown
 /// source/config formats are unsupported; other unknown formats are excluded.
@@ -233,7 +234,7 @@ pub fn discover(root: &Path) -> anyhow::Result<(Vec<PathBuf>, AnalysisCoverage)>
     );
     let mut report = AnalysisCoverage {
         mode: "static_assail".into(),
-        scope: "Explicit regular-file inventory; named build/vendor directories and symlinks excluded without following them. Unknown source/config formats are unsupported; other extensions are outside declared scope. Non-PHP adapters are heuristic, not parse or dataflow proofs. No dynamic attacks executed.".into(),
+        scope: "Explicit regular-file inventory; named build/vendor directories and symlinks excluded without following them. Selected unknown source/config formats are unsupported; other extensions are outside declared scope. Complete means every candidate finished its stated adapter, whose parsing and heuristic depth is recorded per input; it is not complete semantic security coverage, a dataflow proof or an execution result. No dynamic attacks executed.".into(),
         ..Default::default()
     };
     let mut excluded = Vec::new();
@@ -281,14 +282,19 @@ pub fn discover(root: &Path) -> anyhow::Result<(Vec<PathBuf>, AnalysisCoverage)>
             continue;
         }
         let path = entry.path();
-        let language = Language::detect_path(path);
+        let configuration = super::input_adapters::Adapter::detect(path);
+        let language = if configuration.is_some() {
+            Language::Unknown
+        } else {
+            Language::detect_path(path)
+        };
         let (status, reason, kind) = if !entry.file_type().is_file() {
             (
                 "excluded",
                 Some("non-regular input; symlinks are not followed".into()),
                 "non_regular",
             )
-        } else if language != Language::Unknown {
+        } else if language != Language::Unknown || configuration.is_some() {
             files.push(path.to_path_buf());
             ("pending", None, "file")
         } else if unsupported_candidate(path) {
@@ -311,14 +317,18 @@ pub fn discover(root: &Path) -> anyhow::Result<(Vec<PathBuf>, AnalysisCoverage)>
             kind: kind.into(),
             status: status.into(),
             language,
-            analysis: (language != Language::Unknown).then(|| {
-                if language == Language::Php {
-                    "tree-sitter-php 0.25.1; local T0 syntax checks; no cross-file taint"
-                } else {
-                    "language and cross-language heuristics; no parser coverage claim"
-                }
-                .into()
-            }),
+            analysis: configuration
+                .map(|format| format.description().into())
+                .or_else(|| {
+                    (language != Language::Unknown).then(|| {
+                        if language == Language::Php {
+                            "tree-sitter-php 0.25.1; local T0 syntax checks; no cross-file taint"
+                        } else {
+                            "language and cross-language heuristics; no parser coverage claim"
+                        }
+                        .into()
+                    })
+                }),
             reason,
             content_blake3: None,
         });
