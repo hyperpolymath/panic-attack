@@ -982,6 +982,15 @@ enum AttestAction {
         /// Path to the .attestation.json file
         #[arg(value_name = "FILE")]
         file: PathBuf,
+
+        /// The report the attestation seals; its SHA-256 must match the seal's
+        /// report_hash
+        #[arg(long, value_name = "REPORT")]
+        report: Option<PathBuf>,
+
+        /// Fail on legacy seals, whose intent and evidence are not bound
+        #[arg(long)]
+        require_bound: bool,
     },
 }
 
@@ -2681,13 +2690,32 @@ fn run_main() -> Result<()> {
         }
 
         Commands::Attest { action } => match action {
-            AttestAction::Verify { file } => {
-                match attestation::verify_attestation_file(&file)? {
+            AttestAction::Verify {
+                file,
+                report,
+                require_bound,
+            } => {
+                // Hash the report as a stream: it may be large, and only its
+                // digest is compared.
+                let report_sha256 = report
+                    .as_deref()
+                    .map(|path| {
+                        fs::File::open(path)
+                            .and_then(attestation::sha256_reader)
+                            .map_err(|e| anyhow::anyhow!("reading {}: {}", path.display(), e))
+                    })
+                    .transpose()?;
+                let options = attestation::VerifyOptions {
+                    report_sha256: report_sha256.as_deref(),
+                    require_bound,
+                };
+                match attestation::verify_attestation_file_with(&file, &options)? {
                     attestation::VerifyResult::Ok {
                         issuer,
                         issued_at,
                         chain_hash,
                         content_bound,
+                        report_checked,
                         signature_verified,
                     } => {
                         println!("  [OK] Attestation verified");
@@ -2698,6 +2726,11 @@ fn run_main() -> Result<()> {
                             println!("       Content:   intent and evidence rehashed (JCS)");
                         } else {
                             println!("       Content:   not rehashed (legacy hash scheme)");
+                        }
+                        if report_checked {
+                            println!("       Report:    rehashed, matches the seal");
+                        } else {
+                            println!("       Report:    not checked (pass --report)");
                         }
                         if signature_verified {
                             println!("       Signature: verified (Ed25519)");
