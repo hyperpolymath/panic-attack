@@ -2,6 +2,14 @@
 
 === [Unreleased]
 
+==== Changed — evidence hash is platform-independent
+
+* The attestation evidence hash now feeds `+files_read+` to SHA-256 as an 8-byte
+little-endian `+u64+`, like the other counts, instead of a platform-sized
+`+usize+`. Hashes are unchanged on 64-bit platforms; 32-bit builds now agree
+with them. The computation lives in `+attestation::evidence::evidence_hash+`,
+with a known-answer test whose value comes from coreutils `+sha256sum+`.
+
 ==== Fixed — KYAML keys holding a line separator
 
 * KYAML output now escapes U+2028 (LS) and U+2029 (PS) as `+\uXXXX+`, as it
