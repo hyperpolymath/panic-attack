@@ -35,13 +35,25 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Write `contents` to `path` by renaming a temporary file over it (see the
 /// module documentation).
 pub fn write_replacing(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<()> {
+    write_replacing_like(path, contents, None)
+}
+
+/// [`write_replacing`] for a file that accompanies another: when `path` does
+/// not exist yet, it takes the permission bits of the regular file at `like`
+/// rather than the default, so a copy of a private report is private too. An
+/// existing `path` keeps its own bits.
+pub fn write_replacing_like(
+    path: &Path,
+    contents: impl AsRef<[u8]>,
+    like: Option<&Path>,
+) -> io::Result<()> {
     if path.file_name().is_none() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "path has no file name",
         ));
     }
-    let mode = existing_mode(path);
+    let mode = existing_mode(path).or_else(|| like.and_then(existing_mode));
     let (tmp_path, mut file) = create_temp_in(parent_dir(path), mode)?;
     let written = restore_mode(&file, mode)
         .and_then(|()| file.write_all(contents.as_ref()))
@@ -252,5 +264,24 @@ mod tests {
             assert_eq!(got & !mode, 0, "temp {got:o} wider than {mode:o}");
             fs::remove_file(tmp).unwrap();
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_companion_takes_the_mode_of_the_file_it_accompanies() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+        let dir = tempfile::tempdir().unwrap();
+        let report = dir.path().join("report.json");
+        fs::write(&report, "{}").unwrap();
+        fs::set_permissions(&report, fs::Permissions::from_mode(0o600)).unwrap();
+        // A new copy follows the report.
+        let copy = dir.path().join("report.kyaml");
+        write_replacing_like(&copy, "new", Some(&report)).unwrap();
+        assert_eq!(mode(&copy), 0o600);
+        // An existing file keeps its own bits.
+        fs::set_permissions(&copy, fs::Permissions::from_mode(0o640)).unwrap();
+        write_replacing_like(&copy, "again", Some(&report)).unwrap();
+        assert_eq!(mode(&copy), 0o640);
     }
 }

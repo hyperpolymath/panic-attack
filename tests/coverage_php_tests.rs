@@ -490,3 +490,42 @@ fn kyaml_output_format_refuses_an_overlong_derived_name_before_writing() {
         "the report was written before the copy failed"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn kyaml_output_format_keeps_a_private_reports_companions_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    let (dir, project) = project_dir();
+    let out = dir.path().join("report.json");
+    std::fs::write(&out, "{}\n").unwrap();
+    std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let output = assail_kyaml_attested(&project, &out);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(mode(&out), 0o600, "report");
+    assert_eq!(mode(&dir.path().join("report.kyaml")), 0o600, "KYAML copy");
+    assert_eq!(
+        mode(&dir.path().join("report.attestation.json")),
+        0o600,
+        "sidecar"
+    );
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_directory_at_an_output_path() {
+    let (dir, project) = project_dir();
+    let out = dir.path().join("report.json");
+    std::fs::create_dir(dir.path().join("report.kyaml")).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("not a regular file"), "{stderr}");
+    assert!(
+        !out.exists(),
+        "the report was written before the copy failed"
+    );
+}
