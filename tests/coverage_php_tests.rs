@@ -254,3 +254,60 @@ fn oversize_source_is_not_reported_as_analyzed() {
         .contains("16 MiB"));
     assert!(report.coverage.incomplete());
 }
+
+#[test]
+fn kyaml_output_format_writes_a_copy_beside_the_sealed_json() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.json");
+    let status = Command::new(env!("CARGO_BIN_EXE_panic-attack"))
+        .args(["--output-format", "kyaml", "assail"])
+        .arg(dir.path())
+        .arg("--attest")
+        .arg("--output")
+        .arg(&out)
+        .arg("--quiet")
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    // The JSON is still the canonical report, and the seal covers it.
+    let json = std::fs::read_to_string(&out).unwrap();
+    let report: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        json,
+        panic_attack::json::to_canonical_string(&report).unwrap()
+    );
+    let sidecar: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("report.attestation.json")).unwrap())
+            .unwrap();
+    use sha2::Digest;
+    assert_eq!(
+        sidecar["attestation"]["seal"]["report_hash"],
+        hex::encode(sha2::Sha256::digest(json.as_bytes()))
+    );
+
+    // The KYAML copy holds the same data.
+    let kyaml = std::fs::read_to_string(dir.path().join("report.kyaml")).unwrap();
+    let from_kyaml: serde_json::Value = panic_attack::yaml::from_report_str(&kyaml).unwrap();
+    assert_eq!(
+        panic_attack::json::to_canonical_string(&from_kyaml).unwrap(),
+        json
+    );
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_kyaml_named_report() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.kyaml");
+    let output = Command::new(env!("CARGO_BIN_EXE_panic-attack"))
+        .args(["--output-format", "kyaml", "assail"])
+        .arg(dir.path())
+        .arg("--output")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!out.exists(), "nothing is written when the name is refused");
+}

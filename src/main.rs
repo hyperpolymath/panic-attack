@@ -1485,6 +1485,22 @@ fn run_main() -> Result<()> {
             // exactly these bytes, so any verifier can recompute them.
             let report_json = panic_attack::json::to_canonical_string(&report)?;
 
+            // `--output-format kyaml` adds a KYAML copy beside the JSON report.
+            // The JSON stays the report of record: the seal covers its bytes.
+            let kyaml_path = match &output {
+                Some(out) if cli.output_format == ReportOutputFormat::Kyaml => {
+                    let path = out.with_extension("kyaml");
+                    anyhow::ensure!(
+                        path != *out,
+                        "assail --output names the JSON report; use a .json name and the \
+                         KYAML copy is written beside it as {}",
+                        path.display()
+                    );
+                    Some(path)
+                }
+                _ => None,
+            };
+
             if let Some(output_path) = &output {
                 fs::write(output_path, &report_json)?;
                 qprintln!(
@@ -1492,6 +1508,14 @@ fn run_main() -> Result<()> {
                     "Report saved to: {}",
                     output_path.display()
                 );
+                if let Some(kyaml_path) = &kyaml_path {
+                    fs::write(kyaml_path, panic_attack::kyaml::to_string(&report)?)?;
+                    qprintln!(
+                        cli.quiet || headless,
+                        "KYAML copy saved to: {}",
+                        kyaml_path.display()
+                    );
+                }
             } else if cli.quiet || headless {
                 // Machine-readable mode: emit JSON to stdout for pipeline consumers.
                 // `--headless` makes this explicit for CI callers that cannot pass --quiet.

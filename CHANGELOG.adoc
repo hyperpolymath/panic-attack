@@ -2,6 +2,14 @@
 
 === [Unreleased]
 
+==== Added — `+assail --output-format kyaml+` writes a KYAML copy
+
+* With `+--output-format kyaml+` and `+--output report.json+`, `+assail+` writes
+`+report.kyaml+` beside the JSON report. The JSON stays the report of record: it
+is what `+--attest+` seals. An `+--output+` path that already ends in `+.kyaml+`
+is refused before anything is written. Other formats are unchanged for
+`+assail+`.
+
 ==== Fixed — KYAML keys holding a line separator
 
 * KYAML output now escapes U+2028 (LS) and U+2029 (PS) as `+\uXXXX+`, as it
