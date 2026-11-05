@@ -254,3 +254,254 @@ fn oversize_source_is_not_reported_as_analyzed() {
         .contains("16 MiB"));
     assert!(report.coverage.incomplete());
 }
+
+#[test]
+fn kyaml_output_format_writes_a_copy_beside_the_sealed_json() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.json");
+    let status = Command::new(env!("CARGO_BIN_EXE_panic-attack"))
+        .args(["--output-format", "kyaml", "assail"])
+        .arg(dir.path())
+        .arg("--attest")
+        .arg("--output")
+        .arg(&out)
+        .arg("--quiet")
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    // The JSON is still the canonical report, and the seal covers it.
+    let json = std::fs::read_to_string(&out).unwrap();
+    let report: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        json,
+        panic_attack::json::to_canonical_string(&report).unwrap()
+    );
+    let sidecar: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("report.attestation.json")).unwrap())
+            .unwrap();
+    use sha2::Digest;
+    assert_eq!(
+        sidecar["attestation"]["seal"]["report_hash"],
+        hex::encode(sha2::Sha256::digest(json.as_bytes()))
+    );
+
+    // The KYAML copy holds the same data.
+    let kyaml = std::fs::read_to_string(dir.path().join("report.kyaml")).unwrap();
+    let from_kyaml: serde_json::Value = panic_attack::yaml::from_report_str(&kyaml).unwrap();
+    assert_eq!(
+        panic_attack::json::to_canonical_string(&from_kyaml).unwrap(),
+        json
+    );
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_kyaml_named_report() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.kyaml");
+    let output = Command::new(env!("CARGO_BIN_EXE_panic-attack"))
+        .args(["--output-format", "kyaml", "assail"])
+        .arg(dir.path())
+        .arg("--output")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!out.exists(), "nothing is written when the name is refused");
+}
+
+/// Run `assail --output-format kyaml --output <out>` on a one-file project.
+fn assail_kyaml(project: &std::path::Path, out: &std::path::Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_panic-attack"))
+        .args(["--output-format", "kyaml", "assail"])
+        .arg(project)
+        .arg("--output")
+        .arg(out)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_kyaml_name_in_any_case() {
+    // On a case-insensitive filesystem report.KYAML and report.kyaml are
+    // one file, so the copy would overwrite the report.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.KYAML");
+    let output = assail_kyaml(dir.path(), &out);
+    assert!(!output.status.success());
+    assert!(!out.exists(), "nothing is written when the name is refused");
+    assert!(!dir.path().join("report.kyaml").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn kyaml_output_format_refuses_a_symlinked_copy_path() {
+    // A report.kyaml symlink to report.json would route the copy onto the
+    // sealed report, even when the report does not exist yet.
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.json");
+    std::os::unix::fs::symlink(&out, dir.path().join("report.kyaml")).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("symbolic link"), "{stderr}");
+    assert!(
+        !out.exists(),
+        "nothing is written when the copy path is refused"
+    );
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_copy_path_hard_linked_to_the_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.json");
+    std::fs::write(&out, "previous report\n").unwrap();
+    std::fs::hard_link(&out, dir.path().join("report.kyaml")).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("same file as the report"), "{stderr}");
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        "previous report\n",
+        "the report is untouched"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn kyaml_output_format_refuses_a_symlinked_report_path() {
+    // The reverse alias: a dangling report.json -> report.kyaml link. The JSON
+    // write would create report.kyaml and the KYAML write would then
+    // overwrite the sealed bytes.
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join("clean.php"), "<?php echo 'ok';").unwrap();
+    let out = dir.path().join("report.json");
+    let copy = dir.path().join("report.kyaml");
+    std::os::unix::fs::symlink(&copy, &out).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("symbolic link"), "{stderr}");
+    assert!(!copy.exists(), "nothing is written through the link");
+}
+
+/// `assail_kyaml` with `--attest`, so the sidecar is a third output.
+fn assail_kyaml_attested(project: &std::path::Path, out: &std::path::Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_panic-attack"))
+        .args(["--output-format", "kyaml", "assail"])
+        .arg(project)
+        .arg("--output")
+        .arg(out)
+        .arg("--attest")
+        .output()
+        .unwrap()
+}
+
+/// A temp dir holding a one-file project in `project/`.
+fn project_dir() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    std::fs::create_dir(&project).unwrap();
+    std::fs::write(project.join("clean.php"), "<?php echo 'ok';").unwrap();
+    (dir, project)
+}
+
+#[test]
+fn kyaml_output_format_requires_a_json_report_name() {
+    // The report is JSON, so it must be named .json (in any case); a non-JSON
+    // suffix, or none, is refused with nothing written.
+    for name in ["report.yaml", "report.sarif", "report"] {
+        let (dir, project) = project_dir();
+        let out = dir.path().join(name);
+        let output = assail_kyaml(&project, &out);
+        assert!(!output.status.success(), "{name} was accepted");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("must end in .json"), "{name}: {stderr}");
+        assert!(!out.exists(), "{name}: nothing is written");
+        assert!(!dir.path().join("report.kyaml").exists(), "{name}");
+    }
+    // Letter case does not matter for the accepted suffix.
+    let (dir, project) = project_dir();
+    let output = assail_kyaml(&project, &dir.path().join("report.JSON"));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn kyaml_output_format_refuses_a_sidecar_symlinked_to_the_copy() {
+    // With --attest the sidecar is written last; a report.attestation.json
+    // link to report.kyaml would overwrite the copy with attestation JSON.
+    let (dir, project) = project_dir();
+    let out = dir.path().join("report.json");
+    let copy = dir.path().join("report.kyaml");
+    std::os::unix::fs::symlink(&copy, dir.path().join("report.attestation.json")).unwrap();
+    let output = assail_kyaml_attested(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("attestation sidecar"), "{stderr}");
+    assert!(!out.exists() && !copy.exists(), "nothing is written");
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_sidecar_hard_linked_to_the_copy() {
+    let (dir, project) = project_dir();
+    let out = dir.path().join("report.json");
+    let copy = dir.path().join("report.kyaml");
+    std::fs::write(&copy, "previous copy\n").unwrap();
+    std::fs::hard_link(&copy, dir.path().join("report.attestation.json")).unwrap();
+    let output = assail_kyaml_attested(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("same file"), "{stderr}");
+    assert!(!out.exists(), "nothing is written");
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), "previous copy\n");
+}
+
+#[test]
+fn kyaml_output_format_refuses_an_overlong_derived_name_before_writing() {
+    // A 250-byte stem gives a valid 255-byte `.json` name, but the derived
+    // `.kyaml` name is 256 bytes, over the usual component limit. The run must
+    // stop before the report is written, not after.
+    let (dir, project) = project_dir();
+    let out = dir.path().join(format!("{}.json", "r".repeat(250)));
+    assert_eq!(out.file_name().unwrap().len(), 255);
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("nothing was written"), "{stderr}");
+    assert!(
+        !out.exists(),
+        "the report was written before the copy failed"
+    );
+}
+
+#[test]
+fn kyaml_output_format_refuses_a_directory_at_an_output_path() {
+    let (dir, project) = project_dir();
+    let out = dir.path().join("report.json");
+    std::fs::create_dir(dir.path().join("report.kyaml")).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("not a regular file"), "{stderr}");
+    assert!(
+        !out.exists(),
+        "the report was written before the copy failed"
+    );
+}

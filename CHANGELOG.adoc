@@ -2,18 +2,20 @@
 
 === [Unreleased]
 
-==== Added — `+attest verify --report+` and `+--require-bound+`
+==== Added — `+assail --output-format kyaml+` writes a KYAML copy
 
-* `+attest verify --report <REPORT>+` rehashes the report file, streaming it
-through a fixed-size buffer, and fails if it
-does not match the seal's `+report_hash+`. Without it, verification only checks
-that the stored digests agree with each other, so a report edited after sealing
-still verified.
-* `+attest verify --require-bound+` fails on legacy seals (no `+hash_scheme+`),
-whose intent and evidence cannot be rehashed.
-* The output now says whether the report was checked. Library callers use
-`+VerifyOptions+` (carrying the report digest from `+sha256_reader+`) with
-`+verify_attestation_file_with+` / `+verify_attestation_str_with+`; `+VerifyResult::Ok+` gains `+report_checked+`.
+* With `+--output-format kyaml+` and `+--output report.json+`, `+assail+` writes
+`+report.kyaml+` beside the JSON report. The JSON stays the report of record: it
+is what `+--attest+` seals. `+--output+` must end in `+.json+` (any letter case),
+and no two of the files written (report, copy, and the `+--attest+` sidecar)
+may be the same file: a symbolic link at any of their paths, or two existing
+paths that are hard links to one file, is refused before anything is written.
+So is a path that exists but is not a regular file (a directory, say) or that
+cannot be looked up, such as a derived name over the filesystem's length limit.
+These checks run before the writes, so a link swapped in between a check and
+its write is not caught, and a crash can leave a partial file: the planned
+generation-directory publish is meant to close both.
+Other formats are unchanged for `+assail+`.
 
 ==== Fixed — KYAML keys holding a line separator
 

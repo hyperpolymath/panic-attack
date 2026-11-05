@@ -1344,6 +1344,108 @@ fn parse_axis(value: &str) -> Option<AttackAxis> {
     }
 }
 
+/// Where `assail --attest` writes its attestation sidecar: beside the report
+/// at `output` as `<stem>.attestation.json`, or in the working directory when
+/// the report goes to stdout. The writer and the alias check below both use
+/// this, so the two cannot drift apart.
+fn attestation_sidecar_path(output: Option<&Path>) -> PathBuf {
+    match output {
+        Some(out) => {
+            let stem = out.file_stem().unwrap_or_default().to_string_lossy();
+            let parent = out.parent().unwrap_or(Path::new("."));
+            parent.join(format!("{}.attestation.json", stem))
+        }
+        None => PathBuf::from("assail-report.attestation.json"),
+    }
+}
+
+/// Where `assail --output-format kyaml` writes its KYAML copy of the report
+/// at `out`: beside it, with a `.kyaml` extension. `sidecar` is the
+/// attestation sidecar when `--attest` is on.
+///
+/// The JSON at `out` is the report of record and the attestation seals its
+/// bytes, so no two of the files written here may be the same file. They
+/// share a directory and are named `S.json`, `S.kyaml` and
+/// `S.attestation.json`, so they can alias in only three ways, and each is
+/// refused before anything is written:
+/// - equal names ignoring letter case: `--output` must end in `.json` (in any
+///   case), which keeps the three names distinct on case-insensitive
+///   filesystems too;
+/// - a symbolic link at any of the paths, which could point at another, even
+///   a dangling link that an earlier write would bring into existence;
+/// - two existing paths that are already one file, such as hard links.
+///
+/// These checks run before the writes, so a link swapped in between a check
+/// and its write (a time-of-check/time-of-use race) still slips past them.
+/// Closing that race, and keeping a crash from leaving a partial report, is
+/// the job of the generation-directory publish planned as a follow-up.
+fn kyaml_copy_path(out: &Path, sidecar: Option<&Path>) -> Result<PathBuf> {
+    let path = out.with_extension("kyaml");
+    let named_json = out
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+    anyhow::ensure!(
+        named_json,
+        "with --output-format kyaml, assail --output names the JSON report and \
+         must end in .json; the KYAML copy is written beside it as {}",
+        path.display()
+    );
+    let mut outputs = vec![("report", out), ("KYAML copy", path.as_path())];
+    if let Some(sidecar) = sidecar {
+        outputs.push(("attestation sidecar", sidecar));
+    }
+    // Look every path up before writing anything. Only "not found" counts as
+    // absent: any other failure (a name over the filesystem's length limit,
+    // a permission error) would make a later write fail after an earlier one
+    // had already landed, so it stops the run here instead.
+    let mut exists = Vec::with_capacity(outputs.len());
+    for &(role, candidate) in &outputs {
+        match fs::symlink_metadata(candidate) {
+            Ok(meta) => {
+                anyhow::ensure!(
+                    !meta.file_type().is_symlink(),
+                    "refusing to write the {role} through the symbolic link {} \
+                     (it could alias another output)",
+                    candidate.display()
+                );
+                // A directory or other special entry can't be written as a
+                // file, so the write would fail after earlier ones landed.
+                anyhow::ensure!(
+                    meta.is_file(),
+                    "the {role} path {} exists and is not a regular file; \
+                     nothing was written",
+                    candidate.display()
+                );
+                exists.push(true);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => exists.push(false),
+            Err(err) => anyhow::bail!(
+                "cannot use {} as the {role}: {err}; nothing was written",
+                candidate.display()
+            ),
+        }
+    }
+    // No path is a symlink now, so only a hard link can join two of them.
+    for (i, &(role_a, a)) in outputs.iter().enumerate() {
+        for (j, &(role_b, b)) in outputs.iter().enumerate().skip(i + 1) {
+            if exists[i] && exists[j] {
+                anyhow::ensure!(
+                    !same_file::is_same_file(a, b).with_context(|| format!(
+                        "comparing {} with {}",
+                        a.display(),
+                        b.display()
+                    ))?,
+                    "the {role_b} {} is the same file as the {role_a} {}; \
+                     refusing to overwrite it",
+                    b.display(),
+                    a.display()
+                );
+            }
+        }
+    }
+    Ok(path)
+}
+
 fn default_amuck_report_path() -> PathBuf {
     let ts = chrono::Utc::now().format("%Y%m%d%H%M%S");
     PathBuf::from(format!("reports/amuck-{}.json", ts))
@@ -1494,6 +1596,18 @@ fn run_main() -> Result<()> {
             // exactly these bytes, so any verifier can recompute them.
             let report_json = panic_attack::json::to_canonical_string(&report)?;
 
+            // `--output-format kyaml` adds a KYAML copy beside the JSON report.
+            // The JSON stays the report of record: the seal covers its bytes.
+            let sidecar_path = chain_builder
+                .is_some()
+                .then(|| attestation_sidecar_path(output.as_deref()));
+            let kyaml_path = match &output {
+                Some(out) if cli.output_format == ReportOutputFormat::Kyaml => {
+                    Some(kyaml_copy_path(out, sidecar_path.as_deref())?)
+                }
+                _ => None,
+            };
+
             if let Some(output_path) = &output {
                 fs::write(output_path, &report_json)?;
                 qprintln!(
@@ -1501,6 +1615,14 @@ fn run_main() -> Result<()> {
                     "Report saved to: {}",
                     output_path.display()
                 );
+                if let Some(kyaml_path) = &kyaml_path {
+                    fs::write(kyaml_path, panic_attack::kyaml::to_string(&report)?)?;
+                    qprintln!(
+                        cli.quiet || headless,
+                        "KYAML copy saved to: {}",
+                        kyaml_path.display()
+                    );
+                }
             } else if cli.quiet || headless {
                 // Machine-readable mode: emit JSON to stdout for pipeline consumers.
                 // `--headless` makes this explicit for CI callers that cannot pass --quiet.
@@ -1519,17 +1641,9 @@ fn run_main() -> Result<()> {
             }
 
             // Seal and write attestation sidecar
-            if let Some(builder) = chain_builder {
+            if let (Some(builder), Some(sidecar_path)) = (chain_builder, sidecar_path) {
                 let envelope = builder.seal(report_json.as_bytes(), signing_key.as_deref())?;
                 let attestation_json = panic_attack::json::to_canonical_string(&envelope)?;
-
-                let sidecar_path = if let Some(out) = &output {
-                    let stem = out.file_stem().unwrap_or_default().to_string_lossy();
-                    let parent = out.parent().unwrap_or(Path::new("."));
-                    parent.join(format!("{}.attestation.json", stem))
-                } else {
-                    PathBuf::from("assail-report.attestation.json")
-                };
 
                 fs::write(&sidecar_path, attestation_json)?;
                 qprintln!(
