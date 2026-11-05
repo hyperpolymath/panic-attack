@@ -16,15 +16,16 @@
 //! A file swapped in at the destination between a caller's checks and the
 //! write is therefore replaced rather than followed.
 //!
-//! Permissions: on Unix, when the destination is an existing regular file,
-//! its permission bits are copied onto the temporary file before any data is
-//! written, so replacing a `0600` report never exposes its contents. A new
+//! Permissions: on Unix the temporary file is opened with the destination's
+//! mode (less the umask) in the `open` call itself, then given that mode
+//! exactly, so it is never readable more widely than the file it replaces and
+//! replacing a `0600` report never exposes its contents. A new
 //! destination gets the same default as `fs::write` (`0666` less the umask).
 //! Ownership is not copied, and on other platforms the new file takes the
 //! directory's default permissions.
 //!
-//! The temporary file has a short fixed-form name (`.pa-tmp.<pid>.<n>`), so a
-//! destination name near the filesystem's length limit still works.
+//! The temporary file has a short, unpredictable name (`.pa-tmp.<pid>.<n>.<random>`),
+//! so a destination name near the filesystem's length limit still works.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -40,8 +41,9 @@ pub fn write_replacing(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<()
             "path has no file name",
         ));
     }
-    let (tmp_path, mut file) = create_temp_in(parent_dir(path))?;
-    let written = keep_permissions_of(path, &file)
+    let mode = existing_mode(path);
+    let (tmp_path, mut file) = create_temp_in(parent_dir(path), mode)?;
+    let written = restore_mode(&file, mode)
         .and_then(|()| file.write_all(contents.as_ref()))
         .and_then(|()| file.sync_all());
     drop(file);
@@ -55,22 +57,35 @@ pub fn write_replacing(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<()
     }
 }
 
-/// Give `file` the permission bits of the regular file at `path`, if there
-/// is one. A symlink or other non-regular entry lends nothing.
+/// The permission bits of the regular file at `path`, if there is one. A
+/// symlink or other non-regular entry lends nothing.
 #[cfg(unix)]
-fn keep_permissions_of(path: &Path, file: &fs::File) -> io::Result<()> {
+fn existing_mode(path: &Path) -> Option<u32> {
     use std::os::unix::fs::PermissionsExt;
-    match fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_file() => {
-            let mode = meta.permissions().mode() & 0o7777;
-            file.set_permissions(fs::Permissions::from_mode(mode))
-        }
-        _ => Ok(()),
+    fs::symlink_metadata(path)
+        .ok()
+        .filter(fs::Metadata::is_file)
+        .map(|meta| meta.permissions().mode() & 0o7777)
+}
+
+#[cfg(not(unix))]
+fn existing_mode(_path: &Path) -> Option<u32> {
+    None
+}
+
+/// Set the kept mode exactly. The file was opened with that mode less the
+/// umask, so this can only add bits the destination already had.
+#[cfg(unix)]
+fn restore_mode(file: &fs::File, mode: Option<u32>) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    match mode {
+        Some(mode) => file.set_permissions(fs::Permissions::from_mode(mode)),
+        None => Ok(()),
     }
 }
 
 #[cfg(not(unix))]
-fn keep_permissions_of(_path: &Path, _file: &fs::File) -> io::Result<()> {
+fn restore_mode(_file: &fs::File, _mode: Option<u32>) -> io::Result<()> {
     Ok(())
 }
 
@@ -83,14 +98,34 @@ fn parent_dir(path: &Path) -> &Path {
     }
 }
 
-/// Create a new, uniquely named file in `dir`.
-fn create_temp_in(dir: &Path) -> io::Result<(PathBuf, fs::File)> {
+/// Create a new file with an unpredictable name in `dir`.
+///
+/// On Unix it is opened with `mode` (or `0666` for a new destination), less
+/// the umask, in the `open` call itself, so it is never readable more widely
+/// than the file it replaces, or than `fs::write` would create.
+fn create_temp_in(dir: &Path, mode: Option<u32>) -> io::Result<(PathBuf, fs::File)> {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(mode.unwrap_or(0o666) & 0o777);
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
     let mut last_err = None;
     for _ in 0..16 {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp = dir.join(format!(".pa-tmp.{}.{n}", std::process::id()));
-        match OpenOptions::new().write(true).create_new(true).open(&tmp) {
+        let mut random = [0_u8; 8];
+        // A predictable name only costs a retry, so a failed RNG is not fatal.
+        let _ = getrandom::fill(&mut random);
+        let tmp = dir.join(format!(
+            ".pa-tmp.{}.{n}.{}",
+            std::process::id(),
+            hex::encode(random)
+        ));
+        match options.open(&tmp) {
             Ok(file) => return Ok((tmp, file)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => last_err = Some(err),
             Err(err) => return Err(err),
@@ -201,5 +236,21 @@ mod tests {
         assert_eq!(path.file_name().unwrap().len(), 255);
         write_replacing(&path, "ok").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "ok");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_temporary_file_is_never_wider_than_the_destination() {
+        // Checked straight after `open`, before any `set_permissions`: a
+        // reader who opens the temporary file early must find it no more
+        // readable than the file it will replace.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        for mode in [0o600, 0o640, 0o400] {
+            let (tmp, _file) = create_temp_in(dir.path(), Some(mode)).unwrap();
+            let got = fs::metadata(&tmp).unwrap().permissions().mode() & 0o777;
+            assert_eq!(got & !mode, 0, "temp {got:o} wider than {mode:o}");
+            fs::remove_file(tmp).unwrap();
+        }
     }
 }

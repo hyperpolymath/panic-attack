@@ -10,10 +10,13 @@ is what `+--attest+` seals. `+--output+` must end in `+.json+` (any letter case)
 and no two of the files written (report, copy, and the `+--attest+` sidecar)
 may be the same file: a symbolic link at any of their paths, or two existing
 paths that are hard links to one file, is refused before anything is written.
+So is a path that cannot be looked up, such as a derived name over the
+filesystem's length limit.
 In this mode each file is written by renaming a finished temporary file into
 place (`+atomic_write::write_replacing+`), so a link swapped in after those
 checks is replaced rather than written through, and no reader sees a partial
-report. On Unix a replaced file keeps the old file's permission bits, so a
+report. On Unix a replaced file keeps the old file's permission bits, and the
+temporary file is never more readable than the file it replaces, so a
 private report stays private.
 Other formats are unchanged for `+assail+`.
 

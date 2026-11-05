@@ -1385,21 +1385,33 @@ fn kyaml_copy_path(out: &Path, sidecar: Option<&Path>) -> Result<PathBuf> {
     if let Some(sidecar) = sidecar {
         outputs.push(("attestation sidecar", sidecar));
     }
+    // Look every path up before writing anything. Only "not found" counts as
+    // absent: any other failure (a name over the filesystem's length limit,
+    // a permission error) would make a later write fail after an earlier one
+    // had already landed, so it stops the run here instead.
+    let mut exists = Vec::with_capacity(outputs.len());
     for &(role, candidate) in &outputs {
-        let is_symlink = fs::symlink_metadata(candidate)
-            .map(|meta| meta.file_type().is_symlink())
-            .unwrap_or(false);
-        anyhow::ensure!(
-            !is_symlink,
-            "refusing to write the {role} through the symbolic link {} \
-             (it could alias another output)",
-            candidate.display()
-        );
+        match fs::symlink_metadata(candidate) {
+            Ok(meta) => {
+                anyhow::ensure!(
+                    !meta.file_type().is_symlink(),
+                    "refusing to write the {role} through the symbolic link {} \
+                     (it could alias another output)",
+                    candidate.display()
+                );
+                exists.push(true);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => exists.push(false),
+            Err(err) => anyhow::bail!(
+                "cannot use {} as the {role}: {err}; nothing was written",
+                candidate.display()
+            ),
+        }
     }
     // No path is a symlink now, so only a hard link can join two of them.
     for (i, &(role_a, a)) in outputs.iter().enumerate() {
-        for &(role_b, b) in &outputs[i + 1..] {
-            if a.exists() && b.exists() {
+        for (j, &(role_b, b)) in outputs.iter().enumerate().skip(i + 1) {
+            if exists[i] && exists[j] {
                 anyhow::ensure!(
                     !same_file::is_same_file(a, b).with_context(|| format!(
                         "comparing {} with {}",

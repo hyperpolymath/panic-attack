@@ -472,3 +472,21 @@ fn kyaml_output_format_refuses_a_sidecar_hard_linked_to_the_copy() {
     assert!(!out.exists(), "nothing is written");
     assert_eq!(std::fs::read_to_string(&copy).unwrap(), "previous copy\n");
 }
+
+#[test]
+fn kyaml_output_format_refuses_an_overlong_derived_name_before_writing() {
+    // A 250-byte stem gives a valid 255-byte `.json` name, but the derived
+    // `.kyaml` name is 256 bytes, over the usual component limit. The run must
+    // stop before the report is written, not after.
+    let (dir, project) = project_dir();
+    let out = dir.path().join(format!("{}.json", "r".repeat(250)));
+    assert_eq!(out.file_name().unwrap().len(), 255);
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("nothing was written"), "{stderr}");
+    assert!(
+        !out.exists(),
+        "the report was written before the copy failed"
+    );
+}
