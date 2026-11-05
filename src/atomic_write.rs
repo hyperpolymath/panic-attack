@@ -62,9 +62,13 @@ pub fn write_replacing_like(
         .and_then(|()| file.write_all(contents.as_ref()))
         .and_then(|()| file.sync_all());
     drop(file);
-    match written.and_then(|()| fs::rename(&tmp_path, path)) {
+    // Open the directory before the rename, so a directory that can be
+    // written but not read fails here, with the destination untouched,
+    // rather than after it has been replaced.
+    let dir = written.and_then(|()| open_parent_dir(path));
+    match dir.and_then(|dir| fs::rename(&tmp_path, path).map(|()| dir)) {
         // The rename is in place; make its directory entry durable too.
-        Ok(()) => sync_parent_dir(path),
+        Ok(dir) => sync_dir(dir),
         Err(err) => {
             // Best effort: the temporary file is ours and holds nothing else.
             let _ = fs::remove_file(&tmp_path);
@@ -106,18 +110,24 @@ fn restore_mode(_file: &fs::File, _mode: Option<u32>) -> io::Result<()> {
     Ok(())
 }
 
-/// Flush `path`'s directory so the rename survives a crash: on Unix a file
-/// sync does not persist the directory entry that names it. An error here
-/// means the new file is in place but its durability is unknown; the rename
-/// is not rolled back. Elsewhere this is a no-op.
+/// Open `path`'s directory so it can be flushed after the rename: on Unix a
+/// file sync does not persist the directory entry that names it. Elsewhere
+/// there is nothing to open.
 #[cfg(unix)]
-fn sync_parent_dir(path: &Path) -> io::Result<()> {
-    fs::File::open(parent_dir(path))?.sync_all()
+fn open_parent_dir(path: &Path) -> io::Result<Option<fs::File>> {
+    fs::File::open(parent_dir(path)).map(Some)
 }
 
 #[cfg(not(unix))]
-fn sync_parent_dir(_path: &Path) -> io::Result<()> {
-    Ok(())
+fn open_parent_dir(_path: &Path) -> io::Result<Option<fs::File>> {
+    Ok(None)
+}
+
+/// Flush the directory opened by [`open_parent_dir`] so the rename survives a
+/// crash. An error here means the new file is in place but its durability is
+/// unknown; the rename is not rolled back.
+fn sync_dir(dir: Option<fs::File>) -> io::Result<()> {
+    dir.map_or(Ok(()), |dir| dir.sync_all())
 }
 
 /// The directory `path` lives in: its parent, or `.` for a bare file name
@@ -324,7 +334,35 @@ mod tests {
         // A crash cannot be simulated here; this checks the sync reaches a
         // real directory for both shapes of path.
         let dir = tempfile::tempdir().unwrap();
-        sync_parent_dir(&dir.path().join("report.json")).unwrap();
-        sync_parent_dir(Path::new("report.json")).unwrap();
+        sync_dir(open_parent_dir(&dir.path().join("report.json")).unwrap()).unwrap();
+        sync_dir(open_parent_dir(Path::new("report.json")).unwrap()).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_directory_fails_before_the_destination_is_replaced() {
+        // A directory that can be written but not read accepts the rename,
+        // but cannot be opened for the sync. That must fail first, leaving
+        // the old file in place. Privileged users bypass the permission, so
+        // the test skips itself when the directory opens anyway.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out");
+        fs::create_dir(&out).unwrap();
+        let path = out.join("report.json");
+        fs::write(&path, "old").unwrap();
+        fs::set_permissions(&out, fs::Permissions::from_mode(0o300)).unwrap();
+        let privileged = fs::File::open(&out).is_ok();
+        let result = (!privileged).then(|| write_replacing(&path, "new"));
+        fs::set_permissions(&out, fs::Permissions::from_mode(0o700)).unwrap();
+        if let Some(result) = result {
+            assert!(result.is_err(), "the write should fail");
+            assert_eq!(fs::read_to_string(&path).unwrap(), "old");
+            assert_eq!(
+                fs::read_dir(&out).unwrap().count(),
+                1,
+                "temp file left behind"
+            );
+        }
     }
 }
