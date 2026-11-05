@@ -21,8 +21,10 @@
 //! exactly, so it is never readable more widely than the file it replaces and
 //! replacing a `0600` report never exposes its contents. A new
 //! destination gets the same default as `fs::write` (`0666` less the umask).
-//! Ownership is not copied, and on other platforms the new file takes the
-//! directory's default permissions.
+//! Only the read, write and execute bits (`0o777`) carry over: set-user-ID,
+//! set-group-ID and sticky bits are dropped on purpose, since a written report
+//! should never gain them. Ownership is not copied, and on other platforms the
+//! new file takes the directory's default permissions.
 //!
 //! The temporary file has a short, unpredictable name (`.pa-tmp.<pid>.<n>.<random>`),
 //! so a destination name near the filesystem's length limit still works.
@@ -69,15 +71,16 @@ pub fn write_replacing_like(
     }
 }
 
-/// The permission bits of the regular file at `path`, if there is one. A
-/// symlink or other non-regular entry lends nothing.
+/// The read, write and execute bits of the regular file at `path`, if there
+/// is one (special bits are dropped; see the module docs). A symlink or other
+/// non-regular entry lends nothing.
 #[cfg(unix)]
 fn existing_mode(path: &Path) -> Option<u32> {
     use std::os::unix::fs::PermissionsExt;
     fs::symlink_metadata(path)
         .ok()
         .filter(fs::Metadata::is_file)
-        .map(|meta| meta.permissions().mode() & 0o7777)
+        .map(|meta| meta.permissions().mode() & 0o777)
 }
 
 #[cfg(not(unix))]
@@ -283,5 +286,20 @@ mod tests {
         fs::set_permissions(&copy, fs::Permissions::from_mode(0o640)).unwrap();
         write_replacing_like(&copy, "again", Some(&report)).unwrap();
         assert_eq!(mode(&copy), 0o640);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn special_bits_are_not_carried_over() {
+        // A report should never gain set-user-ID, set-group-ID or sticky
+        // bits from the file it replaces; the rwx bits still carry over.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report.json");
+        fs::write(&path, "old").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o4755)).unwrap();
+        write_replacing(&path, "new").unwrap();
+        let got = fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(got, 0o755);
     }
 }
