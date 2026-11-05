@@ -10,6 +10,10 @@ is what `+--attest+` seals. `+--output+` must end in `+.json+` (any letter case)
 and no two of the files written (report, copy, and the `+--attest+` sidecar)
 may be the same file: a symbolic link at any of their paths, or two existing
 paths that are hard links to one file, is refused before anything is written.
+In this mode each file is written by renaming a finished temporary file into
+place (`+atomic_write::write_replacing+`), so a link swapped in after those
+checks is replaced rather than written through, and no reader sees a partial
+report.
 Other formats are unchanged for `+assail+`.
 
 ==== Fixed — KYAML keys holding a line separator

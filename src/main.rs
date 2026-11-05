@@ -1365,6 +1365,11 @@ fn attestation_sidecar_path(output: Option<&Path>) -> PathBuf {
 /// - a symbolic link at any of the paths, which could point at another, even
 ///   a dangling link that an earlier write would bring into existence;
 /// - two existing paths that are already one file, such as hard links.
+///
+/// These checks run before the writes, so a link swapped in afterwards would
+/// slip past them; the writes therefore go through
+/// [`panic_attack::atomic_write::write_replacing`], which replaces a path's
+/// directory entry instead of writing through it.
 fn kyaml_copy_path(out: &Path, sidecar: Option<&Path>) -> Result<PathBuf> {
     let path = out.with_extension("kyaml");
     let named_json = out
@@ -1573,16 +1578,29 @@ fn run_main() -> Result<()> {
                 }
                 _ => None,
             };
+            // In KYAML mode every output is written by renaming a finished
+            // temporary file into place, so a link swapped in after the checks
+            // above is replaced, never written through.
+            let write_output = |path: &Path, bytes: &[u8]| -> std::io::Result<()> {
+                if kyaml_path.is_some() {
+                    panic_attack::atomic_write::write_replacing(path, bytes)
+                } else {
+                    fs::write(path, bytes)
+                }
+            };
 
             if let Some(output_path) = &output {
-                fs::write(output_path, &report_json)?;
+                write_output(output_path, report_json.as_bytes())?;
                 qprintln!(
                     cli.quiet || headless,
                     "Report saved to: {}",
                     output_path.display()
                 );
                 if let Some(kyaml_path) = &kyaml_path {
-                    fs::write(kyaml_path, panic_attack::kyaml::to_string(&report)?)?;
+                    write_output(
+                        kyaml_path,
+                        panic_attack::kyaml::to_string(&report)?.as_bytes(),
+                    )?;
                     qprintln!(
                         cli.quiet || headless,
                         "KYAML copy saved to: {}",
@@ -1611,7 +1629,7 @@ fn run_main() -> Result<()> {
                 let envelope = builder.seal(report_json.as_bytes(), signing_key.as_deref())?;
                 let attestation_json = panic_attack::json::to_canonical_string(&envelope)?;
 
-                fs::write(&sidecar_path, attestation_json)?;
+                write_output(&sidecar_path, attestation_json.as_bytes())?;
                 qprintln!(
                     cli.quiet || headless,
                     "Attestation written to: {}",
