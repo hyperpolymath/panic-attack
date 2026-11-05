@@ -13,7 +13,8 @@ paths that are hard links to one file, is refused before anything is written.
 In this mode each file is written by renaming a finished temporary file into
 place (`+atomic_write::write_replacing+`), so a link swapped in after those
 checks is replaced rather than written through, and no reader sees a partial
-report.
+report. On Unix a replaced file keeps the old file's permission bits, so a
+private report stays private.
 Other formats are unchanged for `+assail+`.
 
 ==== Fixed — KYAML keys holding a line separator

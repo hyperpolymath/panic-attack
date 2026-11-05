@@ -14,8 +14,17 @@
 //! - a reader sees the old file or the new one, never a partial write.
 //!
 //! A file swapped in at the destination between a caller's checks and the
-//! write is therefore replaced rather than followed. The replacement is a new
-//! file, so it takes default permissions, not the old file's.
+//! write is therefore replaced rather than followed.
+//!
+//! Permissions: on Unix, when the destination is an existing regular file,
+//! its permission bits are copied onto the temporary file before any data is
+//! written, so replacing a `0600` report never exposes its contents. A new
+//! destination gets the same default as `fs::write` (`0666` less the umask).
+//! Ownership is not copied, and on other platforms the new file takes the
+//! directory's default permissions.
+//!
+//! The temporary file has a short fixed-form name (`.pa-tmp.<pid>.<n>`), so a
+//! destination name near the filesystem's length limit still works.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -25,9 +34,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Write `contents` to `path` by renaming a temporary file over it (see the
 /// module documentation).
 pub fn write_replacing(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<()> {
-    let (tmp_path, mut file) = create_temp_beside(path)?;
-    let written = file
-        .write_all(contents.as_ref())
+    if path.file_name().is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path has no file name",
+        ));
+    }
+    let (tmp_path, mut file) = create_temp_in(parent_dir(path))?;
+    let written = keep_permissions_of(path, &file)
+        .and_then(|()| file.write_all(contents.as_ref()))
         .and_then(|()| file.sync_all());
     drop(file);
     match written.and_then(|()| fs::rename(&tmp_path, path)) {
@@ -40,6 +55,25 @@ pub fn write_replacing(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<()
     }
 }
 
+/// Give `file` the permission bits of the regular file at `path`, if there
+/// is one. A symlink or other non-regular entry lends nothing.
+#[cfg(unix)]
+fn keep_permissions_of(path: &Path, file: &fs::File) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => {
+            let mode = meta.permissions().mode() & 0o7777;
+            file.set_permissions(fs::Permissions::from_mode(mode))
+        }
+        _ => Ok(()),
+    }
+}
+
+#[cfg(not(unix))]
+fn keep_permissions_of(_path: &Path, _file: &fs::File) -> io::Result<()> {
+    Ok(())
+}
+
 /// The directory `path` lives in: its parent, or `.` for a bare file name
 /// (whose parent is the empty path).
 fn parent_dir(path: &Path) -> &Path {
@@ -49,18 +83,13 @@ fn parent_dir(path: &Path) -> &Path {
     }
 }
 
-/// Create a new, uniquely named file in `path`'s directory.
-fn create_temp_beside(path: &Path) -> io::Result<(PathBuf, fs::File)> {
+/// Create a new, uniquely named file in `dir`.
+fn create_temp_in(dir: &Path) -> io::Result<(PathBuf, fs::File)> {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let dir = parent_dir(path);
-    let name = path
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?
-        .to_string_lossy();
     let mut last_err = None;
     for _ in 0..16 {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp = dir.join(format!(".{name}.{}.{n}.tmp", std::process::id()));
+        let tmp = dir.join(format!(".pa-tmp.{}.{n}", std::process::id()));
         match OpenOptions::new().write(true).create_new(true).open(&tmp) {
             Ok(file) => return Ok((tmp, file)),
             Err(err) if err.kind() == io::ErrorKind::AlreadyExists => last_err = Some(err),
@@ -133,5 +162,44 @@ mod tests {
         assert_eq!(parent_dir(Path::new("report.json")), Path::new("."));
         assert_eq!(parent_dir(Path::new("out/report.json")), Path::new("out"));
         assert_eq!(parent_dir(Path::new("/report.json")), Path::new("/"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_files_permissions_are_kept() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        for mode in [0o600, 0o640, 0o644] {
+            let path = dir.path().join(format!("report-{mode:o}.json"));
+            fs::write(&path, "old").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+            write_replacing(&path, "new").unwrap();
+            let got = fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
+            assert_eq!(got, mode, "mode {mode:o} not kept");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_file_gets_the_fs_write_default() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let ours = dir.path().join("ours");
+        let theirs = dir.path().join("theirs");
+        write_replacing(&ours, "x").unwrap();
+        fs::write(&theirs, "x").unwrap();
+        let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode(&ours), mode(&theirs));
+    }
+
+    #[test]
+    fn a_destination_name_near_the_length_limit_works() {
+        // 250 bytes leaves room for `.json`/`.kyaml` within a 255-byte
+        // component limit; the temporary name must not grow with it.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{}.kyaml", "r".repeat(249)));
+        assert_eq!(path.file_name().unwrap().len(), 255);
+        write_replacing(&path, "ok").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "ok");
     }
 }
