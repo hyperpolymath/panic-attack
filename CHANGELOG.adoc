@@ -2,14 +2,18 @@
 
 === [Unreleased]
 
-==== Fixed — JCS numbers on decimal ties
+==== Added — `+attest verify --report+` and `+--require-bound+`
 
-* `+ijson-jcs+` is bumped from 3a9a4ee to 03df9ed, which formats numbers with
-`+ryu-js+` (ECMAScript `+Number::toString+`). The old pin printed RFC 8785
-Appendix B vector 0x43143ff3c1cb0959 as `+1424953923781206.3+`; JCS requires
-`+1424953923781206.2+` (ties to even). Any report or attestation holding such a
-float now hashes to the value other JCS implementations compute. A test in
-`+crate::json+` pins the vector.
+* `+attest verify --report <REPORT>+` rehashes the report file, streaming it
+through a fixed-size buffer, and fails if it
+does not match the seal's `+report_hash+`. Without it, verification only checks
+that the stored digests agree with each other, so a report edited after sealing
+still verified.
+* `+attest verify --require-bound+` fails on legacy seals (no `+hash_scheme+`),
+whose intent and evidence cannot be rehashed.
+* The output now says whether the report was checked. Library callers use
+`+VerifyOptions+` (carrying the report digest from `+sha256_reader+`) with
+`+verify_attestation_file_with+` / `+verify_attestation_str_with+`; `+VerifyResult::Ok+` gains `+report_checked+`.
 
 ==== Fixed — KYAML keys holding a line separator
 
