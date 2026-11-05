@@ -13,7 +13,8 @@ paths that are hard links to one file, is refused before anything is written.
 So is a path that exists but is not a regular file (a directory, say) or that
 cannot be looked up, such as a derived name over the filesystem's length limit.
 In this mode each file is written by renaming a finished temporary file into
-place (`+atomic_write::write_replacing+`), so a link swapped in after those
+place (`+atomic_write::write_replacing+`, which also flushes the directory so
+the rename survives a crash), so a link swapped in after those
 checks is replaced rather than written through, and no reader sees a partial
 report. On Unix a replaced file keeps the old file's permission bits, and the
 temporary file is never more readable than the file it replaces; a new copy or

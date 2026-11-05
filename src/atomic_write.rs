@@ -6,7 +6,8 @@
 //!
 //! [`write_replacing`] writes the bytes to a new file in the destination's
 //! directory, created with `create_new` so it never opens anything that
-//! already exists, flushes it to disk, and renames it onto the destination.
+//! already exists, flushes it to disk, renames it onto the destination, and
+//! (on Unix) flushes the directory so the rename itself survives a crash.
 //! The rename replaces the directory entry itself. So, unlike [`std::fs::write`]:
 //!
 //! - a symbolic link at the destination is replaced, never written through;
@@ -62,7 +63,8 @@ pub fn write_replacing_like(
         .and_then(|()| file.sync_all());
     drop(file);
     match written.and_then(|()| fs::rename(&tmp_path, path)) {
-        Ok(()) => Ok(()),
+        // The rename is in place; make its directory entry durable too.
+        Ok(()) => sync_parent_dir(path),
         Err(err) => {
             // Best effort: the temporary file is ours and holds nothing else.
             let _ = fs::remove_file(&tmp_path);
@@ -101,6 +103,20 @@ fn restore_mode(file: &fs::File, mode: Option<u32>) -> io::Result<()> {
 
 #[cfg(not(unix))]
 fn restore_mode(_file: &fs::File, _mode: Option<u32>) -> io::Result<()> {
+    Ok(())
+}
+
+/// Flush `path`'s directory so the rename survives a crash: on Unix a file
+/// sync does not persist the directory entry that names it. An error here
+/// means the new file is in place but its durability is unknown; the rename
+/// is not rolled back. Elsewhere this is a no-op.
+#[cfg(unix)]
+fn sync_parent_dir(path: &Path) -> io::Result<()> {
+    fs::File::open(parent_dir(path))?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_parent_dir(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
@@ -301,5 +317,14 @@ mod tests {
         write_replacing(&path, "new").unwrap();
         let got = fs::metadata(&path).unwrap().permissions().mode() & 0o7777;
         assert_eq!(got, 0o755);
+    }
+
+    #[test]
+    fn the_directory_sync_resolves_bare_and_nested_names() {
+        // A crash cannot be simulated here; this checks the sync reaches a
+        // real directory for both shapes of path.
+        let dir = tempfile::tempdir().unwrap();
+        sync_parent_dir(&dir.path().join("report.json")).unwrap();
+        sync_parent_dir(Path::new("report.json")).unwrap();
     }
 }
