@@ -104,7 +104,8 @@ pub struct ExecutionEvidence {
     /// Unique programming languages detected.
     pub languages_detected: Vec<String>,
 
-    /// `SHA-256(session_nonce || files_read || bytes_read || rolling_content_hash || wall_clock_ms)`.
+    /// `SHA-256(session_nonce || files_read || bytes_read || rolling_content_hash || wall_clock_ms)`,
+    /// with each count as 8 little-endian bytes; see [`evidence_hash`].
     pub evidence_hash: String,
 }
 
@@ -171,16 +172,13 @@ impl EvidenceAccumulator {
         let mut languages: Vec<String> = self.languages_detected.into_iter().collect();
         languages.sort();
 
-        // Evidence hash: binding commitment over the key metrics
-        let evidence_hash = {
-            let mut hasher = Sha256::new();
-            hasher.update(self.session_nonce.as_bytes());
-            hasher.update(self.files_read.to_le_bytes());
-            hasher.update(self.bytes_read.to_le_bytes());
-            hasher.update(rolling_content_hash.as_bytes());
-            hasher.update(wall_clock_ms.to_le_bytes());
-            hex::encode(hasher.finalize())
-        };
+        let evidence_hash = evidence_hash(
+            &self.session_nonce,
+            self.files_read as u64,
+            self.bytes_read,
+            &rolling_content_hash,
+            wall_clock_ms,
+        );
 
         ExecutionEvidence {
             session_nonce: self.session_nonce,
@@ -196,6 +194,26 @@ impl EvidenceAccumulator {
             evidence_hash,
         }
     }
+}
+
+/// The evidence hash: a binding commitment over the key metrics.
+///
+/// Counts are hashed as `u64` little-endian, so the value does not depend on
+/// the platform's `usize` width and other tools can recompute it.
+pub fn evidence_hash(
+    session_nonce: &str,
+    files_read: u64,
+    bytes_read: u64,
+    rolling_content_hash: &str,
+    wall_clock_ms: u64,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(session_nonce.as_bytes());
+    hasher.update(files_read.to_le_bytes());
+    hasher.update(bytes_read.to_le_bytes());
+    hasher.update(rolling_content_hash.as_bytes());
+    hasher.update(wall_clock_ms.to_le_bytes());
+    hex::encode(hasher.finalize())
 }
 
 /// Best-effort CPU time in milliseconds (Linux-only via /proc/self/stat).
@@ -258,6 +276,16 @@ fn get_peak_rss() -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn evidence_hash_known_answer() {
+        // Expected value from coreutils, not this crate:
+        // printf 'nonce\002\0\0\0\0\0\0\0\350\003\0\0\0\0\0\0rolling\007\0\0\0\0\0\0\0' | sha256sum
+        assert_eq!(
+            evidence_hash("nonce", 2, 1000, "rolling", 7),
+            "314d68809916de80906ebcf90bc79abbb9a4f4020a5266bc9cd4377adc4585de"
+        );
+    }
 
     #[test]
     fn test_accumulator_basic_flow() {
