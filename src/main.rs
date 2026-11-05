@@ -1335,54 +1335,79 @@ fn parse_axis(value: &str) -> Option<AttackAxis> {
     }
 }
 
+/// Where `assail --attest` writes its attestation sidecar: beside the report
+/// at `output` as `<stem>.attestation.json`, or in the working directory when
+/// the report goes to stdout. The writer and the alias check below both use
+/// this, so the two cannot drift apart.
+fn attestation_sidecar_path(output: Option<&Path>) -> PathBuf {
+    match output {
+        Some(out) => {
+            let stem = out.file_stem().unwrap_or_default().to_string_lossy();
+            let parent = out.parent().unwrap_or(Path::new("."));
+            parent.join(format!("{}.attestation.json", stem))
+        }
+        None => PathBuf::from("assail-report.attestation.json"),
+    }
+}
+
 /// Where `assail --output-format kyaml` writes its KYAML copy of the report
-/// at `out`: beside it, with a `.kyaml` extension.
+/// at `out`: beside it, with a `.kyaml` extension. `sidecar` is the
+/// attestation sidecar when `--attest` is on.
 ///
-/// The JSON at `out` is the report of record, and an attestation seals its
-/// bytes, so the two writes must never reach the same file. Both paths share
-/// a directory and differ only in extension, so they can alias in exactly
-/// three ways, and each is refused before anything is written:
-/// - the names are equal ignoring letter case (`--output report.KYAML` on a
-///   case-insensitive filesystem), so an `--output` named `.kyaml` in any
-///   case is refused;
-/// - either path is a symbolic link, which could point at the other, even a
-///   dangling link that the first write would bring into existence;
-/// - the copy path is already the same file as the report, such as a hard
-///   link to it.
-fn kyaml_copy_path(out: &Path) -> Result<PathBuf> {
+/// The JSON at `out` is the report of record and the attestation seals its
+/// bytes, so no two of the files written here may be the same file. They
+/// share a directory and are named `S.json`, `S.kyaml` and
+/// `S.attestation.json`, so they can alias in only three ways, and each is
+/// refused before anything is written:
+/// - equal names ignoring letter case: `--output` must end in `.json` (in any
+///   case), which keeps the three names distinct on case-insensitive
+///   filesystems too;
+/// - a symbolic link at any of the paths, which could point at another, even
+///   a dangling link that an earlier write would bring into existence;
+/// - two existing paths that are already one file, such as hard links.
+fn kyaml_copy_path(out: &Path, sidecar: Option<&Path>) -> Result<PathBuf> {
     let path = out.with_extension("kyaml");
-    let named_kyaml = out
+    let named_json = out
         .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("kyaml"));
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
     anyhow::ensure!(
-        !named_kyaml,
-        "assail --output names the JSON report; use a .json name and the \
-         KYAML copy is written beside it as {}",
+        named_json,
+        "with --output-format kyaml, assail --output names the JSON report and \
+         must end in .json; the KYAML copy is written beside it as {}",
         path.display()
     );
-    for (role, candidate) in [("report", out), ("KYAML copy", path.as_path())] {
+    let mut outputs = vec![("report", out), ("KYAML copy", path.as_path())];
+    if let Some(sidecar) = sidecar {
+        outputs.push(("attestation sidecar", sidecar));
+    }
+    for &(role, candidate) in &outputs {
         let is_symlink = fs::symlink_metadata(candidate)
             .map(|meta| meta.file_type().is_symlink())
             .unwrap_or(false);
         anyhow::ensure!(
             !is_symlink,
             "refusing to write the {role} through the symbolic link {} \
-             (it could alias the other output)",
+             (it could alias another output)",
             candidate.display()
         );
     }
-    // Neither path is a symlink now, so only a hard link can join them.
-    if out.exists() && path.exists() {
-        anyhow::ensure!(
-            !same_file::is_same_file(out, &path).with_context(|| format!(
-                "comparing {} with {}",
-                out.display(),
-                path.display()
-            ))?,
-            "{} is the same file as the report {}; refusing to overwrite the report",
-            path.display(),
-            out.display()
-        );
+    // No path is a symlink now, so only a hard link can join two of them.
+    for (i, &(role_a, a)) in outputs.iter().enumerate() {
+        for &(role_b, b) in &outputs[i + 1..] {
+            if a.exists() && b.exists() {
+                anyhow::ensure!(
+                    !same_file::is_same_file(a, b).with_context(|| format!(
+                        "comparing {} with {}",
+                        a.display(),
+                        b.display()
+                    ))?,
+                    "the {role_b} {} is the same file as the {role_a} {}; \
+                     refusing to overwrite it",
+                    b.display(),
+                    a.display()
+                );
+            }
+        }
     }
     Ok(path)
 }
@@ -1539,9 +1564,12 @@ fn run_main() -> Result<()> {
 
             // `--output-format kyaml` adds a KYAML copy beside the JSON report.
             // The JSON stays the report of record: the seal covers its bytes.
+            let sidecar_path = chain_builder
+                .is_some()
+                .then(|| attestation_sidecar_path(output.as_deref()));
             let kyaml_path = match &output {
                 Some(out) if cli.output_format == ReportOutputFormat::Kyaml => {
-                    Some(kyaml_copy_path(out)?)
+                    Some(kyaml_copy_path(out, sidecar_path.as_deref())?)
                 }
                 _ => None,
             };
@@ -1579,17 +1607,9 @@ fn run_main() -> Result<()> {
             }
 
             // Seal and write attestation sidecar
-            if let Some(builder) = chain_builder {
+            if let (Some(builder), Some(sidecar_path)) = (chain_builder, sidecar_path) {
                 let envelope = builder.seal(report_json.as_bytes(), signing_key.as_deref())?;
                 let attestation_json = panic_attack::json::to_canonical_string(&envelope)?;
-
-                let sidecar_path = if let Some(out) = &output {
-                    let stem = out.file_stem().unwrap_or_default().to_string_lossy();
-                    let parent = out.parent().unwrap_or(Path::new("."));
-                    parent.join(format!("{}.attestation.json", stem))
-                } else {
-                    PathBuf::from("assail-report.attestation.json")
-                };
 
                 fs::write(&sidecar_path, attestation_json)?;
                 qprintln!(

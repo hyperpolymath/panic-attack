@@ -6,10 +6,10 @@
 
 * With `+--output-format kyaml+` and `+--output report.json+`, `+assail+` writes
 `+report.kyaml+` beside the JSON report. The JSON stays the report of record: it
-is what `+--attest+` seals. The copy can never land on it: an `+--output+` path
-ending in `+.kyaml+` in any letter case, a report or copy path that is a
-symbolic link, or a copy path that is already the same file as the report, is
-refused before anything is written.
+is what `+--attest+` seals. `+--output+` must end in `+.json+` (any letter case),
+and no two of the files written (report, copy, and the `+--attest+` sidecar)
+may be the same file: a symbolic link at any of their paths, or two existing
+paths that are hard links to one file, is refused before anything is written.
 Other formats are unchanged for `+assail+`.
 
 ==== Fixed — KYAML keys holding a line separator
