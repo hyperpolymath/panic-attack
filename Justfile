@@ -273,26 +273,27 @@ fmt-check:
 test-local:
     cargo test --locked
 
-# CI integrity: SHA pins, lockfile coverage, allowlist coverage, YAML parse.
-# Needs `yq` (mikefarah) and `python3`; see scripts/ci/.
+# CI integrity: requires the pinned clean Standards checkout and official binary.
+# See docs/CI-CD.adoc for STANDARDS_ROOT and GH_ACTIONS_LOCK_BIN.
 integrity:
     #!/usr/bin/env bash
     set -euo pipefail
     command -v yq >/dev/null || { echo "integrity: yq not found (mikefarah/yq)"; exit 2; }
     bash .githooks/validate-sha-pins.sh
-    python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json --check
     bash .githooks/validate-actions-lock.sh
+    bash "$STANDARDS_ROOT/scripts/check-workflow-coordinates.sh" .github/workflows
     bash scripts/ci/check-allowed-actions.sh .github/actions-allowlist.json .github/workflows
-    for f in .github/workflows/*.yml; do
-      case "$f" in *.lock) continue ;; esac
-      [ "$(yq -r '.jobs | tag' "$f")" = '!!map' ] || { echo "integrity: $f has no jobs map"; exit 1; }
-    done
-    echo "integrity: OK"
+    echo "integrity: source gates passed; live GitHub admission remains unverified"
 
-# After changing any `uses:`: re-resolve tag -> commit and rewrite the lockfile.
+# Native generation is an explicitly requested canonical recovery operation.
+# Printing the subject is not generation or authorization to dispatch.
 pins:
-    bash scripts/ci/resolve-action-shas.sh
-    python3 scripts/ci/pin-workflow-uses.py --map .github/workflows/action-pins.json
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Native lock generation moved to hyperpolymath/proven-cicd Actions Lock Recovery."
+    printf 'Immutable source candidate: %s\n' "$(git rev-parse HEAD)"
+    echo "Follow docs/CI-CD.adoc; no workflow or lock bytes were changed." >&2
+    exit 2
 
 # ── Evidence-graded testing (proven-tests-and-benches) ───────────────────────
 
