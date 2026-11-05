@@ -2695,15 +2695,18 @@ fn run_main() -> Result<()> {
                 report,
                 require_bound,
             } => {
-                let report_bytes = report
+                // Hash the report as a stream: it may be large, and only its
+                // digest is compared.
+                let report_sha256 = report
                     .as_deref()
                     .map(|path| {
-                        fs::read(path)
+                        fs::File::open(path)
+                            .and_then(attestation::sha256_reader)
                             .map_err(|e| anyhow::anyhow!("reading {}: {}", path.display(), e))
                     })
                     .transpose()?;
                 let options = attestation::VerifyOptions {
-                    report: report_bytes.as_deref(),
+                    report_sha256: report_sha256.as_deref(),
                     require_bound,
                 };
                 match attestation::verify_attestation_file_with(&file, &options)? {

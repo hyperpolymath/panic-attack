@@ -4,15 +4,16 @@
 
 ==== Added — `+attest verify --report+` and `+--require-bound+`
 
-* `+attest verify --report <REPORT>+` rehashes the report file and fails if it
+* `+attest verify --report <REPORT>+` rehashes the report file, streaming it
+through a fixed-size buffer, and fails if it
 does not match the seal's `+report_hash+`. Without it, verification only checks
 that the stored digests agree with each other, so a report edited after sealing
 still verified.
 * `+attest verify --require-bound+` fails on legacy seals (no `+hash_scheme+`),
 whose intent and evidence cannot be rehashed.
 * The output now says whether the report was checked. Library callers use
-`+VerifyOptions+` with `+verify_attestation_file_with+` /
-`+verify_attestation_str_with+`; `+VerifyResult::Ok+` gains `+report_checked+`.
+`+VerifyOptions+` (carrying the report digest from `+sha256_reader+`) with
+`+verify_attestation_file_with+` / `+verify_attestation_str_with+`; `+VerifyResult::Ok+` gains `+report_checked+`.
 
 ==== Fixed — KYAML keys holding a line separator
 

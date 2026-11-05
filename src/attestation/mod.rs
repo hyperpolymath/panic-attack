@@ -65,12 +65,34 @@ pub enum VerifyResult {
 /// Optional checks on top of the chain invariants.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VerifyOptions<'a> {
-    /// The report file's bytes. When given, their SHA-256 must equal
-    /// `seal.report_hash`, so the attestation is checked against the report
-    /// itself rather than only against the digest stored beside it.
-    pub report: Option<&'a [u8]>,
+    /// SHA-256 of the report file, as 64 lowercase hex characters (see
+    /// [`sha256_reader`]). When given, it must equal `seal.report_hash`, so
+    /// the attestation is checked against the report itself rather than only
+    /// against the digest stored beside it. A digest rather than the bytes,
+    /// so a caller can hash a large report as a stream.
+    pub report_sha256: Option<&'a str>,
     /// Reject legacy seals, whose intent and evidence cannot be rehashed.
     pub require_bound: bool,
+}
+
+/// SHA-256 of everything `reader` yields, as 64 lowercase hex characters.
+///
+/// Hashes through a fixed-size buffer, so memory use does not grow with the
+/// input. Use it to fill [`VerifyOptions::report_sha256`]; a byte slice is a
+/// reader too.
+pub fn sha256_reader<R: std::io::Read>(mut reader: R) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    let mut buf = [0_u8; 8192];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Verify an attestation sidecar file.
@@ -200,9 +222,8 @@ pub fn verify_attestation_str_with(
     }
 
     // The report itself, when supplied, must hash to seal.report_hash.
-    let report_checked = match options.report {
-        Some(report) => {
-            let computed = intent::sha256_str(report);
+    let report_checked = match options.report_sha256 {
+        Some(computed) => {
             if computed != seal.report_hash {
                 failures.push(format!(
                     "report_hash mismatch: stored={} computed={}",
@@ -507,10 +528,21 @@ mod tests {
     }
 
     #[test]
+    fn sha256_reader_matches_the_one_shot_hash() {
+        // FIPS 180-2 "abc" vector, and a stream longer than the read buffer.
+        assert_eq!(
+            sha256_reader(&b"abc"[..]).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let big = vec![0x5a_u8; 64 * 1024 + 7];
+        assert_eq!(sha256_reader(&big[..]).unwrap(), intent::sha256_str(&big));
+    }
+
+    #[test]
     fn the_sealed_report_verifies() {
         let (sidecar, report) = sealed_sidecar_and_report();
         let options = VerifyOptions {
-            report: Some(report.as_bytes()),
+            report_sha256: Some(&sha256_reader(report.as_bytes()).expect("hash")),
             ..VerifyOptions::default()
         };
         match verify_with(&sidecar, &options) {
@@ -532,7 +564,7 @@ mod tests {
         let tampered = report.replace("[]", "[{}]");
         assert_ne!(tampered, report);
         let options = VerifyOptions {
-            report: Some(tampered.as_bytes()),
+            report_sha256: Some(&sha256_reader(tampered.as_bytes()).expect("hash")),
             ..VerifyOptions::default()
         };
         match verify_with(&sidecar, &options) {
