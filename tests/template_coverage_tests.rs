@@ -106,7 +106,8 @@ fn script_types_and_encoded_attributes_cannot_silently_bypass_an_adapter() {
 #[test]
 fn nested_quotes_remain_part_of_attribute_and_css_values() {
     for (name, source) in [
-        ("secret.html", r#"<div password="'1234567'"></div>"#),
+        // Deliberate dummy password: the detector must continue to flag this fixture.
+        ("secret.html", r#"<div password="'1234567'"></div>"#), // scanner-allow: rust-secrets
         ("secret.css", r#"p { password: "'1234567'"; }"#),
     ] {
         let report = scan(name, source);
