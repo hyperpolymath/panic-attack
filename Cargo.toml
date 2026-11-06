@@ -53,7 +53,8 @@ ureq = { version = "3.3", optional = true }
 [features]
 default = []
 signing = ["ed25519-dalek"]
-http = ["ureq"]
+# Patch Bridge is compiled by `http` and parses Cargo manifests/lockfiles.
+http = ["ureq", "toml_edit"]
 sarif = []
 # Native GUI viewer (eframe/egui). Opt-in because eframe raises MSRV above the
 # 1.90 baseline; default builds remain pure-CLI and MSRV-clean.
