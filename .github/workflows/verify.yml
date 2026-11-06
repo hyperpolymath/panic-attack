@@ -113,6 +113,8 @@ jobs:
         include:
           - features: ''                    # default: offline, zero-network build
             cache-suffix: default
+          - features: http                  # exact feature set used by bridge-gate consumers
+            cache-suffix: http
           - features: http,sarif             # Patch Bridge + SARIF
             # A cache key may not contain a comma (Swatinem/rust-cache rejects
             # it at startup of the step), so the matrix carries its own label.
