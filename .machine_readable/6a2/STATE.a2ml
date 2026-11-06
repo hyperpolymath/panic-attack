@@ -108,3 +108,9 @@ layer-1-0-closure = "stripIsIdentityOnStrippedBody — closes slash-slash induct
 layer-1-0-block-strings = "Stripping_Block.idr + Stripping_Strings.idr + Stripping_Composition.idr + Stripping_PositionPreservation.idr (PROOF-PROGRAMME row 1 remaining)"
 hypatia-rule-wiring = "Hypatia ingestion of test_context / ffi_kind / jit_context metadata; ContextSuppressed bucket distinct from RuleSuppressed"
 gitbot-panicbot-wiring = "gitbot-fleet panicbot translator: surface test_context + suppression-reason in fleet-side reports"
+
+[repair-2026-11-06-toml-dependency]
+change = "toml_edit is required by unconditional assail configuration analysis; remove optional=true"
+regression = "Verify matrix adds exact http-only downstream feature combination alongside default and http,sarif"
+validation = "TOML/YAML structure and dependency declarations checked locally; Rust toolchain unavailable; compilation and full suite await CI"
+status = "candidate; not a verified estate resolution"
