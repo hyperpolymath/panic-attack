@@ -212,6 +212,12 @@ jobs:
           done
           ./chapel/mass-panic --repoDirectory="$WORK/corpus" --numLocales=1 --quiet --outputDir="$WORK/out"
           ls "$WORK/out"/system-image-*.json >/dev/null
+          for report in "$WORK/out"/assemblyline-*.json "$WORK/out"/system-image-*.json; do
+            test -f "$report"
+            case "${report##*/}" in
+              *:*) echo "Non-portable report filename: ${report##*/}" >&2; exit 1 ;;
+            esac
+          done
           echo "chapel-e2e: PASS"
 
   chapel-cli-contract:

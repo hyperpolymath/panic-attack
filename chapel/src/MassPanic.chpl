@@ -1072,7 +1072,9 @@ module MassPanic {
             mkdir(outputDir, parents=true);
         } catch { }
 
-        const timestamp = dateString();
+        // Keep ISO timestamps inside reports, but use portable filenames.
+        // Colons are forbidden in Windows checkout paths.
+        const timestamp = dateString().replace(":", "-");
 
         // Write assemblyline report
         const reportPath = joinPath(outputDir, "assemblyline-" + timestamp + ".json");
