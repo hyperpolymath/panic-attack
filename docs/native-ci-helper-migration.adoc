@@ -37,3 +37,12 @@ all-targets Clippy with warnings denied before testing the real inventory.
 Creusot with Pearlite contracts: `OPEN`, not run for these CI utilities.
 Verus: `OPEN`, not run. Executable contract tests are not formal proofs;
 framework provenance tiers are retained and no independent witness is claimed.
+
+== Review follow-up
+
+The recon reader uses a typed baseline envelope for `assail` and `pons`.
+Descriptive metadata such as the repository's `_comment` array is ignored;
+malformed scanner counts remain input errors. The CLI regression loads the
+actual committed baseline as well as invalid counts and unavailable reports.
+Ledger derivation is split into inventory, taxonomy, assignment, grading and
+absence checks with the same claim/input exit codes and report semantics.

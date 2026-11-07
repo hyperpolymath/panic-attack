@@ -89,7 +89,11 @@ fn regex(pattern: Option<&str>) -> Result<Option<Regex>> {
         .map_err(|e| input(format!("invalid selection regex: {e}")))
 }
 
-pub fn derive_report(inventory: &Value, ledger: &Value, root: &Path) -> Result<Value> {
+type Inventory = BTreeMap<String, BTreeSet<String>>;
+type Assignments<'a> = BTreeMap<(String, String), (&'a Cell, bool)>;
+type Coordinates = BTreeSet<(String, String)>;
+
+fn parse_inventory(inventory: &Value) -> Result<Inventory> {
     let inventory: BTreeMap<String, BTreeSet<String>> = serde_json::from_value(inventory.clone())?;
     if inventory
         .iter()
@@ -100,7 +104,10 @@ pub fn derive_report(inventory: &Value, ledger: &Value, root: &Path) -> Result<V
     if inventory.values().map(BTreeSet::len).sum::<usize>() == 0 {
         return Err(input("inventory contains no executed tests"));
     }
-    let ledger: Ledger = serde_json::from_value(ledger.clone())?;
+    Ok(inventory)
+}
+
+fn check_taxonomy(ledger: &Ledger) -> Result<()> {
     for cell in ledger.entries.iter().chain(&ledger.buckets) {
         if !ledger.taxonomy.categories.contains(&cell.category)
             || !ledger.taxonomy.aspects.contains(&cell.aspect)
@@ -108,11 +115,15 @@ pub fn derive_report(inventory: &Value, ledger: &Value, root: &Path) -> Result<V
             return Err(input("a ledger cell is outside the declared taxonomy"));
         }
     }
+    Ok(())
+}
+
+fn assign_entries<'a>(ledger: &'a Ledger, inventory: &Inventory) -> Result<Assignments<'a>> {
     let mut assignments = BTreeMap::<(String, String), (&Cell, bool)>::new();
     for cell in &ledger.entries {
         let pattern = regex(cell.pattern.as_deref())?;
         let mut matched = 0;
-        for (binary, names) in &inventory {
+        for (binary, names) in inventory {
             if !cell.bins.contains(binary) {
                 continue;
             }
@@ -133,6 +144,14 @@ pub fn derive_report(inventory: &Value, ledger: &Value, root: &Path) -> Result<V
             )));
         }
     }
+    Ok(assignments)
+}
+
+fn assign_buckets<'a>(
+    ledger: &'a Ledger,
+    inventory: &Inventory,
+    assignments: &mut Assignments<'a>,
+) -> Result<()> {
     let buckets: Vec<_> = ledger
         .buckets
         .iter()
@@ -144,7 +163,7 @@ pub fn derive_report(inventory: &Value, ledger: &Value, root: &Path) -> Result<V
         .map(|d| Regex::new(&d.r#match).map_err(|e| input(e.to_string())))
         .collect::<Result<_>>()?;
     let mut remainder = 0;
-    for (binary, names) in &inventory {
+    for (binary, names) in inventory {
         for name in names {
             let key = (binary.clone(), name.clone());
             if assignments.contains_key(&key) {
@@ -170,6 +189,13 @@ pub fn derive_report(inventory: &Value, ledger: &Value, root: &Path) -> Result<V
             "{remainder} tests exceed the declared remainder ratchet"
         )));
     }
+    Ok(())
+}
+
+fn grade(
+    assignments: Assignments<'_>,
+    root: &Path,
+) -> Result<([usize; 3], Coordinates, Vec<Value>)> {
     let mut tiers = [0usize; 3];
     let mut cells = BTreeSet::new();
     let mut entries = Vec::new();
@@ -200,11 +226,26 @@ pub fn derive_report(inventory: &Value, ledger: &Value, root: &Path) -> Result<V
         cells.insert((cell.category.clone(), cell.aspect.clone()));
         entries.push(json!({"test_id":format!("{binary}::{name}"), "category":cell.category, "aspect":cell.aspect, "provenance":tier, "proof_ladder":[], "result":"passed"}));
     }
+    Ok((tiers, cells, entries))
+}
+
+fn check_absent(ledger: &Ledger, cells: &Coordinates) -> Result<()> {
     for absent in &ledger.declared_absent {
         if cells.contains(&(absent.category.clone(), absent.aspect.clone())) {
             return Err(claim("a coordinate is both declared absent and covered"));
         }
     }
+    Ok(())
+}
+
+pub fn derive_report(inventory: &Value, ledger: &Value, root: &Path) -> Result<Value> {
+    let inventory = parse_inventory(inventory)?;
+    let ledger: Ledger = serde_json::from_value(ledger.clone())?;
+    check_taxonomy(&ledger)?;
+    let mut assignments = assign_entries(&ledger, &inventory)?;
+    assign_buckets(&ledger, &inventory, &mut assignments)?;
+    let (tiers, cells, entries) = grade(assignments, root)?;
+    check_absent(&ledger, &cells)?;
     Ok(
         json!({"schema_version":1, "suite":ledger.suite.as_deref().unwrap_or("unknown"),
         "summary":{"passed":entries.len(), "total":entries.len(), "actually_proven":tiers[0], "provisionally_proven":tiers[1], "unproven":tiers[2], "covered_cells":cells.len(), "cat_aspect_cells":ledger.taxonomy.categories.len()*ledger.taxonomy.aspects.len(), "lattice_covered":cells.len()}, "entries":entries}),

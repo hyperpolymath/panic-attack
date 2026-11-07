@@ -17,12 +17,19 @@ struct Args {
     #[arg(long)]
     no_fail: bool,
 }
+#[derive(Default, serde::Deserialize)]
+struct Baseline {
+    #[serde(default)]
+    assail: BTreeMap<String, u64>,
+    #[serde(default)]
+    pons: BTreeMap<String, u64>,
+}
 fn run() -> Result<()> {
     let args = Args::parse();
-    let baseline: BTreeMap<String, BTreeMap<String, u64>> = if args.baseline.exists() {
+    let baseline: Baseline = if args.baseline.exists() {
         serde_json::from_slice(&fs::read(&args.baseline)?)?
     } else {
-        BTreeMap::new()
+        Baseline::default()
     };
     let mut text = String::from("## Recon: two independent scans\n\n");
     let mut observed = BTreeMap::new();
@@ -48,8 +55,12 @@ fn run() -> Result<()> {
                 continue;
             }
         };
-        let frozen = baseline.get(name).cloned().unwrap_or_default();
-        regressions += regression_count(&counts, &frozen);
+        let frozen = if name == "assail" {
+            &baseline.assail
+        } else {
+            &baseline.pons
+        };
+        regressions += regression_count(&counts, frozen);
         text.push_str("| category | observed | baseline | verdict |\n|---|---|---|---|\n");
         for (category, count) in &counts {
             let old = frozen.get(category);

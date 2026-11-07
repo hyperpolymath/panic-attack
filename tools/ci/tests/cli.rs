@@ -80,7 +80,10 @@ fn recon_cli_distinguishes_regressions_and_unavailable_reports() -> Result<()> {
         &json!({"weak_points":[{"category":"A"},{"category":"A"}]}),
     )?;
     let pons = temp.write("pons.json", &json!({"findings":[]}))?;
-    let baseline = temp.write("baseline.json", &json!({"assail":{"A":1},"pons":{}}))?;
+    let baseline = temp.write(
+        "baseline.json",
+        &json!({"_comment":["metadata is not a scanner"],"assail":{"A":1},"pons":{}}),
+    )?;
     let run = |advisory: bool| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_recon-compare"));
         command
@@ -132,5 +135,33 @@ fn repository_ledger_taxonomy_and_selectors_are_readable() -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+#[test]
+fn recon_cli_accepts_the_actual_repository_baseline() -> Result<()> {
+    let temp = Temp::new()?;
+    let assail = temp.write("assail.json", &json!({"weak_points":[]}))?;
+    let pons = temp.write("pons.json", &json!({"findings":[]}))?;
+    let baseline: Value = serde_json::from_str(include_str!("../../../recon/baseline.json"))?;
+    let baseline = temp.write("baseline.json", &baseline)?;
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_recon-compare"))
+            .args([
+                "--baseline",
+                baseline.to_str().unwrap(),
+                "--assail",
+                assail.to_str().unwrap(),
+                "--pons",
+                pons.to_str().unwrap(),
+            ])
+            .output()
+    };
+    assert!(run()?.status.success());
+    temp.write(
+        "baseline.json",
+        &json!({"_comment":[], "assail":{"A":"invalid"},"pons":{}}),
+    )?;
+    assert_eq!(run()?.status.code(), Some(2));
     Ok(())
 }
