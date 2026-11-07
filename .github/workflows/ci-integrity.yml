@@ -117,6 +117,16 @@ jobs:
           done
           exit "$fail"
 
+      - name: Repository path portability
+        run: |
+          set -euo pipefail
+          rustc --version
+          CHECKER="$RUNNER_TEMP/check-repository-paths"
+          rustc --edition 2021 --test scripts/ci/check-repository-paths.rs -o "$CHECKER-tests"
+          "$CHECKER-tests"
+          rustc --edition 2021 scripts/ci/check-repository-paths.rs -o "$CHECKER"
+          "$CHECKER" "$GITHUB_WORKSPACE"
+
       - name: Retain raw native result and immutable source identity
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -140,6 +150,7 @@ jobs:
             echo '| Native lock | Official v0.2.0 result, unchanged published reconciliation and bidirectional lock sync |'
             echo '| Tree allowlist | Complete action/workflow path and exact SHA, without a live Settings claim |'
             echo '| YAML parse | Readable workflow documents with a jobs map |'
+            echo '| Repository paths | Windows device/component restrictions and case/file-directory collisions in the complete tracked inventory |'
             echo '| Startup triage | Source/API observations; no inferred platform root cause from zero jobs alone |'
             echo ''
             echo 'The raw artifact records not_run if consumer verification never executed, or running if no native exit was recorded.'
