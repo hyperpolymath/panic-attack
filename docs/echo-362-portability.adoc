@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Windows checkout portability — Echo Types issue 362
+
+The eight historical reports previously containing colons in their filenames
+are renamed with hyphens. Their original Git blob hashes are unchanged;
+report contents and ISO timestamps remain untouched. A fresh complete Windows
+clone of the repair branch succeeded without omitting any tracked artifact.
+
+The Chapel writer removes colons from filenames only. The existing Chapel
+end-to-end gate checks the names of both generated report types. No local
+Chapel execution is claimed: the compiler is not installed locally.
+
+The dedicated CI path checker tests invalid Windows components, reserved
+device names (including superscript digits and console devices), and
+case/file-directory collisions. It checks the explicit Git worktree root;
+it is not a Cargo integration test and does not break packaged-source tests
+or accidentally inspect a vendored crate's enclosing repository.
+
+The two original portability controls failed on the old tracked inventory
+and passed after the eight artifact renames. The expanded checker has its
+own unit controls and a real source-checkout run in CI.
+
+Creusot with Pearlite contracts and Verus are `OPEN`, not run for this CI
+utility; the executable controls are tests, not a formal Windows filesystem
+or Chapel proof. Exact hosted results remain in this change's pull request.
+
+The repository Actions policy was brought into the already approved canonical
+namespace-transfer policy by adding
+`metadatastician/standards/.github/workflows/*@*`. Existing allowlist entries,
+GitHub/verified-creator settings and mandatory SHA pinning were preserved.
