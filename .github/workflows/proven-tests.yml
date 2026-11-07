@@ -81,7 +81,7 @@ jobs:
       - name: Derive the run report (cells must select real tests)
         run: |
           bash scripts/ci/annotate.sh "proven:ledger" -- \
-          python3 scripts/proven/verify-ledger.py \
+          bash scripts/proven/verify-ledger.sh \
             --inventory /tmp/inventory.json \
             --ledger proven/ledger.json \
             --root . \
@@ -101,19 +101,8 @@ jobs:
             --proven-tests-root . \
             --fail-on-defect \
             --output /tmp/proven-aggregate.json
-          python3 - <<'PY'
-          import json
-          agg = json.load(open('/tmp/proven-aggregate.json'))
-          records = agg['proven_tests']
-          assert len(records) == 1, records
-          record = records[0]
-          assert record['defects'] == [], record['defects']
-          summary = record['summary']
-          assert summary['total'] > 0, summary
-          print(f"proven-tests: {summary['passed']}/{summary['total']} passed, "
-                f"{summary['covered_cells']}/{summary['cat_aspect_cells']} cells, "
-                f"{summary['actually_proven']} actually-proven")
-          PY
+          jq -e '.proven_tests | type == "array" and length == 1 and (.[0].defects == []) and (.[0].summary.total | type == "number" and . > 0)' /tmp/proven-aggregate.json > /dev/null
+          jq -r '.proven_tests[0].summary | "proven-tests: \(.passed)/\(.total) passed, \(.covered_cells)/\(.cat_aspect_cells) cells, \(.actually_proven) actually-proven"' /tmp/proven-aggregate.json
 
       - name: Publish to the job summary
         if: always()

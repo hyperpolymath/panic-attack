@@ -1,5 +1,6 @@
 # RSR-compliant .gitignore
 /target
+/tools/ci/target/
 /reports/
 /verisimdb-data/
 /runtime/

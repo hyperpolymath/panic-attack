@@ -42,7 +42,7 @@
   },
   "doctrine": [
     "A cell is covered only when a test that actually ran selected it. Nothing",
-    "here declares coverage; scripts/proven/verify-ledger.py derives it from a",
+    "here declares coverage; scripts/proven/verify-ledger.sh derives it from a",
     "test inventory produced by `cargo test -- --list` in the same commit.",
     "Tiers are the framework's three: Actually-Proven (a machine-checked proof",
     "ladder exists), Provisionally-Proven (typed assertions, example/property",

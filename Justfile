@@ -305,7 +305,7 @@ proven:
     set -euo pipefail
     cargo build --locked --release
     bash scripts/proven/inventory.sh /tmp/panic-attack-tests.json
-    python3 scripts/proven/verify-ledger.py \
+    bash scripts/proven/verify-ledger.sh \
       --inventory /tmp/panic-attack-tests.json \
       --ledger proven/ledger.json \
       --root . \
@@ -324,7 +324,7 @@ recon:
     set -euo pipefail
     mkdir -p recon-out
     cargo run --release --quiet -- assail . --output recon-out/assail.json --quiet
-    python3 scripts/recon/compare.py \
+    bash scripts/recon/compare.sh \
       --baseline recon/baseline.json \
       --assail recon-out/assail.json \
       --pons /dev/null \

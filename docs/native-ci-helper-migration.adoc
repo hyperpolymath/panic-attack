@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Native CI helper migration — 7 November 2026
+
+Fresh governance execution exposed two production Python helpers that violate
+the estate language policy. They are replaced by the Rust programs in
+`tools/ci`, called through the existing-purpose shell entrypoints. Workflow,
+Justfile and ledger pointers are updated together; no language-policy waiver
+or scanner exclusion is added. The workflow's inline aggregate check uses
+its already required jq, with the original nonempty/defect-free assertions.
+
+The standalone dev-tool workspace has its own generated lockfile and is not
+an application binary or a new root test binary. It retains the ledger's
+coordinate selectors, first matching buckets, remainder ratchet, declared
+absence conflict check and proof-file requirements. Test identities now name
+both the test binary and test name so equal names cannot collapse across
+binaries. Empty inventories, missing coordinates and invalid proof tiers
+remain failures; a failed claim does not overwrite an existing report.
+
+Recon preserves category-debt comparison, bootstrap baselines and explicit
+`--no-fail` advisory mode. Missing, invalid or unrecognised scanner reports
+are unavailable, never clean: strict mode fails and no replacement baseline
+is proposed. SARIF rule identifiers are recognised alongside JSON categories.
+
+The inventory producer now preserves a failed Cargo enumeration instead of
+turning it into an empty successful list. It does not write an empty/partial
+inventory. A dedicated CI fault test injects a failing test binary and an
+empty suite; this Bash control is a hosted Linux check, not a claimed Windows
+execution.
+
+Local Windows evidence: six library controls and three CLI integration tests
+pass. They cover stale/empty claims, binary-name collisions, absent/covered
+conflicts, missing proof warrants, remainder bounds, malformed scanner data,
+debt regressions and unavailable/advisory behaviour. The actual repository
+ledger's taxonomy and selectors are checked. CI runs these controls and
+all-targets Clippy with warnings denied before testing the real inventory.
+
+Creusot with Pearlite contracts: `OPEN`, not run for these CI utilities.
+Verus: `OPEN`, not run. Executable contract tests are not formal proofs;
+framework provenance tiers are retained and no independent witness is claimed.

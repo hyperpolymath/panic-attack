@@ -142,7 +142,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.fail_on_new }}" = "false" ]; then
             args="--no-fail"
           fi
-          python3 scripts/recon/compare.py \
+          bash scripts/recon/compare.sh \
             --baseline recon/baseline.json \
             --assail "$SARIF_DIR/assail.json" \
             --pons "$SARIF_DIR/pons.json" \

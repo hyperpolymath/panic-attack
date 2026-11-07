@@ -201,7 +201,7 @@ never declared**, so:
 
 * `scripts/proven/inventory.sh` asks the test runner what tests exist, per
   binary;
-* `scripts/proven/verify-ledger.py` fails when a cell selects no executed test,
+* `scripts/proven/verify-ledger.sh` fails when a cell selects no executed test,
   when an executed test is claimed by nothing, or when a stronger tier is
   claimed than the evidence supports;
 * the resulting report is fed to `panic-attack aggregate --proven-tests
