@@ -117,6 +117,13 @@ jobs:
           done
           exit "$fail"
 
+      - name: Native CI helper contracts
+        run: |
+          set -euo pipefail
+          cargo test --locked --manifest-path tools/ci/Cargo.toml
+          cargo clippy --locked --manifest-path tools/ci/Cargo.toml --all-targets -- -D warnings
+          bash scripts/ci/test-inventory-failure.sh
+
       - name: Repository path portability
         run: |
           set -euo pipefail

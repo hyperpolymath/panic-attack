@@ -30,7 +30,10 @@ add() {
 }
 
 # Library unit tests (module::path::name).
-add "panic_attack" "$(cargo test --locked --lib -- --list 2>/dev/null || true)"
+names="$(cargo test --locked --lib -- --list)" || {
+  code=$?; echo 'inventory: library test enumeration failed' >&2; exit "$code";
+}
+add "panic_attack" "$names"
 
 # Integration test binaries, one per tests/*.rs file.
 for f in tests/*.rs; do
@@ -40,11 +43,14 @@ for f in tests/*.rs; do
     # shell-driven fixtures, not Rust test binaries
     verisimdb_e2e) continue ;;
   esac
-  add "$bin" "$(cargo test --locked --test "$bin" -- --list 2>/dev/null || true)"
+  names="$(cargo test --locked --test "$bin" -- --list)" || {
+    code=$?; echo "inventory: test enumeration failed for $bin" >&2; exit "$code";
+  }
+  add "$bin" "$names"
 done
 
-jq -S . "$tmp" > "$OUT"
-total="$(jq '[.[] | length] | add // 0' "$OUT")"
-bins="$(jq 'length' "$OUT")"
-echo "inventory: $total test(s) in $bins binar(ies) -> $OUT"
+total="$(jq '[.[] | length] | add // 0' "$tmp")"
+bins="$(jq 'length' "$tmp")"
 [ "$total" -gt 0 ] || { echo "inventory: no tests found — refusing to certify an empty suite" >&2; exit 1; }
+jq -S . "$tmp" > "$OUT"
+echo "inventory: $total test(s) in $bins binar(ies) -> $OUT"
