@@ -11,10 +11,13 @@
 |||
 ||| What this establishes, and what it does not:
 |||
-||| * The theorem is about this Idris2 model, not the Rust function. The
-|||   correspondence between the two is a hand transcription that no tool
-|||   checks (recorded as ASSUMED in PROOF-NEEDS.adoc). Block comments and
-|||   string literals are not modelled.
+||| * The theorem is about this Idris2 model, not the Rust function, and the
+|||   model does not reproduce the Rust output. The model replaces comment
+|||   characters with spaces and keeps every newline; the Rust pass deletes
+|||   comment text and drops a trailing newline (`//x` gives three spaces
+|||   here and the empty string in Rust). Block comments and string literals
+|||   are not modelled. See PROOF-NEEDS.adoc for the Rust function's own
+|||   status.
 ||| * Multi-comment semantics: every `//` comment is stripped, not only the
 |||   first (the PR #111 model's error). `stripLineCommentBody` hands
 |||   control back to `stripLineComments` after each preserved newline.
@@ -25,9 +28,10 @@
 ||| every step dispatches on the class. The proofs carry the class as an
 ||| explicit argument together with the equation `cls c = k`, so each
 ||| case reduces. `stripLineComments` and `stripLineCommentBody` compute
-||| the same function as the earlier pattern-matching definitions; that
-||| was checked exhaustively on every string of length at most 9 over
-||| `/`, newline, `x` and space (349,525 inputs, no mismatch).
+||| the same function as the earlier pattern-matching Idris2 definitions;
+||| that was checked exhaustively on every string of length at most 9 over
+||| `/`, newline, `x` and space (349,525 inputs, no mismatch). That check
+||| compares two Idris2 models; it is not a comparison with Rust.
 module PanicAttack.ABI.Stripping
 
 %default total
@@ -59,7 +63,10 @@ cls '\n' = Newline
 cls _    = Other
 
 -- ═══════════════════════════════════════════════════════════════════════
--- Stripping functions (mirror src/assail/analyzer.rs strip_proof_comments)
+-- Stripping functions: a model of the line-comment slice of
+-- src/assail/analyzer.rs strip_proof_comments. The model keeps spaces and
+-- newlines where the Rust function deletes comment text and drops a
+-- trailing newline.
 --
 -- `stripStep`, `slashStep` and `bodyStep` take the class of the character
 -- in hand, so each recursive call is on a strict sub-list and the
@@ -232,7 +239,7 @@ sanityTwoComments = Refl
 -- What still remains (Layer 1.0 future slices)
 -- ═══════════════════════════════════════════════════════════════════════
 
--- Future Layer-1.0 work (recorded in PROOF-NEEDS.md + issue #114):
+-- Future Layer-1.0 work (recorded in PROOF-NEEDS.adoc + issue #114):
 --
 -- 1. **Stripping_Block.idr** — `/* … */` block-comment stripper. Same
 --    mutual-recursion shape. The closing `*/` plays the role newlines

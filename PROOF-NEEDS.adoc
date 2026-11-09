@@ -71,9 +71,15 @@ The Rust order itself comes from `#[derive(PartialOrd, Ord)]`.
 |Did not compile on `main` before `3dc4728`; repaired there without
 changing the theorem. The repaired model equals the previous one:
 `TESTED`, exhaustively on all 349,525 strings of length at most 9 over
-`/`, newline, `x` and space. The model covers line comments only; block
-comments and string literals are not modelled. Model to Rust
-`strip_proof_comments`: `ASSUMED`.
+`/`, newline, `x` and space. That comparison is model against model, not
+model against Rust.
+
+The model does *not* match `strip_proof_comments`, so it is evidence about
+the model only. It replaces comment characters with spaces and keeps every
+newline. The Rust function deletes comment text and drops a trailing
+newline: on `//x` the model gives three spaces and Rust gives the empty
+string. The model also covers line comments only; block comments and string
+literals are not modelled.
 
 |Attestation chain: integrity, authenticity, non-repudiation
 |`src/abi/PanicAttack/ABI/AttestationUnforgeability.idr`
@@ -83,12 +89,16 @@ comments and string literals are not modelled. Model to Rust
 * `chainCR`: the chain hash is *injective*.
 * `sigCorrect`: an honest signature verifies.
 * `sigBindsMessage`: a signature verifies only on the message signed.
-* `sigOnlySigner`: a verifying signature was produced by the key holder,
-  with no exceptions.
+* `sigOnlySigner`: for every verifying signature there is a secret key
+  whose public key is the verifying key and whose signature on that digest
+  is that signature.
 
-`chainCR` and `sigOnlySigner` are idealisations. They are stronger than
-collision resistance and EUF-CMA, and false of any real fixed-length hash
-or signature scheme. So these are theorems of a symbolic (Dolev-Yao style)
+`sigOnlySigner` says such a key *exists*. It says nothing about who
+produced the signature, so `authenticity` inherits that limit: it shows the
+seal equals one a matching key would make, not that the key holder made it.
+`chainCR` and `sigOnlySigner` are idealisations, stronger than collision
+resistance and EUF-CMA, and false of any real fixed-length hash or
+signature scheme. So these are theorems of a symbolic (Dolev-Yao style)
 model, not a computational security reduction. Model to
 `src/attestation/`: `ASSUMED`. A computational proof is not claimed.
 
@@ -98,9 +108,13 @@ detector; cross-language checks run on every file (PA1)
 |`PROVEN` (model); supports no claim about the Rust code
 |The theorem is vacuous: `GenericAnalyzer : HasAnalyzer lang` inhabits
 the witness type for every language, so it holds whatever the dispatch
-does. The guarantee it was meant to give already holds in Rust:
+does. Rust gives the narrower guarantee that actually holds:
 `match file_lang` in `src/assail/analyzer.rs` ends in
-`_ => analyze_generic`, and `rustc` checks the match is exhaustive.
+`_ => analyze_generic`, and `rustc` checks the match is exhaustive. That
+covers every file that reaches the match. A file with no source language
+and no configuration adapter (`Language::Unknown`, no adapter) is marked
+`unsupported` in the coverage ledger and skipped first, so not every file
+reaches an analyzer.
 
 The model has also drifted. Its `Lang` has 50 constructors and
 `src/types.rs` has 52; `C` and `Php` are missing. `crossLangAlwaysApplied`
@@ -120,7 +134,15 @@ bounded at 47 against 52 variants.
 |`src/storage/mod.rs`, `hexad_json_roundtrip_is_identity` (proptest)
 |`TESTED`
 |A serialize, deserialize, serialize round trip on proptest-generated
-hexads, compared as `serde_json::Value`. It does not call
+hexads, compared as `serde_json::Value`. Bounds: proptest's default 256
+cases (the repository sets no override). `id` and `program_path` are 0 to
+48 characters from `[A-Za-z0-9:_./-]`; `language` 0 to 12 lowercase
+letters; `version` 1 to 8 characters from `[0-9.]`; the four counts are
+below 10,000; `robustness_score` is in [0, 1]; `categories` holds 0 to 5
+strings of 1 to 16 letters; `attestation_hash` is absent or up to 64 hex
+digits. Fixed, not generated: `schema`, `created_at`, `tool`, and
+`document` (`{"weak_points": [], "n": total}`), and the `migration`,
+`finding`, `campaign` and `crosslang` facets are all `None`. It does not call
 `write_*_hexad` or `load_hexad_dir`, so on-disk persistence is a separate
 obligation. The gateway octad projection is lossy by design, so this does
 not establish a faithful hexad-to-octad map.
@@ -134,9 +156,22 @@ not establish a faithful hexad-to-octad map.
 
 |`strip_proof_comments` is idempotent and preserves positions outside
 comments and strings
-|Creusot/Pearlite and Verus
-|On the Rust implementation. The Idris2 model above can guide the
-contracts; it does not discharge them. The model's own remaining slices
+|Fix the implementation first; then Creusot/Pearlite and Verus
+|Neither property holds of the current Rust function, so neither can be
+proved until it changes. All three cases below were run against the
+function as it is on `main`:
+
+* Not idempotent: `a//*x*/*b*/c` gives `a/*b*/c`, and a second pass gives
+  `ac`.
+* Positions move: `a/*x*/b` gives `ab`, moving `b` from offset 6 to 1.
+* Ordering bug: block comments are stripped before line comments, so a
+  block opener inside a line comment swallows the code after it.
+  `code // see /* note`, then `hidden();`, then `*/ tail`, gives `code `.
+  The Lean, Agda/Haskell and Coq ProofDrift detectors use this function,
+  so such a comment can hide a later `sorry` or postulate.
+
+The Idris2 model above can guide the contracts once the function is
+fixed; it does not discharge them. The model's own remaining slices
 (block comments, strings, composition, position preservation; issue #114)
 are optional once the implementation proof exists.
 
