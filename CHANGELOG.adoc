@@ -30,6 +30,10 @@ may be the same file: a symbolic link at any of their paths, or two existing
 paths that are hard links to one file, is refused before anything is written.
 So is a path that exists but is not a regular file (a directory, say) or that
 cannot be looked up, such as a derived name over the filesystem's length limit.
+Each output is also opened for writing before anything is written (an absent
+one is created and removed again), so a read-only copy or sidecar, or a
+directory the caller cannot create files in, is refused too, instead of
+failing after the report has been replaced.
 These checks run before the writes, so a link swapped in between a check and
 its write is not caught, and a crash can leave a partial file: the planned
 generation-directory publish is meant to close both.
