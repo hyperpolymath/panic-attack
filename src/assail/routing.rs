@@ -115,6 +115,73 @@ pub(crate) fn route(lang: Language) -> Route {
     }
 }
 
+/// Whether `//` starts a line comment in `lang`. The cross-language checks
+/// blank such comments before matching, so an illustrative URL in a doc
+/// comment is not reported. In a language where `//` is not a comment,
+/// blanking would cut real code, such as a `curl` of a plain-HTTP URL in a shell
+/// script, so those languages are matched as written.
+///
+/// Languages whose comment syntax this table does not record (the nextgen
+/// DSLs, Datalog, whose dialects differ, and `Unknown`) keep the earlier
+/// behaviour and are blanked.
+pub(crate) fn slash_line_comments(lang: Language) -> bool {
+    use Language as L;
+    match lang {
+        L::Rust
+        | L::C
+        | L::Cpp
+        | L::Go
+        | L::Java
+        | L::JavaScript
+        | L::Php
+        | L::Gleam
+        | L::ReScript
+        | L::Zig
+        | L::Odin
+        | L::Pony
+        | L::DLang
+        | L::Chapel => true,
+        L::Python
+        | L::Ruby
+        | L::Elixir
+        | L::Erlang
+        | L::OCaml
+        | L::StandardML
+        | L::Scheme
+        | L::Racket
+        | L::Haskell
+        | L::PureScript
+        | L::Idris
+        | L::Lean
+        | L::Agda
+        | L::Isabelle
+        | L::Coq
+        | L::Prolog
+        | L::Logtalk
+        | L::Ada
+        | L::Nim
+        | L::Nickel
+        | L::Nix
+        | L::Shell
+        | L::Julia
+        | L::Lua => false,
+        L::Datalog
+        | L::WokeLang
+        | L::Eclexia
+        | L::MyLang
+        | L::JuliaTheViper
+        | L::Oblibeny
+        | L::Anvomidav
+        | L::AffineScript
+        | L::Ephapax
+        | L::BetLang
+        | L::ErrorLang
+        | L::VCL
+        | L::FBQL
+        | L::Unknown => true,
+    }
+}
+
 impl Route {
     /// The function that `analyze_inner` calls for this route.
     #[cfg_attr(not(test), allow(dead_code))]
@@ -275,13 +342,11 @@ mod tests {
         let url = |path: &str| format!("{}://example.org/{path}", "http");
         let tmp = TempDir::new().unwrap();
         // A Justfile is configuration. Its variable is configuration content;
-        // its recipe body is an embedded shell script. The recipe URL is
-        // quoted: the cross-language detector strips `//` comments first,
-        // which also cuts an unquoted URL (a separate recall gap).
+        // its recipe body is an embedded shell script, with an unquoted URL.
         fs::write(
             tmp.path().join("Justfile"),
             format!(
-                "mirror := \"{}\"\n\nfetch:\n    curl \"{}\"\n",
+                "mirror := \"{}\"\n\nfetch:\n    curl {}\n",
                 url("variable"),
                 url("recipe")
             ),
@@ -346,5 +411,55 @@ mod tests {
                 "README {label} says {stated} languages; the routing table supports {supported}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod slash_comment_tests {
+    use super::slash_line_comments;
+    use crate::assail::Analyzer;
+    use crate::types::{Language, WeakPointCategory};
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn insecure_in(file: &str, content: &str) -> usize {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join(file), content).unwrap();
+        Analyzer::new(tmp.path())
+            .unwrap()
+            .analyze()
+            .unwrap()
+            .weak_points
+            .iter()
+            .filter(|w| w.category == WeakPointCategory::InsecureProtocol)
+            .count()
+    }
+
+    #[test]
+    fn languages_without_slash_comments_are_matched_as_written() {
+        for lang in [Language::Shell, Language::Python, Language::Lua] {
+            assert!(!slash_line_comments(lang), "{lang:?}");
+        }
+        for lang in [Language::Rust, Language::JavaScript, Language::Go] {
+            assert!(slash_line_comments(lang), "{lang:?}");
+        }
+    }
+
+    /// The recall gap this table closes: an unquoted URL in a shell script
+    /// used to be cut at `//` before matching.
+    #[test]
+    fn an_unquoted_url_in_a_shell_script_is_reported() {
+        let url = format!("{}://example.org/archive.tar", "http");
+        assert_eq!(insecure_in("fetch.sh", &format!("curl -O {url}\n")), 1);
+    }
+
+    /// The precision the blanking exists for is kept where `//` is a comment.
+    #[test]
+    fn a_url_in_a_rust_doc_comment_is_still_ignored() {
+        let url = format!("{}://example.org/spec", "http");
+        assert_eq!(
+            insecure_in("lib.rs", &format!("/// See {url}\npub fn f() {{}}\n")),
+            0
+        );
     }
 }

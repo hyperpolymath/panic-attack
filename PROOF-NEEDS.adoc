@@ -123,6 +123,15 @@ scans a Justfile and a Lua file end to end. Each test was seen to fail on
 a planted fault: an unrouted analyzer, Java sent to the generic analyzer,
 cross-language checks forced on, and the README's stale count of 49.
 
+The cross-language checks blank `//` comments only in languages where `//`
+is a comment (`slash_line_comments`, an exhaustive table beside `route`).
+Blanking every file used to cut unquoted URLs in shell scripts and Justfile
+recipes, a recall gap found while testing (c). (c)'s test now uses an
+unquoted URL, and `slash_comment_tests` checks a shell script and a Rust doc
+comment. Blanking every language, and blanking none, were each seen to fail
+those tests. Languages whose comment syntax the table does not record keep
+the earlier blanking.
+
 Routing is not coverage: `Language::Unknown` goes to `InputAdapter`, and a
 file there with no configuration adapter is marked `unsupported` in the
 coverage ledger and skipped. So (a) and (b) say which analyzer each
@@ -209,11 +218,4 @@ tests above are exhaustive over a finite enum, but they are tests, and (a)
 reads the source with a pattern match. (d) is a documentation check and
 stays a test.
 
-|Unquoted `http://` URLs are missed by the cross-language check
-|Fix first, then test
-|`analyze_cross_language` strips C-style `//` comments from every file
-before matching, which also cuts `curl http://host` in shell. A quoted
-URL is found; an unquoted one in a `.sh` file or a Justfile recipe is not.
-This is a recall gap in the InsecureProtocol detector, found while testing
-PA1 (c).
 |===

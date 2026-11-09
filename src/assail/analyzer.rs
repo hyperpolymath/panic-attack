@@ -564,6 +564,7 @@ impl Analyzer {
                                     &script.content,
                                     &mut file_weak_points,
                                     &rel_path,
+                                    script.language,
                                 )?;
                                 for finding in &mut file_weak_points[start..] {
                                     finding.description.push_str(&format!(
@@ -810,7 +811,7 @@ impl Analyzer {
             // comments or schema identifiers as executable source creates false
             // findings. Source-language adapters retain their existing checks.
             if super::routing::runs_cross_language(configuration.is_some()) {
-                self.analyze_cross_language(&content, &mut file_weak_points, &rel_path)?;
+                self.analyze_cross_language(&content, &mut file_weak_points, &rel_path, file_lang)?;
             }
 
             coverage.mark(file, "analyzed", None, Some(&raw_bytes));
@@ -5064,20 +5065,25 @@ impl Analyzer {
         content: &str,
         weak_points: &mut Vec<WeakPoint>,
         file_path: &str,
+        lang: Language,
     ) -> Result<()> {
         // HTTP (insecure) URLs - should be HTTPS
         // Count http:// URLs that are NOT localhost/127.0.0.1 (those are fine).
         //
-        // Strip C-family line comments first: `/// example: http://example.com`
-        // in a doc-comment is illustrative prose, not a configured endpoint,
-        // and was the source of repeated FPs on JSON-LD `@type` namespace URIs
-        // documented in /// blocks. The same heuristic naturally handles JS,
-        // Java, C, C++, Go — every language whose comment syntax is `//`.
-        // Python `#`, Lisp `;`, etc. are not currently de-noised; the
-        // cross-language detector is best-effort, and a follow-up can add
-        // language-aware stripping per file_path extension.
-        let scan_content_owned = strip_c_family_line_comments(content);
-        let scan_content: &str = &scan_content_owned;
+        // Blank `//` line comments first, but only where `//` is a comment:
+        // `/// example: http://example.com` in a doc comment is illustrative
+        // prose, not a configured endpoint, and was the source of repeated FPs
+        // on JSON-LD `@type` namespace URIs documented in /// blocks. In a
+        // shell script the same blanking would cut `curl http://host`, so
+        // `slash_line_comments` decides per language. Python `#`, Lisp `;`,
+        // etc. comments are not de-noised; this detector is best-effort.
+        let scan_content_owned;
+        let scan_content: &str = if super::routing::slash_line_comments(lang) {
+            scan_content_owned = strip_c_family_line_comments(content);
+            &scan_content_owned
+        } else {
+            content
+        };
         let http_re = RE_HTTP_URL
             .get_or_init(|| Regex::new(r#"http://[a-zA-Z0-9]"#).expect("static regex is valid"));
         let http_localhost_re = RE_HTTP_LOCALHOST.get_or_init(|| {
@@ -6335,7 +6341,7 @@ mod tests {
         let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
         let mut wp = Vec::new();
         analyzer
-            .analyze_cross_language(content, &mut wp, "fixture.rs")
+            .analyze_cross_language(content, &mut wp, "fixture.rs", Language::Rust)
             .expect("analyze_cross_language");
         wp.iter()
             .filter(|w| matches!(w.category, WeakPointCategory::InsecureProtocol))
