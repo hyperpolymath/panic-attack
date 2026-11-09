@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= Generation-directory publish
+:toc:
+
+Status: *prototype* (`src/publish.rs`), not wired into any subcommand.
+
+== Why
+
+`assail` writes up to three files for one run: the JSON report, its KYAML
+copy and the `--attest` sidecar. Writing them one at a time with `fs::write`
+leaves three gaps:
+
+* a crash can leave a partial file;
+* two runs into the same paths can interleave, leaving files from different
+  runs side by side;
+* a symbolic link swapped in between the preflight check and the write is
+  written through.
+
+hyperpolymath/panic-attack#264 chose to close these for every output mode
+with one design: publish each run as a *generation*, and move a single
+pointer to it.
+
+== Layout
+
+For a report `D/S.json`:
+
+[cols="1,3"]
+|===
+|`D/S.gen/<id>.partial/` |A generation still being written.
+|`D/S.gen/<id>/` |One complete generation: `S.json`, `S.kyaml`, `S.attestation.json`.
+|`D/S.gen/CURRENT` |The pointer: a JCS manifest naming the current generation and the SHA-256 of each file in it.
+|`D/S.gen/lock` |An advisory lock (`File::lock`) taken by publishers only.
+|`D/S.json`, `D/S.kyaml`, … |Mirrors: hard links into the current generation (copies where linking fails).
+|===
+
+`<id>` is 16 hex digits of Unix nanoseconds at the run's start followed by 16
+random hex digits, so ids sort by start time.
+
+== Protocol
+
+. *Write.* Create `<id>.partial/`. Create each file new inside it and sync it.
+. *Complete.* Sync the directory, rename it to `<id>`, sync `S.gen`.
+. *Publish, under the lock:*
+.. if `CURRENT` names a newer generation, this run is *superseded*: remove
+   its generation and stop;
+.. otherwise replace `CURRENT` (temporary file, sync, rename, sync `S.gen`);
+.. refresh each mirror by hard link and rename;
+.. collect: remove complete generations older than the current one, except
+   the newest `keep` (default 1), and partial generations older than the
+   grace period (default 1 hour).
+
+*Readers* take no lock. A reader that needs one consistent set reads
+`CURRENT`, then the generation's files, and checks each against the
+manifest's digest. If the generation was collected in between, it starts
+again, but only if `CURRENT` has moved; otherwise the loss is real and it
+reports an error.
+
+== What is guaranteed
+
+Checked by TLC (`verification/proofs/tlaplus/`) and, independently, by the
+explicit-state checker in `tests/publish_model.rs`. Both are `TESTED` under
+PROOF-POLICY §4, with the bounds in each configuration: up to 3 writers,
+1 reader and 2 files, a crash at every writer step, and collection of the
+partial generations of crashed and live writers.
+
+[cols="1,4,1"]
+|===
+|Property |Statement |Result
+
+|P1 |`CURRENT` only ever names a complete generation. |holds
+|P2 |`CURRENT` never moves to an older generation. |holds
+|P3 |A manifest reader never fails or returns a mixed set. |holds
+|P4 |When no writer is running, every mirror names the current generation. |holds without crashes; *fails after a crash* (see below)
+|===
+
+Each checker also runs three mutants of the protocol, each with one
+defect. Each mutant violates P1 or P2, which shows the invariants are not
+vacuous:
+
+* no supersede check;
+* publish before completion;
+* collect the current generation.
+
+Process crashes only: a SIGKILL stops the process and the kernel releases
+its lock. Power loss, and the ordering of `fsync` against it, is not modelled
+or tested.
+
+== The mirror limit (owner decision: hard links, documented)
+
+Mirrors are refreshed one at a time after `CURRENT` moves. A crash between
+two refreshes leaves the mirrors from different generations: each file is
+complete, but the set is mixed. The checkers find this (P4), and the crash
+experiment measured it: 3 torn mirror sets in 300 kills, against none for
+manifest readers.
+
+This is accepted and documented, because:
+
+* each mirror is always a complete file, never a partial one;
+* the attestation sidecar seals the report's SHA-256, so
+  `attest verify --report` detects a mixed report and sidecar;
+* the next successful publish repairs the mirrors;
+* a reader that needs a consistent set reads through `CURRENT`.
+
+The alternative considered was a single `current` symlink with fixed
+top-level symlinks through it. It is crash-consistent on Unix, but needs
+symlinks (Windows falls back) and must exempt its own links from `assail`'s
+symlink refusal. It was not chosen.
+
+== Measurements
+
+Measured on Linux 6.18, ext4, 4 cores, with `examples/publish_stress.rs`.
+Three strategies are compared: `fs::write` in place, a rename per file, and
+generation publish.
+
+[cols="2,1,1,1,1"]
+|===
+| |in place |rename per file |generation, mirrors |generation, manifest
+
+|race, 3 writers × 150 runs: partial reads |7931 / 8424 |0 / 3209 |0 / 6058 |0 / 2500
+|race: mixed sets read |182 |3008 |67 |0
+|kill -9, 300 trials: partial / mixed left |176 / 13 |0 / 155 |0 / 3 |0 / 0
+|100 races: mixed final state |0 |7 |0 |0
+|p50 latency, 1 KiB / 256 KiB / 4 MiB |0.27 / 1.0 / 12.5 ms |1.2 / 3.2 / 23.8 ms |2.7 / 4.6 / 33.7 ms |
+|===
+
+The extra cost is mostly the directory syncs. Against a scan that takes
+seconds, a few milliseconds is negligible.
+
+== Open before wiring
+
+* *Rust verification* (PROOF-POLICY §1.2): Creusot/Pearlite and Verus for
+  the pure decisions: the supersede comparison, and the collect selection
+  (never the current generation or a newer one). `OPEN`.
+* *Generation id format*: align with the estate identifier policy (UUIDv7 or
+  v8), keeping the start-time ordering.
+* *Windows*: there is no Windows run yet. `std::fs::rename` replaces
+  directories differently there, and a file that is open cannot be removed.
+* *What a replacement keeps*: new files inherit the directory's default ACLs,
+  not the previous file's ACLs, xattrs, labels or owner. A private report
+  stays private because each file takes the mode of its predecessor in the
+  current generation.
+* *Wiring*: `assail` (all output modes) and the preflight in
+  hyperpolymath/panic-attack#264 and hyperpolymath/panic-attack#274.
