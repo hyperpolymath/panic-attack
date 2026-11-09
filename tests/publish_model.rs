@@ -2,7 +2,9 @@
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
 //! Exhaustive explicit-state check of the generation-publish protocol in
-//! `src/publish.rs` (design: `docs/design/GENERATION-PUBLISH.adoc`).
+//! `src/publish.rs` (design: `docs/design/GENERATION-PUBLISH.adoc`). The same
+//! model is checked with TLC in `verification/proofs/tlaplus/`; the two are
+//! kept step for step alike so each cross-checks the other.
 //!
 //! This is an abstract model, not the code: each step below stands for one
 //! filesystem operation the code performs, and every interleaving of up to
@@ -82,7 +84,7 @@ struct Config {
 enum Mutant {
     /// Move `CURRENT` without comparing generation ids.
     NoSupersedeCheck,
-    /// Swap the pointer before renaming `.partial` to complete.
+    /// Move `CURRENT` as soon as the partial generation is created.
     SwapBeforeComplete,
     /// Collect the current generation along with the older ones.
     CollectCurrent,
@@ -98,14 +100,14 @@ fn successors(s: &State, c: &Config) -> Vec<State> {
         let step = match s.pc[w] {
             Pc::Start => {
                 n.gens[w] = Gen::Partial;
+                if c.mutant == Some(Mutant::SwapBeforeComplete) {
+                    // Publish the generation while it is still partial.
+                    n.current = Some(i);
+                }
                 n.pc[w] = Pc::Writing;
                 true
             }
             Pc::Writing => {
-                if c.mutant == Some(Mutant::SwapBeforeComplete) && s.lock.is_none() {
-                    // Publish while the generation is still partial.
-                    n.current = Some(i);
-                }
                 if s.gens[w] == Gen::Removed {
                     n.pc[w] = Pc::Failed;
                 } else {

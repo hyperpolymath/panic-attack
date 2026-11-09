@@ -66,11 +66,37 @@ obligation. The gateway octad projection is lossy by design, so this property
 also does not establish a faithful hexad↔octad map.
 |===
 
+=== Model-Checked (TESTED, bounded)
+
+[width="100%",cols="26%,30%,44%",options="header",]
+|===
+|Obligation |Artefact |Status and bounds
+|Generation-publish protocol P1–P3 (prototype, `src/publish.rs`;
+design `docs/design/GENERATION-PUBLISH.adoc`) |`verification/proofs/tlaplus/GenerationPublish.tla`
+(TLC 2.19, tla2tools v1.7.4, run by `verify.yml` job `tlaplus`) and
+`tests/publish_model.rs` (independent explicit-state checker) |*TESTED*: up to
+3 writers, 1 reader, 2 files, crash at every writer step, collection of crashed
+and live writers' partial generations, `keep` 0 and 1. P1 (`CURRENT` names a
+complete generation), P2 (never moves backwards) and P3 (manifest reader never
+fails) hold. P4 (mirrors consistent once quiet) holds without crashes and
+*fails* after a crash, the documented limit. Three mutants each violate P1 or
+P2, so the invariants are not vacuous. *PROOF-POLICY §4 exception*: a
+concurrency protocol over crash interleavings, which Creusot and Verus do not
+state. *§6 deviation (open)*: TLC is fetched from its release, digest-checked,
+because neither Guix nor the container provides it yet.
+|===
+
 === What Still Needs Proving
 
 [width="100%",cols="51%,27%,22%",options="header",]
 |===
 |Component |What |Why
+|Generation publish: pure decisions (`src/publish.rs`) |*OPEN* (PROOF-POLICY
+§1.2): Creusot/Pearlite and Verus contracts for the supersede comparison and
+the collect selection (never removes the current or a newer generation; keeps
+the `keep` newest older ones) |The model check covers the protocol, not the Rust
+code; these tie the implementation to P1 and P2
+
 |*Layer 1.0 — stripBlockComments + Strings + Composition +
 Position-Preservation* (issue #114) |Block-comment (`+/* */+`) and
 string-literal (`+"..."+`) strippers with same mutual-recursive shape;

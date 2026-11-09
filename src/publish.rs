@@ -32,7 +32,9 @@
 //!    mirrors by link + rename, and collect old generations.
 //!
 //! The invariants the protocol is meant to keep are stated in the design
-//! note and model-checked in `docs/design/GenerationPublish.tla`.
+//! note and model-checked with TLC in
+//! `verification/proofs/tlaplus/GenerationPublish.tla` and, independently, by
+//! the explicit-state checker in `tests/publish_model.rs`.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
