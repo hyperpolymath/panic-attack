@@ -19,6 +19,7 @@
 //!
 //! Every count printed is measured; none is estimated.
 
+use anyhow::{bail, Context, Result};
 use panic_attack::publish::{self, Generation, Options};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -29,17 +30,20 @@ use std::time::{Duration, Instant};
 const NAMES: [&str; 3] = ["S.json", "S.kyaml", "S.attestation.json"];
 const PAD: usize = 256 * 1024;
 
-fn main() {
+fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let a = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
-    let n = |i: usize| a(i).parse::<u64>().expect("number");
+    let n = |i: usize| -> Result<u64> {
+        a(i).parse::<u64>()
+            .with_context(|| format!("argument {i} must be a number, got {:?}", a(i)))
+    };
     match a(0) {
-        "race" => race(a(1), n(2), n(3), n(4)),
-        "crash" => crash(a(1), n(2)),
-        "bench" => bench(a(1), n(2) as usize, n(3)),
-        "writer" => writer(a(1), Path::new(a(2)), a(3), n(4), PAD),
-        "reader" => reader(a(1), Path::new(a(2)), n(3)),
-        _ => eprintln!("usage: see the module comment"),
+        "race" => race(a(1), n(2)?, n(3)?, n(4)?),
+        "crash" => crash(a(1), n(2)?),
+        "bench" => bench(a(1), usize::try_from(n(2)?)?, n(3)?),
+        "writer" => writer(a(1), Path::new(a(2)), a(3), n(4)?, PAD),
+        "reader" => reader(a(1), Path::new(a(2)), n(3)?),
+        _ => bail!("usage: see the module comment"),
     }
 }
 
@@ -58,38 +62,40 @@ fn set_for(run: &str, pad: usize) -> [(String, Vec<u8>); 3] {
     ]
 }
 
-fn write_set(mode: &str, dir: &Path, run: &str, pad: usize) {
+fn write_set(mode: &str, dir: &Path, run: &str, pad: usize) -> Result<()> {
     let files = set_for(run, pad);
     match mode {
         "inplace" => {
             for (name, bytes) in &files {
-                fs::write(dir.join(name), bytes).unwrap();
+                fs::write(dir.join(name), bytes)?;
             }
         }
         "perfile" => {
             for (name, bytes) in &files {
-                let tmp = dir.join(format!(".{name}.{}.tmp", publish::new_id().unwrap()));
-                let mut f = fs::File::create_new(&tmp).unwrap();
-                std::io::Write::write_all(&mut f, bytes).unwrap();
-                f.sync_all().unwrap();
-                fs::rename(&tmp, dir.join(name)).unwrap();
+                let tmp = dir.join(format!(".{name}.{}.tmp", publish::new_id()?));
+                let mut f = fs::File::create_new(&tmp)?;
+                std::io::Write::write_all(&mut f, bytes)?;
+                f.sync_all()?;
+                fs::rename(&tmp, dir.join(name))?;
             }
         }
         "genset" => {
-            let mut g = Generation::begin(&dir.join("S.json"), publish::new_id().unwrap()).unwrap();
+            let mut g = Generation::begin(&dir.join("S.json"), publish::new_id()?)?;
             for (name, bytes) in &files {
-                g.write(name, bytes).unwrap();
+                g.write(name, bytes)?;
             }
-            g.publish(&Options::default()).unwrap();
+            g.publish(&Options::default())?;
         }
-        other => panic!("unknown mode {other}"),
+        other => bail!("unknown mode {other}"),
     }
+    Ok(())
 }
 
-fn writer(mode: &str, dir: &Path, id: &str, iters: u64, pad: usize) {
+fn writer(mode: &str, dir: &Path, id: &str, iters: u64, pad: usize) -> Result<()> {
     for i in 0..iters {
-        write_set(mode, dir, &format!("{id}-{i}"), pad);
+        write_set(mode, dir, &format!("{id}-{i}"), pad)?;
     }
+    Ok(())
 }
 
 #[derive(Default, Debug)]
@@ -125,7 +131,10 @@ fn read_once(mode: &str, dir: &Path, t: &mut Tally) {
     if mode == "genset-consistent" {
         match publish::read_consistent(&publish::root_for(&dir.join("S.json"))) {
             Ok(Some((_, files))) => {
-                let v: Vec<Vec<u8>> = NAMES.iter().map(|n| files[*n].clone()).collect();
+                let v: Vec<Vec<u8>> = NAMES
+                    .iter()
+                    .map(|n| files.get(*n).cloned().unwrap_or_default())
+                    .collect();
                 classify(&v, t)
             }
             Ok(None) => {}
@@ -146,33 +155,34 @@ fn read_once(mode: &str, dir: &Path, t: &mut Tally) {
     classify(&v, t);
 }
 
-fn reader(mode: &str, dir: &Path, millis: u64) {
+fn reader(mode: &str, dir: &Path, millis: u64) -> Result<()> {
     let mut t = Tally::default();
     let end = Instant::now() + Duration::from_millis(millis);
     while Instant::now() < end && !dir.join(".done").exists() {
         read_once(mode, dir, &mut t);
     }
     println!("{} {} {} {}", t.reads, t.partial, t.torn, t.missing);
+    Ok(())
 }
 
-fn me() -> PathBuf {
-    std::env::current_exe().unwrap()
+fn me() -> Result<PathBuf> {
+    Ok(std::env::current_exe()?)
 }
 
-fn race(mode: &str, writers: u64, readers: u64, iters: u64) {
-    let dir = tempfile::tempdir().unwrap();
-    write_set(mode, dir.path(), "seed-0", PAD);
+fn race(mode: &str, writers: u64, readers: u64, iters: u64) -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    write_set(mode, dir.path(), "seed-0", PAD)?;
     let start = Instant::now();
-    let ws: Vec<Child> = (0..writers)
+    let ws = (0..writers)
         .map(|w| {
-            Command::new(me())
+            Command::new(me()?)
                 .args(["writer", mode])
                 .arg(dir.path())
                 .args([format!("w{w}"), iters.to_string()])
                 .spawn()
-                .unwrap()
+                .context("spawning a writer")
         })
-        .collect();
+        .collect::<Result<Vec<Child>>>()?;
     // Readers of the plain paths, and for genset also manifest readers.
     let mut read_modes = vec![mode.to_string()];
     if mode == "genset" {
@@ -181,35 +191,32 @@ fn race(mode: &str, writers: u64, readers: u64, iters: u64) {
     let mut rs = Vec::new();
     for rm in &read_modes {
         for _ in 0..readers {
-            rs.push((
-                rm.clone(),
-                Command::new(me())
-                    .args(["reader", rm])
-                    .arg(dir.path())
-                    .arg("120000")
-                    .stdout(Stdio::piped())
-                    .spawn()
-                    .unwrap(),
-            ));
+            let child = Command::new(me()?)
+                .args(["reader", rm])
+                .arg(dir.path())
+                .arg("120000")
+                .stdout(Stdio::piped())
+                .spawn()?;
+            rs.push((rm.clone(), child));
         }
     }
     for mut w in ws {
-        assert!(w.wait().unwrap().success());
+        let status = w.wait()?;
+        if !status.success() {
+            bail!("a writer failed: {status}");
+        }
     }
     let wall = start.elapsed();
-    fs::write(dir.path().join(".done"), b"").unwrap();
+    fs::write(dir.path().join(".done"), b"")?;
     for rm in &read_modes {
         let mut sum = [0u64; 4];
-        for (m, r) in rs.iter_mut().filter(|(m, _)| m == rm) {
-            let _ = m;
-            let out = r.stdout.take().unwrap();
-            let s = std::io::read_to_string(out).unwrap();
-            for (i, x) in s.split_whitespace().enumerate() {
-                sum[i] += x.parse::<u64>().unwrap();
-            }
-        }
         for (_, r) in rs.iter_mut().filter(|(m, _)| m == rm) {
-            r.wait().unwrap();
+            let out = r.stdout.take().context("reader stdout")?;
+            let s = std::io::read_to_string(out)?;
+            for (slot, x) in sum.iter_mut().zip(s.split_whitespace()) {
+                *slot += x.parse::<u64>()?;
+            }
+            r.wait()?;
         }
         println!(
             "race mode={mode} readers-of={rm} writers={writers} iters={iters} \
@@ -227,24 +234,24 @@ fn race(mode: &str, writers: u64, readers: u64, iters: u64) {
         "race mode={mode} final-state partial={} torn={} missing={}",
         t.partial, t.torn, t.missing
     );
+    Ok(())
 }
 
-fn crash(mode: &str, trials: u64) {
+fn crash(mode: &str, trials: u64) -> Result<()> {
     let mut bad = Tally::default();
     let mut consistent_bad = 0u64;
     for trial in 0..trials {
-        let dir = tempfile::tempdir().unwrap();
-        write_set(mode, dir.path(), "seed-0", PAD);
-        let mut child = Command::new(me())
+        let dir = tempfile::tempdir()?;
+        write_set(mode, dir.path(), "seed-0", PAD)?;
+        let mut child = Command::new(me()?)
             .args(["writer", mode])
             .arg(dir.path())
             .args([format!("c{trial}"), "1000".into()])
-            .spawn()
-            .unwrap();
+            .spawn()?;
         // Kill somewhere inside the write loop: 1–40 ms in.
         std::thread::sleep(Duration::from_micros(1000 + (trial * 7919) % 39000));
-        child.kill().unwrap();
-        child.wait().unwrap();
+        child.kill()?;
+        child.wait()?;
         read_once(mode, dir.path(), &mut bad);
         if mode == "genset" {
             match publish::read_consistent(&publish::root_for(&dir.path().join("S.json"))) {
@@ -264,22 +271,28 @@ fn crash(mode: &str, trials: u64) {
             String::new()
         }
     );
+    Ok(())
 }
 
-fn bench(mode: &str, bytes: usize, iters: u64) {
-    let dir = tempfile::tempdir().unwrap();
-    let mut samples = Vec::with_capacity(iters as usize);
+fn bench(mode: &str, bytes: usize, iters: u64) -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let mut samples = Vec::new();
     for i in 0..iters {
         let t0 = Instant::now();
-        write_set(mode, dir.path(), &format!("b-{i}"), bytes);
-        samples.push(t0.elapsed().as_micros() as u64);
+        write_set(mode, dir.path(), &format!("b-{i}"), bytes)?;
+        samples.push(t0.elapsed().as_micros());
     }
     samples.sort_unstable();
-    let pct = |p: f64| samples[((samples.len() - 1) as f64 * p) as usize];
+    let pct = |p: usize| {
+        samples
+            .get(samples.len().saturating_sub(1) * p / 100)
+            .copied()
+    };
     println!(
-        "bench mode={mode} pad_bytes={bytes} iters={iters} p50_us={} p90_us={} max_us={}",
-        pct(0.5),
-        pct(0.9),
-        samples[samples.len() - 1]
+        "bench mode={mode} pad_bytes={bytes} iters={iters} p50_us={:?} p90_us={:?} max_us={:?}",
+        pct(50),
+        pct(90),
+        samples.last()
     );
+    Ok(())
 }
