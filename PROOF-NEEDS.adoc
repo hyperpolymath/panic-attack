@@ -1,102 +1,165 @@
-== PROOF-NEEDS.md — panic-attack
+= Proof status: panic-attack
 
-=== Current State
+This file records each proof obligation in panic-attack, the verifier it
+belongs to, and its status. The rules are the estate proof policy,
+https://github.com/metadatastician/standards/blob/9bdf864cc7f2c8e24b4df84bf00d04158eee3ad5/3-practice/PROOF-POLICY.adoc[`standards/3-practice/PROOF-POLICY.adoc`
+at `9bdf864cc7f2c8e24b4df84bf00d04158eee3ad5`]. Statuses use its closed §5
+vocabulary: `PROVEN`, `PROVEN-WITH-AXIOMS`, `TESTED`, `ASSUMED`, `OPEN`.
 
-* **src/abi/*.idr**: 5 files — `+Types.idr+`,
-`+PatternCompleteness.idr+` (PA1 ✅ 2026-04-11),
-`+ClassificationSoundness.idr+` (PA2 ✅ 2026-04-11), `+Stripping.idr+`
-(PROOF-PROGRAMME Layer 1.0 line-comment slice ✅ 2026-06-02 —
-multi-comment semantics + slash-slash closure both Qed via
-mutual-recursive `+bodyIsFixedPoint+`),
-`+AttestationUnforgeability.idr+` (PROOF-PROGRAMME §3.2 ✅ 2026-06-04 —
-conditional unforgeability from Ed25519 EUF-CMA + chain-hash
-collision-resistance hypotheses)
-* *Dangerous patterns*: 0 in own code (3 references are in the analyzer
-that DETECTS believe_me in other repos); 282 `+unwrap()+` calls
-* *LOC*: ~31,700 (Rust)
-* *ABI layer*: Idris2 with completeness + soundness proofs + Layer-1.0
-stripping foundation
+None of these obligations is a theory theorem (§1), so none carries a Proof
+Witness Grade.
 
-=== Completed Proofs
+== Where each kind of obligation belongs
 
-[width="100%",cols="26%,21%,53%",options="header",]
+* *Behaviour of first-party Rust code* (stripping, reachability, taint
+  propagation, dispatch): Creusot with Pearlite contracts, and Verus, on the
+  implementation (§1.2). An Idris2 model of a Rust function is not evidence
+  that the function is correct (§1, §2.2).
+* *Interfaces, ABI encodings and cross-language protocols* (the attestation
+  chain, the C integer encodings): Idris2.
+* *Statements true of any implementation* (for example, a taint lattice
+  and its fixed point stated abstractly): Agda, rechecked in Rocq and Lean
+  (§2).
+
+No Kani obligation arises (§4.1). With `unsafe_code` forbidden,
+`cargo clippy --lib --bins --tests --benches --all-features -- -F unsafe_code`
+compiles at `f2a6a70eaec0cb02331e3264e05f185b5faab0f7`. The only `unsafe`
+is in `examples/vulnerable_program.rs`, a deliberately buggy program that
+exists to be scanned.
+
+== Receipt for the Idris2 modules
+
+* *Checker:* Idris2 0.7.0, the version `proven-tests.yml` pins, built from
+  tag `v0.7.0` (`27780073c8631826d846499840b3857d9b9a4fd5`) on Chez Scheme
+  9.5.8.
+* *Source:* `src/abi/*.idr` at
+  `3dc4728762f37c1e5bebdb988783c7683c50fb55`.
+* *Invocation:* the modules are named `PanicAttack.ABI.<M>` but live in
+  `src/abi/`, so `idris2 --check src/abi/<M>.idr` fails on a module-name
+  mismatch from any directory. Each was checked from a tree that places
+  `src/abi/<M>.idr` at `PanicAttack/ABI/<M>.idr`, with
+  `idris2 --check PanicAttack/ABI/<M>.idr`. A pass is exit 0 *and* no
+  `Error:` line, because `idris2 --check` can exit 0 while printing an
+  error.
+* *Result:* all five modules pass. Every module sets `%default total` and
+  uses no `believe_me`, `assert_total`, `postulate` or holes.
+* *Negative controls:* a planted false lemma and a planted non-terminating
+  definition in `Stripping.idr` were both rejected, so the check can fail.
+* *Gate:* no CI job runs this check. That obligation is `OPEN` below. Until
+  it closes, the statuses here rest on this one local run, and any change
+  to `src/abi/` invalidates them.
+
+== Ledger
+
+[cols="3,2,2,5",options="header"]
 |===
-|Proof |File |What it proves
-|PA1 Pattern detection completeness |`+src/abi/PatternCompleteness.idr+`
-|All 49 `+Lang+` constructors have an analyzer; all 20 `+WPCategory+`
-constructors have at least one detector; cross-language checks applied
-unconditionally to all languages. `+completeScanForAll+` is the
-top-level theorem.
+|Obligation |Artefact |Status |Trust boundary and notes
 
-|PA2 Classification soundness |`+src/abi/ClassificationSoundness.idr+`
-|Severity (Low/Medium/High/Critical) is totally ordered (`+LTE+`);
-`+maxSeverity+` is commutative and idempotent; numeric ABI encoding
-preserves the ordering.
+|Severity order: `Low < Medium < High < Critical` is a total order;
+`sevMax` is an upper bound; the numeric encoding is monotone (PA2)
+|`src/abi/ClassificationSoundness.idr`
+|`PROVEN` (model)
+|The model's `Severity` matches the variant names and order of
+`src/types.rs`; that correspondence is `ASSUMED` (a hand transcription).
+The Rust order itself comes from `#[derive(PartialOrd, Ord)]`.
 
-|Layer 1.0 line-comment idempotence |`+src/abi/Stripping.idr+`
-|*2026-06-02 close-out (issue #113)*: corrects PR #111’s single-comment
-model to multi-comment via mutual recursion
-(`+stripLineComments ↔ stripLineCommentBody+` — body calls back into
-main after each preserved newline). Qed-closes
-`+stripLineCommentsIdempotent+` for ALL cases including the slash-slash
-inductive via the load-bearing `+bodyIsFixedPoint+` lemma proved by
-mutual induction with the main theorem. 7 sanity-check theorems
-including the two-comments-on-different-lines case PR #111 silently
-mis-stripped.
+|Line-comment stripping is idempotent: `strip (strip s) = strip s`
+|`src/abi/Stripping.idr`
+|`PROVEN` (model)
+|Did not compile on `main` before `3dc4728`; repaired there without
+changing the theorem. The repaired model equals the previous one:
+`TESTED`, exhaustively on all 349,525 strings of length at most 9 over
+`/`, newline, `x` and space. The model covers line comments only; block
+comments and string literals are not modelled. Model to Rust
+`strip_proof_comments`: `ASSUMED`.
 
-|Attestation chain unforgeability
-|`+src/abi/AttestationUnforgeability.idr+` |*PROOF-PROGRAMME §3.2
-(2026-06-04, issue #123)*: models the intent→evidence→seal chain
-(`+chain_hash = H(intent‖evidence‖report)+`, Ed25519-signed) with the
-cryptographic facts as a `+parameters+` block (hypotheses, *not*
-`+postulate+`). Under `+%default total+` Qed-closes `+integrity+`
-(tampering any phase invalidates the seal), `+authenticity+` (a
-verifying seal comes from the matching secret key), `+nonRepudiation+`
-(a genuine seal verifies), plus 2 corollaries. Conditional on chain-hash
-collision-resistance + Ed25519 EUF-CMA (message- and signer-binding) +
-signature correctness.
+|Attestation chain: integrity, authenticity, non-repudiation
+|`src/abi/AttestationUnforgeability.idr`
+|`PROVEN` (model), relative to the `ASSUMED` hypotheses listed here
+|The module's `parameters` block assumes:
 
-|Hexad↔Octad persistence round-trip |`+src/storage/mod.rs+` (proptest)
-|*PROOF-PROGRAMME §3.1 (2026-06-04, #122)*:
-`+hexad_json_roundtrip_is_identity+` tests an in-memory
-`+serde_json::Value+` serialize/deserialize/serialize round-trip on generated
-samples, not by a universal theorem. It does not call `+write_*_hexad+` or
-`+load_hexad_dir+`; on-disk persistence correspondence remains a separate
-obligation. The gateway octad projection is lossy by design, so this property
-also does not establish a faithful hexad↔octad map.
+* `chainCR`: the chain hash is *injective*.
+* `sigCorrect`: an honest signature verifies.
+* `sigBindsMessage`: a signature verifies only on the message signed.
+* `sigOnlySigner`: a verifying signature was produced by the key holder,
+  with no exceptions.
+
+`chainCR` and `sigOnlySigner` are idealisations. They are stronger than
+collision resistance and EUF-CMA, and false of any real fixed-length hash
+or signature scheme. So these are theorems of a symbolic (Dolev-Yao style)
+model, not a computational security reduction. Model to
+`src/attestation/`: `ASSUMED`. A computational proof is not claimed.
+
+|Every language reaches an analyzer; every weak-point category has a
+detector; cross-language checks run on every file (PA1)
+|`src/abi/PatternCompleteness.idr`
+|`PROVEN` (model); supports no claim about the Rust code
+|The theorem is vacuous: `GenericAnalyzer : HasAnalyzer lang` inhabits
+the witness type for every language, so it holds whatever the dispatch
+does. The guarantee it was meant to give already holds in Rust:
+`match file_lang` in `src/assail/analyzer.rs` ends in
+`_ => analyze_generic`, and `rustc` checks the match is exhaustive.
+
+The model has also drifted. Its `Lang` has 50 constructors and
+`src/types.rs` has 52; `C` and `Php` are missing. `crossLangAlwaysApplied`
+says cross-language checks run on every file, but the Rust code skips them
+when `configuration.is_some()`. That model claim is false of the
+implementation.
+
+|Declarations for the ABI-facing types and their C integer encodings
+|`src/abi/Types.idr`
+|No theorem
+|Repaired in `3dc4728` so it compiles. It contains no proof and nothing
+imports it. Drift: its `Severity` is `Info / Warning / Error / Critical`
+where `src/types.rs` has `Low / Medium / High / Critical`, and `LangId` is
+bounded at 47 against 52 variants.
+
+|Hexad JSON round-trip is the identity
+|`src/storage/mod.rs`, `hexad_json_roundtrip_is_identity` (proptest)
+|`TESTED`
+|A serialize, deserialize, serialize round trip on proptest-generated
+hexads, compared as `serde_json::Value`. It does not call
+`write_*_hexad` or `load_hexad_dir`, so on-disk persistence is a separate
+obligation. The gateway octad projection is lossy by design, so this does
+not establish a faithful hexad-to-octad map.
 |===
 
-=== What Still Needs Proving
+== Open obligations
 
-[width="100%",cols="51%,27%,22%",options="header",]
+[cols="3,2,5",options="header"]
 |===
-|Component |What |Why
-|*Layer 1.0 — stripBlockComments + Strings + Composition +
-Position-Preservation* (issue #114) |Block-comment (`+/* */+`) and
-string-literal (`+"..."+`) strippers with same mutual-recursive shape;
-composition theorem proving the full pipeline is idempotent given each
-component is; position-preservation theorem justifying analyzer
-location-reporting against the stripped view as if it were
-original-source. |Four slices: `+Stripping_Block.idr+`,
-`+Stripping_Strings.idr+`, `+Stripping_Composition.idr+`,
-`+Stripping_PositionPreservation.idr+`.
+|Obligation |Verifier (§1, §1.2) |Notes
 
-|Bridge reachability soundness |Reachability analysis is sound (no
-reachable dep wrongly classified as phantom) |Unreachable code marked
-reachable wastes effort; reachable missed = security gap
+|Gate the Idris2 modules in CI
+|CI
+|Run the receipt's invocation on every change to `src/abi/`, failing on
+any `Error:` line. Moving the files to `src/abi/PanicAttack/ABI/` would
+let a plain `idris2 --check` work.
 
-|Kanren taint analysis |Taint propagation tracks all tainted data flows
-|Missed taint flow means missed vulnerability
+|`strip_proof_comments` is idempotent and preserves positions outside
+comments and strings
+|Creusot/Pearlite and Verus
+|On the Rust implementation. The Idris2 model above can guide the
+contracts; it does not discharge them. The model's own remaining slices
+(block comments, strings, composition, position preservation; issue #114)
+are optional once the implementation proof exists.
+
+|Patch Bridge reachability is sound: no reachable dependency is classified
+as phantom
+|Creusot/Pearlite and Verus
+|`src/bridge/reachability.rs`. A missed reachable dependency is a security
+gap.
+
+|Kanren taint analysis tracks every tainted flow
+|Creusot/Pearlite and Verus; Agda for the abstract theory
+|Any implementation-independent statement (the lattice, monotonicity, the
+fixed point) is theory and belongs in Agda with Rocq and Lean rechecks.
+Its realisation in `src/kanren/` is a Rust obligation.
+
+|Replace or retire PA1
+|Creusot/Pearlite and Verus, or retire
+|A non-vacuous statement would be, for example, that each language with
+a dedicated analyzer is routed to it. If that is not wanted, retire the
+module, because `rustc`'s exhaustiveness check already gives the current
+guarantee.
 |===
-
-=== Recommended Prover
-
-*Idris2* — Already in use. Taint analysis correctness proofs could use
-*Agda* with relational semantics. The 282 unwrap() calls are a
-significant debt (but separate from the proof obligations).
-
-=== Priority
-
-*MEDIUM* (was HIGH) — PA1 and PA2 completed 2026-04-11. The highest-risk
-false-negative scenario (analyzer dispatch completeness) is now formally
-proved. Remaining proofs are deeper semantic properties.
