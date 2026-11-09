@@ -49,7 +49,9 @@ First receipt, before the gate existed: Idris2 0.7.0, built from tag
 over `src/abi/*.idr` at `3dc4728762f37c1e5bebdb988783c7683c50fb55`. Each
 module was checked from a module-shaped copy of the tree. All five passed,
 and a planted false lemma and a planted non-terminating definition in
-`Stripping.idr` were both rejected.
+`Stripping.idr` were both rejected. `Stripping.idr` was rechecked after the
+comment-only edits in `ab0fdb2107e034e99b4b4f2fd7fb7366750d536e` and still
+passed.
 
 == Ledger
 
@@ -176,8 +178,12 @@ function as it is on `main`:
 * Ordering bug: block comments are stripped before line comments, so a
   block opener inside a line comment swallows the code after it.
   `code // see /* note`, then `hidden();`, then `*/ tail`, gives `code `.
-  The Lean, Agda/Haskell and Coq ProofDrift detectors use this function,
-  so such a comment can hide a later `sorry` or postulate.
+  The callers that pass both a line and a block marker are affected:
+  `analyze_rust`, `is_rust_ffi_safe_wrapper`, `analyze_idris`,
+  `analyze_lean` and `analyze_agda`. In the Idris, Lean and Agda ProofDrift
+  detectors such a comment can hide a later `sorry`, `believe_me` or
+  postulate. `analyze_isabelle` and `analyze_coq` pass no line marker and
+  are not affected.
 
 The Idris2 model above can guide the contracts once the function is
 fixed; it does not discharge them. The model's own remaining slices
