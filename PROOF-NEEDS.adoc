@@ -92,21 +92,29 @@ or signature scheme. So these are theorems of a symbolic (Dolev-Yao style)
 model, not a computational security reduction. Model to
 `src/attestation/`: `ASSUMED`. A computational proof is not claimed.
 
-|Every language reaches an analyzer; every weak-point category has a
-detector; cross-language checks run on every file (PA1)
-|`src/abi/PanicAttack/ABI/PatternCompleteness.idr`
-|`PROVEN` (model); supports no claim about the Rust code
-|The theorem is vacuous: `GenericAnalyzer : HasAnalyzer lang` inhabits
-the witness type for every language, so it holds whatever the dispatch
-does. The guarantee it was meant to give already holds in Rust:
-`match file_lang` in `src/assail/analyzer.rs` ends in
-`_ => analyze_generic`, and `rustc` checks the match is exhaustive.
+|Analyzer routing (PA1). (a) Every language analyzer in `analyzer.rs` is
+reached by some language. (b) No language falls back to the generic
+analyzer while a dedicated one exists for it. (c) Cross-language checks run
+exactly on non-configuration content, and on scripts embedded in
+configuration. (d) The README's language counts equal the languages the
+table supports.
+|`src/assail/routing.rs`: `route`, `Route::analyzer`, `runs_cross_language`
+and their tests
+|`TESTED`
+|The dispatch in `analyze_inner` matches on `route(file_lang)`, so the
+table is the code that runs, not a model of it. `route` and the dispatch
+are exhaustive matches with no wildcard, so `rustc` makes every language
+and every route explicit. The tests run over all 52 `Language` variants
+(`Language::ALL`, kept complete by an exhaustive `ordinal` match). (a) and
+(b) compare the table with the analyzer methods found in the source. (c)
+scans a Justfile and a Lua file end to end. Each test was seen to fail on
+a planted fault: an unrouted analyzer, Java sent to the generic analyzer,
+cross-language checks forced on, and the README's stale count of 49.
 
-The model has also drifted. Its `Lang` has 50 constructors and
-`src/types.rs` has 52; `C` and `Php` are missing. `crossLangAlwaysApplied`
-says cross-language checks run on every file, but the Rust code skips them
-when `configuration.is_some()`. That model claim is false of the
-implementation.
+This replaces the Idris2 `PatternCompleteness.idr`, which was vacuous
+(`GenericAnalyzer` inhabited its witness for every language), stale (50 of
+52 languages) and partly false (it said cross-language checks always
+run). It is retired.
 
 |Declarations for the ABI-facing types and their C integer encodings
 |`src/abi/PanicAttack/ABI/Types.idr`
@@ -152,10 +160,18 @@ gap.
 fixed point) is theory and belongs in Agda with Rocq and Lean rechecks.
 Its realisation in `src/kanren/` is a Rust obligation.
 
-|Replace or retire PA1
-|Creusot/Pearlite and Verus, or retire
-|A non-vacuous statement would be, for example, that each language with
-a dedicated analyzer is routed to it. If that is not wanted, retire the
-module, because `rustc`'s exhaustiveness check already gives the current
-guarantee.
+|Prove PA1 (a) to (c) on `route` and `runs_cross_language`
+|Creusot/Pearlite and Verus
+|Pearlite contracts on the two functions, proved by both verifiers. The
+tests above are exhaustive over a finite enum, but they are tests, and (a)
+reads the source with a pattern match. (d) is a documentation check and
+stays a test.
+
+|Unquoted `http://` URLs are missed by the cross-language check
+|Fix first, then test
+|`analyze_cross_language` strips C-style `//` comments from every file
+before matching, which also cuts `curl http://host` in shell. A quoted
+URL is found; an unquoted one in a `.sh` file or a Justfile recipe is not.
+This is a recall gap in the InsecureProtocol detector, found while testing
+PA1 (c).
 |===

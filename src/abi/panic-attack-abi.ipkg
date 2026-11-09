@@ -9,7 +9,6 @@ package panic-attack-abi
 sourcedir = "."
 
 modules = PanicAttack.ABI.Types
-        , PanicAttack.ABI.PatternCompleteness
         , PanicAttack.ABI.ClassificationSoundness
         , PanicAttack.ABI.Stripping
         , PanicAttack.ABI.AttestationUnforgeability

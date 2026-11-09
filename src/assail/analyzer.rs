@@ -523,8 +523,8 @@ impl Analyzer {
                 acc.record_file(&rel_path, &raw_bytes, &format!("{:?}", file_lang));
             }
 
-            match file_lang {
-                Language::Unknown => {
+            match super::routing::route(file_lang) {
+                super::routing::Route::InputAdapter => {
                     let Some(format) = configuration else {
                         coverage.mark(
                             file,
@@ -589,7 +589,7 @@ impl Analyzer {
                         }
                     }
                 }
-                Language::Php => match super::php::analyze(&content, &rel_path) {
+                super::routing::Route::Php => match super::php::analyze(&content, &rel_path) {
                     Ok(findings) => file_weak_points.extend(findings),
                     Err(error) => {
                         coverage.mark(
@@ -601,10 +601,10 @@ impl Analyzer {
                         continue;
                     }
                 },
-                Language::Rust => {
+                super::routing::Route::Rust => {
                     self.analyze_rust(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::C | Language::Cpp => {
+                super::routing::Route::CCpp => {
                     self.analyze_c_cpp(
                         &content,
                         &mut file_stats,
@@ -612,10 +612,10 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Go => {
+                super::routing::Route::Go => {
                     self.analyze_go(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Python => {
+                super::routing::Route::Python => {
                     self.analyze_python(
                         &content,
                         &mut file_stats,
@@ -623,7 +623,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::JavaScript => {
+                super::routing::Route::JavaScript => {
                     self.analyze_javascript(
                         &content,
                         &mut file_stats,
@@ -631,11 +631,11 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Ruby => {
+                super::routing::Route::Ruby => {
                     self.analyze_ruby(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // BEAM family
-                Language::Elixir => {
+                super::routing::Route::Elixir => {
                     self.analyze_elixir(
                         &content,
                         &mut file_stats,
@@ -643,7 +643,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Erlang => {
+                super::routing::Route::Erlang => {
                     self.analyze_erlang(
                         &content,
                         &mut file_stats,
@@ -651,7 +651,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Gleam => {
+                super::routing::Route::Gleam => {
                     self.analyze_gleam(
                         &content,
                         &mut file_stats,
@@ -660,7 +660,7 @@ impl Analyzer {
                     )?;
                 }
                 // ML family
-                Language::ReScript => {
+                super::routing::Route::ReScript => {
                     record_migration_file(file_stats.total_lines);
                     self.analyze_rescript(
                         &content,
@@ -669,7 +669,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::OCaml => {
+                super::routing::Route::OCaml => {
                     self.analyze_ocaml(
                         &content,
                         &mut file_stats,
@@ -677,15 +677,15 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::StandardML => {
+                super::routing::Route::StandardML => {
                     self.analyze_sml(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // Lisp family
-                Language::Scheme | Language::Racket => {
+                super::routing::Route::Lisp => {
                     self.analyze_lisp(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // Functional
-                Language::Haskell => {
+                super::routing::Route::Haskell => {
                     self.analyze_haskell(
                         &content,
                         &mut file_stats,
@@ -693,7 +693,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::PureScript => {
+                super::routing::Route::PureScript => {
                     self.analyze_purescript(
                         &content,
                         &mut file_stats,
@@ -702,7 +702,7 @@ impl Analyzer {
                     )?;
                 }
                 // Proof assistants
-                Language::Idris => {
+                super::routing::Route::Idris => {
                     self.analyze_idris(
                         &content,
                         &mut file_stats,
@@ -710,13 +710,13 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Lean => {
+                super::routing::Route::Lean => {
                     self.analyze_lean(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Agda => {
+                super::routing::Route::Agda => {
                     self.analyze_agda(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Isabelle => {
+                super::routing::Route::Isabelle => {
                     self.analyze_isabelle(
                         &content,
                         &mut file_stats,
@@ -724,11 +724,11 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Coq => {
+                super::routing::Route::Coq => {
                     self.analyze_coq(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // Logic programming
-                Language::Prolog | Language::Logtalk | Language::Datalog => {
+                super::routing::Route::Logic => {
                     self.analyze_logic(
                         &content,
                         &mut file_stats,
@@ -737,22 +737,22 @@ impl Analyzer {
                     )?;
                 }
                 // Systems languages
-                Language::Zig => {
+                super::routing::Route::Zig => {
                     self.analyze_zig(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Ada => {
+                super::routing::Route::Ada => {
                     self.analyze_ada(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Odin => {
+                super::routing::Route::Odin => {
                     self.analyze_odin(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Nim => {
+                super::routing::Route::Nim => {
                     self.analyze_nim(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Pony => {
+                super::routing::Route::Pony => {
                     self.analyze_pony(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::DLang => {
+                super::routing::Route::DLang => {
                     self.analyze_dlang(
                         &content,
                         &mut file_stats,
@@ -761,7 +761,7 @@ impl Analyzer {
                     )?;
                 }
                 // Config languages
-                Language::Nickel | Language::Nix => {
+                super::routing::Route::Config => {
                     self.analyze_config(
                         &content,
                         &mut file_stats,
@@ -770,7 +770,7 @@ impl Analyzer {
                     )?;
                 }
                 // Scripting
-                Language::Shell => {
+                super::routing::Route::Shell => {
                     self.analyze_shell(
                         &content,
                         &mut file_stats,
@@ -778,7 +778,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Julia => {
+                super::routing::Route::Julia => {
                     self.analyze_julia(
                         &content,
                         &mut file_stats,
@@ -786,22 +786,11 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Lua => {
+                super::routing::Route::Lua => {
                     self.analyze_lua(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // Nextgen DSLs - shared analyzer
-                Language::WokeLang
-                | Language::Eclexia
-                | Language::MyLang
-                | Language::JuliaTheViper
-                | Language::Oblibeny
-                | Language::Anvomidav
-                | Language::AffineScript
-                | Language::Ephapax
-                | Language::BetLang
-                | Language::ErrorLang
-                | Language::VCL
-                | Language::FBQL => {
+                super::routing::Route::NextgenDsl => {
                     self.analyze_nextgen_dsl(
                         &content,
                         &mut file_stats,
@@ -809,10 +798,10 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Java => {
+                super::routing::Route::Java => {
                     self.analyze_java(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                _ => {
+                super::routing::Route::Generic => {
                     self.analyze_generic(&content, &mut file_stats, &rel_path)?;
                 }
             }
@@ -820,7 +809,7 @@ impl Analyzer {
             // Structured configuration uses parsed keys and values; treating
             // comments or schema identifiers as executable source creates false
             // findings. Source-language adapters retain their existing checks.
-            if configuration.is_none() {
+            if super::routing::runs_cross_language(configuration.is_some()) {
                 self.analyze_cross_language(&content, &mut file_weak_points, &rel_path)?;
             }
 
