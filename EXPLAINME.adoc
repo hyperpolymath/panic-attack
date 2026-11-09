@@ -54,7 +54,7 @@ The README makes claims. This file backs them up.
 | `src/jit_context.rs` | JIT-framework classifier: Cranelift / Llvm / Wasm / Javascript / None; `transmute_targets_fn_ptr` recogniser for fn-ptr type-punning
 | `src/abi/PatternCompleteness.idr` | PA1 Idris2 proof — every Lang/Category has a detector
 | `src/abi/ClassificationSoundness.idr` | PA2 Idris2 proof — severity total order + maxSeverity commutativity
-| `src/abi/Stripping.idr` | Layer 1.0 partial — line-comment-strip foundation (shape lemma + base cases of `stripLineCommentsIdempotent` Qed-closed)
+| `src/abi/Stripping.idr` | Layer 1.0 — line-comment stripping is idempotent (`stripLineCommentsIdempotent`; re-proved 2026-11-09, type-checked by the `idris-abi` CI job)
 | `src/kanren/` | Logic engine (unification, fact database, taint, cross-lang)
 | `src/kanren/core.rs` | Term, substitution, unification, FactDB, forward chaining
 | `src/kanren/taint.rs` | Source→sink tracking (user input, network, deserialization)
