@@ -3672,24 +3672,14 @@ impl Analyzer {
         // One finding per occurrence, anchored to its line, so an audited
         // occurrence can carry an inline `panic-attack: accepted` marker
         // without hiding any other sorry in the same file.
-        let sorry_lines = occurrence_lines(&code, "sorry");
-        stats.unsafe_blocks += sorry_lines.len();
-        for line in sorry_lines {
-            weak_points.push(WeakPoint {
-                file: None,
-                line: Some(line),
-                category: WeakPointCategory::ProofDrift,
-                location: Some(file_path.to_string()),
-                severity: Severity::Critical,
-                description: format!(
-                    "1 sorry (banned proof escape hatch — admits unproven proposition) in {}:{}",
-                    file_path, line
-                ),
-                recommended_attack: vec![AttackAxis::Cpu],
-                suppressed: false,
-                test_context: None,
-            });
-        }
+        push_line_anchored_proof_drift(
+            &code,
+            "sorry",
+            "1 sorry (banned proof escape hatch — admits unproven proposition)",
+            file_path,
+            stats,
+            weak_points,
+        );
 
         // unsafeNativeIO — bypasses IO monad discipline
         let unsafe_io_count =
@@ -3852,24 +3842,14 @@ impl Analyzer {
         let code = strip_isabelle_prose(&without_blocks);
         // sorry — Isabelle's admitted-proof escape hatch (banned estate-wide).
         // One line-anchored finding per occurrence (see analyze_lean).
-        let sorry_lines = occurrence_lines(&code, "sorry");
-        stats.unsafe_blocks += sorry_lines.len();
-        for line in sorry_lines {
-            weak_points.push(WeakPoint {
-                file: None,
-                line: Some(line),
-                category: WeakPointCategory::ProofDrift,
-                location: Some(file_path.to_string()),
-                severity: Severity::Critical,
-                description: format!(
-                    "1 sorry (banned — unfinished Isabelle proof admitted without verification) in {}:{}",
-                    file_path, line
-                ),
-                recommended_attack: vec![AttackAxis::Cpu],
-                suppressed: false,
-                test_context: None,
-            });
-        }
+        push_line_anchored_proof_drift(
+            &code,
+            "sorry",
+            "1 sorry (banned — unfinished Isabelle proof admitted without verification)",
+            file_path,
+            stats,
+            weak_points,
+        );
 
         // oops — abandons an unfinished proof without even admitting it
         let oops_count = code.matches("oops").count();
@@ -5916,6 +5896,35 @@ fn occurrence_lines(code: &str, needle: &str) -> Vec<u32> {
     code.match_indices(needle)
         .map(|(at, _)| code[..at].matches('\n').count() as u32 + 1)
         .collect()
+}
+
+/// One Critical ProofDrift finding per occurrence of `needle` in `code`, each
+/// anchored to its line so an inline `panic-attack: accepted` marker can
+/// suppress exactly that occurrence. `code` must be position-preserving
+/// (see `occurrence_lines`).
+fn push_line_anchored_proof_drift(
+    code: &str,
+    needle: &str,
+    what: &str,
+    file_path: &str,
+    stats: &mut ProgramStatistics,
+    weak_points: &mut Vec<WeakPoint>,
+) {
+    let lines = occurrence_lines(code, needle);
+    stats.unsafe_blocks += lines.len();
+    for line in lines {
+        weak_points.push(WeakPoint {
+            file: None,
+            line: Some(line),
+            category: WeakPointCategory::ProofDrift,
+            location: Some(file_path.to_string()),
+            severity: Severity::Critical,
+            description: format!("{what} in {file_path}:{line}"),
+            recommended_attack: vec![AttackAxis::Cpu],
+            suppressed: false,
+            test_context: None,
+        });
+    }
 }
 
 /// Remove proof-language comments while keeping every newline, so a line
