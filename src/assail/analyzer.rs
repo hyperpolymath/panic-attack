@@ -3668,19 +3668,22 @@ impl Analyzer {
         // matching so that doc-comments documenting "no sorry" do not produce
         // false positives.
         let code = strip_proof_comments(content, "--", Some(("/-", "-/")));
-        // sorry — banned proof escape hatch: admits unproven propositions
-        let sorry_count = code.matches("sorry").count();
-        if sorry_count > 0 {
-            stats.unsafe_blocks += sorry_count;
+        // sorry — banned proof escape hatch: admits unproven propositions.
+        // One finding per occurrence, anchored to its line, so an audited
+        // occurrence can carry an inline `panic-attack: accepted` marker
+        // without hiding any other sorry in the same file.
+        let sorry_lines = occurrence_lines(&code, "sorry");
+        stats.unsafe_blocks += sorry_lines.len();
+        for line in sorry_lines {
             weak_points.push(WeakPoint {
                 file: None,
-                line: None,
+                line: Some(line),
                 category: WeakPointCategory::ProofDrift,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
                 description: format!(
-                    "{} sorry (banned proof escape hatch — admits unproven proposition) in {}",
-                    sorry_count, file_path
+                    "1 sorry (banned proof escape hatch — admits unproven proposition) in {}:{}",
+                    file_path, line
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
@@ -3847,19 +3850,20 @@ impl Analyzer {
         // proof-escape hatches. See #43.
         let without_blocks = strip_proof_comments(content, "", Some(("(*", "*)")));
         let code = strip_isabelle_prose(&without_blocks);
-        // sorry — Isabelle's admitted-proof escape hatch (banned estate-wide)
-        let sorry_count = code.matches("sorry").count();
-        if sorry_count > 0 {
-            stats.unsafe_blocks += sorry_count;
+        // sorry — Isabelle's admitted-proof escape hatch (banned estate-wide).
+        // One line-anchored finding per occurrence (see analyze_lean).
+        let sorry_lines = occurrence_lines(&code, "sorry");
+        stats.unsafe_blocks += sorry_lines.len();
+        for line in sorry_lines {
             weak_points.push(WeakPoint {
                 file: None,
-                line: None,
+                line: Some(line),
                 category: WeakPointCategory::ProofDrift,
                 location: Some(file_path.to_string()),
                 severity: Severity::Critical,
                 description: format!(
-                    "{} sorry (banned — unfinished Isabelle proof admitted without verification) in {}",
-                    sorry_count, file_path
+                    "1 sorry (banned — unfinished Isabelle proof admitted without verification) in {}:{}",
+                    file_path, line
                 ),
                 recommended_attack: vec![AttackAxis::Cpu],
                 suppressed: false,
@@ -5899,6 +5903,23 @@ fn strip_simple_double_quoted_strings(content: &str) -> String {
     out
 }
 
+/// Append only the newlines of a span that is being removed, so text after
+/// the span keeps its original line number.
+fn push_newlines_of(out: &mut String, removed: &str) {
+    out.extend(removed.chars().filter(|c| *c == '\n'));
+}
+
+/// 1-indexed line of every occurrence of `needle` in `code`. `code` must be
+/// a position-preserving rewrite of the file (every newline kept), as
+/// `strip_proof_comments` and `strip_isabelle_prose` produce.
+fn occurrence_lines(code: &str, needle: &str) -> Vec<u32> {
+    code.match_indices(needle)
+        .map(|(at, _)| code[..at].matches('\n').count() as u32 + 1)
+        .collect()
+}
+
+/// Remove proof-language comments while keeping every newline, so a line
+/// number taken from the result is a line number in `content`.
 fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &str)>) -> String {
     // First strip block comments greedily, left-to-right.
     let mut without_blocks = String::with_capacity(content.len());
@@ -5908,9 +5929,11 @@ fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &
             without_blocks.push_str(&rest[..start]);
             let after_open = &rest[start + open.len()..];
             if let Some(end) = after_open.find(close) {
+                push_newlines_of(&mut without_blocks, &after_open[..end]);
                 rest = &after_open[end + close.len()..];
             } else {
-                // Unterminated block comment — drop the rest.
+                // Unterminated block comment — drop the rest, keep its lines.
+                push_newlines_of(&mut without_blocks, after_open);
                 rest = "";
                 break;
             }
@@ -5920,12 +5943,13 @@ fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &
         without_blocks.push_str(content);
     }
 
-    // Then strip line comments.
+    // Then strip line comments. Split on '\n' (not `lines()`) so a trailing
+    // newline survives and the newline count is exactly preserved.
     if line_marker.is_empty() {
         return without_blocks;
     }
     let mut out = String::with_capacity(without_blocks.len());
-    for (i, line) in without_blocks.lines().enumerate() {
+    for (i, line) in without_blocks.split('\n').enumerate() {
         let kept = match line.find(line_marker) {
             Some(idx) => &line[..idx],
             None => line,
@@ -6050,6 +6074,7 @@ fn strip_isabelle_prose(content: &str) -> String {
 
         out.push_str(&rest[..next.0]);
         out.push(' ');
+        push_newlines_of(&mut out, &rest[next.0..next.1]);
         rest = &rest[next.1..];
     }
 }
@@ -8359,5 +8384,78 @@ pub fn safe_get_x() -> Option<String> {
             0,
             "flake.nix with rev pinning must NOT produce a SupplyChain finding"
         );
+    }
+}
+
+#[cfg(test)]
+mod proof_line_anchor_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Inputs built from the tokens the proof strippers react to, so the
+    /// generator actually reaches unterminated blocks, nested cartouches and
+    /// comments that span lines.
+    fn proof_source() -> impl Strategy<Value = String> {
+        let tokens = [
+            "(*",
+            "*)",
+            "/-",
+            "-/",
+            "--",
+            "//",
+            "text ",
+            "\\<open>",
+            "\\<close>",
+            "@{text ",
+            "}",
+            "{",
+            "\n",
+            "\r\n",
+            "sorry",
+            "a",
+            " ",
+        ];
+        proptest::collection::vec(proptest::sample::select(tokens.to_vec()), 0..60)
+            .prop_map(|parts| parts.concat())
+    }
+
+    proptest! {
+        // The invariant line anchoring rests on: stripping never adds,
+        // drops or reorders a newline, so the line of any surviving
+        // character is its line in the original file.
+        #[test]
+        fn proof_strippers_preserve_every_newline(src in proof_source()) {
+            let newlines = src.matches('\n').count();
+            for (line_marker, block) in [
+                ("--", Some(("/-", "-/"))),
+                ("", Some(("(*", "*)"))),
+                ("//", None),
+            ] {
+                let out = strip_proof_comments(&src, line_marker, block);
+                prop_assert_eq!(out.matches('\n').count(), newlines);
+            }
+            let isabelle = strip_isabelle_prose(&strip_proof_comments(&src, "", Some(("(*", "*)"))));
+            prop_assert_eq!(isabelle.matches('\n').count(), newlines);
+        }
+    }
+
+    #[test]
+    fn occurrence_lines_are_one_indexed_per_occurrence() {
+        assert_eq!(
+            occurrence_lines("sorry\nx\n  sorry sorry\n", "sorry"),
+            vec![1, 3, 3]
+        );
+        assert!(occurrence_lines("no escape here\n", "sorry").is_empty());
+    }
+
+    #[test]
+    fn sorry_after_multiline_comment_keeps_its_line() {
+        let lean = "/- a\n   b -/\ntheorem t : True := by\n  sorry\n";
+        let code = strip_proof_comments(lean, "--", Some(("/-", "-/")));
+        assert_eq!(occurrence_lines(&code, "sorry"), vec![4]);
+
+        let thy = "(* a\n   b *)\ntext \\<open>prose\n  sorry in prose\\<close>\nlemma l: True\n  sorry\n";
+        let code = strip_isabelle_prose(&strip_proof_comments(thy, "", Some(("(*", "*)"))));
+        assert_eq!(occurrence_lines(&code, "sorry"), vec![6]);
     }
 }

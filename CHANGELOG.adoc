@@ -2,6 +2,35 @@
 
 === [Unreleased]
 
+==== Changed — Lean and Isabelle `+sorry+` findings are line-anchored
+
+* Each `+sorry+` in a Lean or Isabelle file is now its own ProofDrift finding
+with a `+line+`, instead of one finding per file with a count and no line.
+A file with three `+sorry+` therefore reports three Critical findings; the
+pass/fail outcome of a severity gate is unchanged.
+* Because the findings now carry a line, an inline
+`+panic-attack: accepted+` marker on the same or previous line suppresses
+that occurrence, and only that one. Before, these findings could only be
+suppressed through the retired A2ML classification registry, which matches a
+whole file and category.
+* The comment strippers behind the proof detectors now keep every newline of
+a removed comment or Isabelle prose block, so line numbers taken from the
+stripped text are line numbers in the file. A property test checks this.
+
+==== Added — `+(*+` marker leader
+
+* `+(* panic-attack: accepted … *)+` is recognised at the start of a line, for
+Isabelle, Coq/Rocq, OCaml, SML and F*. The trailing `+*)+` is dropped from the
+recorded reason. Mid-line `+(*+` is not a leader, because it is also a C
+dereference or a Python splat.
+
+==== Fixed — inline markers when the scan root is not the working directory
+
+* `+assail <dir>+` run from anywhere but `+<dir>+` ignored every inline marker.
+Finding locations are relative to the scan root, but the marker pass read them
+relative to the process working directory, so the read failed silently.
+Locations are now resolved against the scan root first.
+
 ==== Added — `+assail --output-format kyaml+` writes a KYAML copy
 
 * With `+--output-format kyaml+` and `+--output report.json+`, `+assail+` writes

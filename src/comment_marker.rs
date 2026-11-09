@@ -21,6 +21,8 @@
 //!   `;`   Lisp / Scheme / Racket / Clojure / Common Lisp / Assembly
 //!   `--`  Haskell / Idris / SQL / Lua / Ada / Elm
 //!   `%`   Erlang / Prolog / MATLAB / LaTeX
+//!   `(*`  Isabelle / Coq / Rocq / OCaml / SML / F* (start of line only;
+//!         a trailing `*)` is dropped from the reason)
 //!
 //! After the comment leader, we accept (whitespace tolerant):
 //!
@@ -157,6 +159,12 @@ fn strip_to_after_comment_leader(line: &str) -> Option<&str> {
     if let Some(rest) = trimmed_start.strip_prefix("%") {
         return Some(rest);
     }
+    // ML-family block comment: Isabelle, Coq/Rocq, OCaml, SML, F*.
+    // Start-of-line only, like the leaders above: mid-line `(*` is also a
+    // C dereference or a Python splat.
+    if let Some(rest) = trimmed_start.strip_prefix("(*") {
+        return Some(rest);
+    }
 
     // Mid-line: only C-style `//` is safe — the others have non-comment
     // valid uses in expressions.
@@ -196,6 +204,10 @@ fn strip_to_after_comment_leader(line: &str) -> Option<&str> {
 /// Clean the reason text: strip leading `:`, ` - `, parens, whitespace.
 fn clean_reason(s: &str) -> String {
     let mut s = s.trim();
+    // A `(* ... *)` marker carries its closer on the same line.
+    if let Some(stripped) = s.strip_suffix("*)") {
+        s = stripped.trim();
+    }
     if let Some(stripped) = s.strip_prefix(':') {
         s = stripped.trim();
     }
@@ -337,5 +349,37 @@ mod tests {
         let content = "let x = 1;\n";
         assert!(is_suppressed_at(content, 0).is_none());
         assert!(is_suppressed_at(content, 99).is_none());
+    }
+
+    #[test]
+    fn ml_block_comment_marker_drops_its_closer() {
+        let m = parse_accepted_marker_in_line("  (* panic-attack: accepted (detector fixture) *)");
+        assert_eq!(m, Some("(detector fixture)".to_string()));
+        let bare = parse_accepted_marker_in_line("(* panic-attack: accepted *)");
+        assert_eq!(bare, Some(String::new()));
+    }
+
+    #[test]
+    fn ml_block_comment_leader_is_start_of_line_only() {
+        // Mid-line `(*` is a C dereference or a Python splat, never a leader.
+        assert_eq!(
+            parse_accepted_marker_in_line("  sorry (* panic-attack: accepted *)"),
+            None
+        );
+        assert_eq!(
+            parse_accepted_marker_in_line("x = (*p); /* panic-attack */"),
+            None
+        );
+        assert_eq!(
+            parse_accepted_marker_in_line("(* an ordinary comment *)"),
+            None
+        );
+    }
+
+    #[test]
+    fn ml_marker_on_previous_line_suppresses() {
+        let content = "lemma a: True\n  (* panic-attack: accepted *)\n  sorry\n";
+        assert!(is_suppressed_at(content, 3).is_some());
+        assert!(is_suppressed_at(content, 1).is_none());
     }
 }
