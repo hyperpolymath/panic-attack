@@ -4,34 +4,30 @@
 
 ||| Comment and String Stripping Idempotence (PROOF-PROGRAMME Layer 1.0)
 |||
-||| Closes the slash-slash inductive case left open by PR #111 (issue #113).
+||| Models the line-comment slice of the analyzer's comment-stripping pass,
+||| `src/assail/analyzer.rs` `strip_proof_comments(without_strings, "//",
+||| Some(("/*", "*/")))`, and proves the model **idempotent**: running it
+||| twice yields the same output as running it once.
 |||
-||| Mechanises the foundation lemma for every Layer-1 per-category
-||| soundness proof: the analyzer's comment-stripping pass is
-||| **idempotent** — running it twice yields the same output as running
-||| it once. This justifies the analyzer's preprocessing step at
-||| `src/assail/analyzer.rs:931 strip_proof_comments(without_strings,
-||| "//", Some(("/*", "*/")))` as a sound normalising rewrite that
-||| every category detector can rely on without re-stripping.
+||| What this establishes, and what it does not:
 |||
-||| Differences from the PR #111 model:
+||| * The theorem is about this Idris2 model, not the Rust function. The
+|||   correspondence between the two is a hand transcription that no tool
+|||   checks (recorded as ASSUMED in PROOF-NEEDS.adoc). Block comments and
+|||   string literals are not modelled.
+||| * Multi-comment semantics: every `//` comment is stripped, not only the
+|||   first (the PR #111 model's error). `stripLineCommentBody` hands
+|||   control back to `stripLineComments` after each preserved newline.
 |||
-||| 1. **Multi-comment semantics.** PR #111's model only stripped the
-|||    first `//` comment encountered — subsequent comments after a
-|||    newline were preserved unstripped. The Rust pass strips ALL
-|||    comments in the input. This module uses mutual recursion
-|||    (`stripLineComments` ↔ `stripLineCommentBody`) so that the
-|||    body-stripper calls back into the main stripper after each
-|||    preserved newline.
-|||
-||| 2. **Idempotence is now provable by structural induction** because
-|||    both functions consume strictly-smaller inputs on each call.
-|||    Idris2's totality checker validates the recursion.
-|||
-||| 3. **Slash-slash case Qed-closes** via `bodyIsFixedPoint` —
-|||    the closure lemma `stripLineComments (stripLineCommentBody xs)
-|||    = stripLineCommentBody xs` proved by simultaneous induction on
-|||    the main theorem and the body theorem.
+||| Proof shape. Matching on a `Char` literal only reduces when the
+||| character is itself a literal, so a proof over a variable character
+||| gets stuck. Each character is therefore classified once (`cls`), and
+||| every step dispatches on the class. The proofs carry the class as an
+||| explicit argument together with the equation `cls c = k`, so each
+||| case reduces. `stripLineComments` and `stripLineCommentBody` compute
+||| the same function as the earlier pattern-matching definitions; that
+||| was checked exhaustively on every string of length at most 9 over
+||| `/`, newline, `x` and space (349,525 inputs, no mismatch).
 module PanicAttack.ABI.Stripping
 
 %default total
@@ -52,39 +48,67 @@ public export
 nl : Char
 nl = '\n'
 
+||| The only distinctions the stripper makes between characters.
+public export
+data Cls = Slash | Newline | Other
+
+public export
+cls : Char -> Cls
+cls '/'  = Slash
+cls '\n' = Newline
+cls _    = Other
+
 -- ═══════════════════════════════════════════════════════════════════════
--- Stripping functions (mirror src/assail/analyzer.rs:931 strip_proof_comments)
+-- Stripping functions (mirror src/assail/analyzer.rs strip_proof_comments)
 --
--- Mutual recursion: stripLineComments handles non-comment input and
--- delegates comment bodies to stripLineCommentBody; stripLineCommentBody
--- walks until the next newline and then returns control to the main
--- stripper for the post-newline tail.
+-- `stripStep`, `slashStep` and `bodyStep` take the class of the character
+-- in hand, so each recursive call is on a strict sub-list and the
+-- totality checker accepts the definition.
 -- ═══════════════════════════════════════════════════════════════════════
 
 mutual
-    ||| The main line-comment stripper. Walks the input, replacing any
-    ||| `//` (and the comment body up to the next newline) with `sp sp`
-    ||| followed by spaces up to the newline, then continuing past the
-    ||| newline with another stripping pass.
+    ||| The main line-comment stripper. Replaces each `//` and the comment
+    ||| body up to the next newline with spaces, keeps the newline, and
+    ||| continues stripping after it.
     public export
     stripLineComments : List Char -> List Char
     stripLineComments [] = []
-    stripLineComments ('/' :: '/' :: rest) =
-        sp :: sp :: stripLineCommentBody rest
-    stripLineComments (c :: rest) = c :: stripLineComments rest
+    stripLineComments (c :: rest) = stripStep (cls c) c rest
 
-    ||| `stripLineCommentBody` walks from JUST AFTER `//` until the
-    ||| next newline, replacing every character with `sp`. At the
-    ||| newline (or end of input) it returns control to
-    ||| `stripLineComments` for the remainder, so the entire input is
-    ||| processed in one pass.
+    ||| One step of `stripLineComments`, given the class of the head.
+    public export
+    stripStep : Cls -> Char -> List Char -> List Char
+    stripStep Slash   c []       = [c]
+    stripStep Slash   c (d :: r) = slashStep (cls d) c d r
+    stripStep Newline c rest     = c :: stripLineComments rest
+    stripStep Other   c rest     = c :: stripLineComments rest
+
+    ||| A `/` followed by `d`: a comment opens only when `d` is `/` too.
+    public export
+    slashStep : Cls -> Char -> Char -> List Char -> List Char
+    slashStep Slash   c d r = sp :: sp :: stripLineCommentBody r
+    slashStep Newline c d r = c :: stripStep Newline d r
+    slashStep Other   c d r = c :: stripStep Other d r
+
+    ||| Walks from just after `//` to the next newline, replacing every
+    ||| character with `sp`, then hands the rest back to
+    ||| `stripLineComments`.
     public export
     stripLineCommentBody : List Char -> List Char
     stripLineCommentBody [] = []
-    stripLineCommentBody (c :: rest) =
-        if c == nl
-           then nl :: stripLineComments rest
-           else sp :: stripLineCommentBody rest
+    stripLineCommentBody (c :: rest) = bodyStep (cls c) rest
+
+    ||| One step of `stripLineCommentBody`, given the class of the head.
+    public export
+    bodyStep : Cls -> List Char -> List Char
+    bodyStep Newline rest = nl :: stripLineComments rest
+    bodyStep Slash   rest = sp :: stripLineCommentBody rest
+    bodyStep Other   rest = sp :: stripLineCommentBody rest
+
+||| `stripLineComments` on a cons cell, unfolded one step.
+stripCons : (c : Char) -> (x : List Char) ->
+    stripLineComments (c :: x) = stripStep (cls c) c x
+stripCons c x = Refl
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- Idempotence — main theorem + body fixed-point lemma, mutual induction
@@ -97,66 +121,55 @@ mutual
     stripLineCommentsIdempotent : (cs : List Char) ->
         stripLineComments (stripLineComments cs) = stripLineComments cs
     stripLineCommentsIdempotent [] = Refl
-    stripLineCommentsIdempotent ('/' :: '/' :: rest) =
-        -- LHS = strip (strip ('/' :: '/' :: rest))
-        --     = strip (sp :: sp :: stripBody rest)         [by definition]
-        --     = sp :: strip (sp :: stripBody rest)         [sp /= '/']
-        --     = sp :: sp :: strip (stripBody rest)         [sp /= '/']
-        --     = sp :: sp :: stripBody rest                 [by bodyIsFixedPoint]
-        -- RHS = sp :: sp :: stripBody rest                 [by definition]
-        cong (\xs => sp :: sp :: xs) (bodyIsFixedPoint rest)
-    stripLineCommentsIdempotent ('/' :: c :: rest) =
-        -- Not a comment marker (c is not the immediate-second '/').
-        -- The third clause of stripLineComments applies: the head '/'
-        -- is preserved and recursion continues on (c :: rest).
-        case c of
-            '/' => Refl  -- impossible: the prior clause matched
-            _ => cong ('/' ::) (stripLineCommentsIdempotent (c :: rest))
-    stripLineCommentsIdempotent (c :: rest) =
-        -- Generic non-comment-head case: c is not `/`. The outer strip
-        -- preserves the head and recurses, so idempotence reduces to
-        -- the inductive hypothesis.
-        case c of
-            '/' => case rest of
-                [] => Refl
-                _ :: _ => Refl  -- covered by the prior two clauses
-            _ => cong (c ::) (stripLineCommentsIdempotent rest)
+    stripLineCommentsIdempotent (c :: rest) = stepIdem (cls c) c Refl rest
+
+    ||| Idempotence of one step, for a head `c` of class `k`.
+    stepIdem : (k : Cls) -> (c : Char) -> cls c = k -> (rest : List Char) ->
+        stripLineComments (stripStep k c rest) = stripStep k c rest
+    stepIdem Slash c p [] =
+        rewrite stripCons c [] in rewrite p in Refl
+    stepIdem Slash c p (d :: r) = slashIdem (cls d) c p d Refl r
+    stepIdem Newline c p rest =
+        rewrite stripCons c (stripLineComments rest) in rewrite p in
+        cong (c ::) (stripLineCommentsIdempotent rest)
+    stepIdem Other c p rest =
+        rewrite stripCons c (stripLineComments rest) in rewrite p in
+        cong (c ::) (stripLineCommentsIdempotent rest)
+
+    ||| Idempotence after a `/`, for a next character `d` of class `j`.
+    ||| When `j` is `Slash` a comment opens and the body lemma applies;
+    ||| otherwise the `/` is kept, and it still cannot pair with `d` on
+    ||| the second pass.
+    slashIdem : (j : Cls) -> (c : Char) -> cls c = Slash ->
+        (d : Char) -> cls d = j -> (r : List Char) ->
+        stripLineComments (slashStep j c d r) = slashStep j c d r
+    slashIdem Slash c p d q r =
+        cong (\xs => sp :: sp :: xs) (bodyIsFixedPoint r)
+    slashIdem Newline c p d q r =
+        rewrite stripCons c (d :: stripLineComments r) in rewrite p in
+        rewrite q in
+        cong (\xs => c :: d :: xs) (stripLineCommentsIdempotent r)
+    slashIdem Other c p d q r =
+        rewrite stripCons c (d :: stripLineComments r) in rewrite p in
+        rewrite q in
+        cong (\xs => c :: d :: xs) (stripLineCommentsIdempotent r)
 
     ||| **Body fixed-point lemma.** Applying the line-comment stripper
-    ||| to the output of the body-stripper is a no-op — the body
-    ||| output's pre-newline region is all `sp` (no further `//` can
-    ||| form), and the post-newline tail is whatever the body-stripper
-    ||| recursively passed to `stripLineComments`, which is already
-    ||| a fixed point by the main theorem.
+    ||| to the output of the body-stripper is a no-op: the pre-newline
+    ||| region is all `sp`, so no `//` can form, and the post-newline
+    ||| tail is already a fixed point by the main theorem.
     public export
     bodyIsFixedPoint : (cs : List Char) ->
         stripLineComments (stripLineCommentBody cs) = stripLineCommentBody cs
     bodyIsFixedPoint [] = Refl
-    bodyIsFixedPoint (c :: rest) =
-        -- Case split on whether c is the newline.
-        case decEq c nl of
-            Yes prf =>
-                -- c = nl. Body returns `nl :: stripLineComments rest`.
-                -- strip applied to that = `nl :: strip (stripLineComments rest)`
-                -- (nl /= '/'). By main theorem on `rest`, that =
-                -- `nl :: stripLineComments rest`.
-                rewrite prf in
-                cong (nl ::) (stripLineCommentsIdempotent rest)
-            No cNotNl =>
-                -- c /= nl. Body returns `sp :: stripLineCommentBody rest`.
-                -- strip applied to that = `sp :: strip (stripLineCommentBody rest)`
-                -- (sp /= '/'). By the body IH, that = `sp :: stripLineCommentBody rest`.
-                let
-                    -- Establish that the body output starts with sp
-                    -- under the c /= nl case.
-                    bodyOutputShape : stripLineCommentBody (c :: rest)
-                                    = sp :: stripLineCommentBody rest
-                    bodyOutputShape = case decEq c nl of
-                        Yes y => absurd (cNotNl y)
-                        No _ => Refl
-                in
-                rewrite bodyOutputShape in
-                cong (sp ::) (bodyIsFixedPoint rest)
+    bodyIsFixedPoint (c :: rest) = bodyStepFixed (cls c) rest
+
+    ||| The body lemma for one step, for a head of class `k`.
+    bodyStepFixed : (k : Cls) -> (rest : List Char) ->
+        stripLineComments (bodyStep k rest) = bodyStep k rest
+    bodyStepFixed Newline rest = cong (nl ::) (stripLineCommentsIdempotent rest)
+    bodyStepFixed Slash   rest = cong (sp ::) (bodyIsFixedPoint rest)
+    bodyStepFixed Other   rest = cong (sp ::) (bodyIsFixedPoint rest)
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- Sanity tests
@@ -219,27 +232,27 @@ sanityTwoComments = Refl
 -- What still remains (Layer 1.0 future slices)
 -- ═══════════════════════════════════════════════════════════════════════
 
-||| Future Layer-1.0 work (recorded in PROOF-NEEDS.md + issue #114):
-|||
-||| 1. **Stripping_Block.idr** — `/* … */` block-comment stripper. Same
-|||    mutual-recursion shape. The closing `*/` plays the role newlines
-|||    played here.
-|||
-||| 2. **Stripping_Strings.idr** — `"…"` string-literal stripper with
-|||    `\"` escape handling. Same mutual-recursion shape.
-|||
-||| 3. **Stripping_Composition.idr** — `strip = stripLineComments .
-|||    stripBlockComments . stripStrings` is itself idempotent given
-|||    each component is. Requires cross-component lemmas (e.g. line-
-|||    stripping the output of block-stripping doesn't introduce new
-|||    `/*` tokens).
-|||
-||| 4. **Stripping_PositionPreservation.idr** — for every index `i`
-|||    where `cs[i]` is OUTSIDE every comment/string region,
-|||    `strip cs ! i = cs[i]`. Justifies the analyzer reporting
-|||    locations against the stripped view as original-source
-|||    locations.
-|||
-||| Once all five land, every Layer-1.1..1.25 per-category proof can
-||| assume `strip s` is a fixed point and the original-vs-stripped
-||| position mapping is the identity on token boundaries.
+-- Future Layer-1.0 work (recorded in PROOF-NEEDS.md + issue #114):
+--
+-- 1. **Stripping_Block.idr** — `/* … */` block-comment stripper. Same
+--    mutual-recursion shape. The closing `*/` plays the role newlines
+--    played here.
+--
+-- 2. **Stripping_Strings.idr** — `"…"` string-literal stripper with
+--    `\"` escape handling. Same mutual-recursion shape.
+--
+-- 3. **Stripping_Composition.idr** — `strip = stripLineComments .
+--    stripBlockComments . stripStrings` is itself idempotent given
+--    each component is. Requires cross-component lemmas (e.g. line-
+--    stripping the output of block-stripping doesn't introduce new
+--    `/*` tokens).
+--
+-- 4. **Stripping_PositionPreservation.idr** — for every index `i`
+--    where `cs[i]` is OUTSIDE every comment/string region,
+--    `strip cs ! i = cs[i]`. Justifies the analyzer reporting
+--    locations against the stripped view as original-source
+--    locations.
+--
+-- Once all five land, every Layer-1.1..1.25 per-category proof can
+-- assume `strip s` is a fixed point and the original-vs-stripped
+-- position mapping is the identity on token boundaries.
