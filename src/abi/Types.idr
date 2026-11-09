@@ -18,6 +18,15 @@ import Data.Fin
 public export
 data Severity = Info | Warning | Error | Critical
 
+||| Equality on severity, required by `Ord`.
+public export
+Eq Severity where
+  Info == Info = True
+  Warning == Warning = True
+  Error == Error = True
+  Critical == Critical = True
+  _ == _ = False
+
 ||| Total ordering on severity
 public export
 Ord Severity where
@@ -43,7 +52,7 @@ data ScanOp
 
 ||| Language identifier (47 supported, bounded)
 public export
-data LangId = MkLangId (n : Fin 47)
+data LangId = MkLangId (Fin 47)
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- C ABI Exports

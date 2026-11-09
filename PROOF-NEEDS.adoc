@@ -2,12 +2,23 @@
 
 === Current State
 
+*Receipts (2026-11-09).* Until this date no CI job type-checked
+`+src/abi/+`, and as committed none of the five modules checked: their module
+names did not match their paths, `+Types.idr+` and `+Stripping.idr+` had syntax
+errors, and `+Stripping.idr+`'s main theorem did not type-check at all. The ✅
+marks below therefore had no receipt before that date. Each module is now
+checked on every PR by the `+idris-abi+` job in
+`+.github/workflows/proven-tests.yml+` (`+scripts/ci/check-idris-abi.sh+`, Idris2
+0.7.0, `+%default total+`, no `+believe_me+`, `+assert_total+`,
+`+assert_smaller+`, `+postulate+` or `+idris_crash+`). PROOF-POLICY §6 deviation,
+state open: Idris2 is built from its v0.7.0 tag, because the repo's Guix
+manifest and container do not provide it.
+
 * **src/abi/*.idr**: 5 files — `+Types.idr+`,
 `+PatternCompleteness.idr+` (PA1 ✅ 2026-04-11),
 `+ClassificationSoundness.idr+` (PA2 ✅ 2026-04-11), `+Stripping.idr+`
-(PROOF-PROGRAMME Layer 1.0 line-comment slice ✅ 2026-06-02 —
-multi-comment semantics + slash-slash closure both Qed via
-mutual-recursive `+bodyIsFixedPoint+`),
+(PROOF-PROGRAMME Layer 1.0 line-comment slice: claimed 2026-06-02 but
+never checked; re-proved and checked 2026-11-09),
 `+AttestationUnforgeability.idr+` (PROOF-PROGRAMME §3.2 ✅ 2026-06-04 —
 conditional unforgeability from Ed25519 EUF-CMA + chain-hash
 collision-resistance hypotheses)
@@ -34,15 +45,19 @@ top-level theorem.
 preserves the ordering.
 
 |Layer 1.0 line-comment idempotence |`+src/abi/Stripping.idr+`
-|*2026-06-02 close-out (issue #113)*: corrects PR #111’s single-comment
-model to multi-comment via mutual recursion
-(`+stripLineComments ↔ stripLineCommentBody+` — body calls back into
-main after each preserved newline). Qed-closes
-`+stripLineCommentsIdempotent+` for ALL cases including the slash-slash
-inductive via the load-bearing `+bodyIsFixedPoint+` lemma proved by
-mutual induction with the main theorem. 7 sanity-check theorems
-including the two-comments-on-different-lines case PR #111 silently
-mis-stripped.
+|*Re-proved 2026-11-09.* The 2026-06-02 proof (issue #113) never
+type-checked: its `+//+` case relied on reductions that do not hold for a
+variable character, and it used `+decEq+` without importing it. The new proof
+shows `+stripLineCommentsIdempotent+` (stripping twice equals stripping once)
+through two facts: stripping is the identity on text with no `+//+`
+(`+stripIsIdOnClean+`), and the strippers' output has no `+//+`
+(`+stripIsClean+`/`+bodyIsClean+`, by mutual induction). `+bodyIsFixedPoint+`
+follows. The strippers are restated with explicit `+Bool+` tests. An
+exhaustive differential run over every string of length up to 9 on
+`+{/, x, \n}+` (29,524 inputs) found no difference from the previous
+definitions. A mutant that blanks with `+/+` instead of a space is rejected.
+Nine closed sanity theorems, including two comments on different lines and
+`+///+`.
 
 |Attestation chain unforgeability
 |`+src/abi/AttestationUnforgeability.idr+` |*PROOF-PROGRAMME §3.2
