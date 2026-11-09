@@ -5915,51 +5915,63 @@ fn push_line_anchored_proof_drift(
         });
     }
 }
-
-/// Remove proof-language comments while keeping every newline, so a line
-/// number taken from the result is a line number in `content`.
+/// Blank out proof-language comments in one left-to-right pass.
+///
+/// Every byte inside a comment becomes a space, except `'\n'`, which is
+/// kept. So the result has exactly the length of `content`, every byte
+/// outside a comment is unchanged, and a line or column taken from the
+/// result is a line or column in `content`.
+///
+/// Whichever comment opens first wins: a block opener inside a line comment
+/// is comment text, and so is a line marker inside a block comment. Block
+/// comments nest, as they do in every caller's language (Rust, Lean, Agda,
+/// Idris, Coq/Rocq and Isabelle). An unterminated block comment runs to the
+/// end of `content`. An empty `line_marker`, or an empty block marker,
+/// switches that kind of comment off. Markers must not contain whitespace.
+///
+/// The result is a fixed point: stripping it again changes nothing.
 fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &str)>) -> String {
-    // First strip block comments greedily, left-to-right.
-    let mut without_blocks = String::with_capacity(content.len());
-    if let Some((open, close)) = block {
-        let mut rest = content;
-        while let Some(start) = rest.find(open) {
-            without_blocks.push_str(&rest[..start]);
-            let after_open = &rest[start + open.len()..];
-            if let Some(end) = after_open.find(close) {
-                push_newlines_of(&mut without_blocks, &after_open[..end]);
-                rest = &after_open[end + close.len()..];
+    fn blank(out: &mut String, span: &str) {
+        for c in span.chars() {
+            if c == '\n' {
+                out.push('\n');
             } else {
-                // Unterminated block comment — drop the rest, keep its lines.
-                push_newlines_of(&mut without_blocks, after_open);
-                rest = "";
-                break;
+                // One space per byte keeps byte offsets, not just columns.
+                out.extend(std::iter::repeat_n(' ', c.len_utf8()));
             }
         }
-        without_blocks.push_str(rest);
-    } else {
-        without_blocks.push_str(content);
     }
 
-    // Then strip line comments. Split on '\n' (not `lines()`) so a trailing
-    // newline survives and the newline count is exactly preserved.
-    if line_marker.is_empty() {
-        return without_blocks;
-    }
-    let mut out = String::with_capacity(without_blocks.len());
-    for (i, line) in without_blocks.split('\n').enumerate() {
-        let kept = match line.find(line_marker) {
-            Some(idx) => &line[..idx],
-            None => line,
+    let block = block.filter(|(open, close)| !open.is_empty() && !close.is_empty());
+    let mut out = String::with_capacity(content.len());
+    let mut depth = 0usize;
+    let mut i = 0;
+    while let Some(rest) = content.get(i..).filter(|r| !r.is_empty()) {
+        let step = match block {
+            Some((_, close)) if depth > 0 && rest.starts_with(close) => {
+                depth -= 1;
+                close.len()
+            }
+            Some((open, _)) if rest.starts_with(open) => {
+                depth += 1;
+                open.len()
+            }
+            _ if depth > 0 => rest.chars().next().map_or(1, char::len_utf8),
+            _ if !line_marker.is_empty() && rest.starts_with(line_marker) => {
+                rest.find('\n').unwrap_or(rest.len())
+            }
+            _ => {
+                let len = rest.chars().next().map_or(1, char::len_utf8);
+                out.push_str(&rest[..len]);
+                i += len;
+                continue;
+            }
         };
-        if i > 0 {
-            out.push('\n');
-        }
-        out.push_str(kept);
+        blank(&mut out, &rest[..step]);
+        i += step;
     }
     out
 }
-
 /// Strip C-family line comments (`//`, `///`, `//!`) from each line, leaving
 /// the rest of the source intact. String literals are detected so a `//`
 /// inside `"http://example.com"` is NOT treated as a comment.
@@ -8455,5 +8467,179 @@ mod proof_line_anchor_tests {
         let thy = "(* a\n   b *)\ntext \\<open>prose\n  sorry in prose\\<close>\nlemma l: True\n  sorry\n";
         let code = strip_isabelle_prose(&strip_proof_comments(thy, "", Some(("(*", "*)"))));
         assert_eq!(occurrence_lines(&code, "sorry"), vec![6]);
+    }
+}
+
+#[cfg(test)]
+mod strip_proof_comments_tests {
+    use super::strip_proof_comments;
+
+    type Markers = (&'static str, Option<(&'static str, &'static str)>);
+
+    /// The marker pairs the analyzers pass, each with an alphabet that can
+    /// spell every marker, plus a newline and an ordinary character.
+    const CONFIGS: [(Markers, &[char]); 5] = [
+        (("//", Some(("/*", "*/"))), &['/', '*', '\n', 'x']),
+        (("--", Some(("/-", "-/"))), &['/', '-', '\n', 'x']),
+        (("--", Some(("{-", "-}"))), &['{', '-', '}', '\n', 'x']),
+        (("", Some(("(*", "*)"))), &['(', '*', ')', '\n', 'x']),
+        (("//", None), &['/', '\n', 'x', ' ']),
+    ];
+
+    /// Every string over `alphabet` of length at most `max_len`.
+    fn all_strings(alphabet: &[char], max_len: usize) -> Vec<String> {
+        let mut all = vec![String::new()];
+        let mut layer = vec![String::new()];
+        for _ in 0..max_len {
+            layer = layer
+                .iter()
+                .flat_map(|s| {
+                    alphabet.iter().map(move |c| {
+                        let mut t = s.clone();
+                        t.push(*c);
+                        t
+                    })
+                })
+                .collect();
+            all.extend(layer.iter().cloned());
+        }
+        all
+    }
+
+    fn strip(s: &str, (line, block): Markers) -> String {
+        strip_proof_comments(s, line, block)
+    }
+
+    #[test]
+    fn a_block_opener_inside_a_line_comment_hides_nothing() {
+        let src = "code // see /* note\nhidden();\n*/ tail";
+        let out = strip(src, ("//", Some(("/*", "*/"))));
+        let blanked = " ".repeat("// see /* note".len());
+        assert_eq!(out, format!("code {blanked}\nhidden();\n*/ tail"));
+    }
+
+    #[test]
+    fn a_line_marker_inside_a_block_comment_hides_nothing() {
+        let src = "/- -- -/ sorry";
+        assert_eq!(strip(src, ("--", Some(("/-", "-/")))), "         sorry");
+    }
+
+    #[test]
+    fn the_former_idempotence_counterexample_is_now_a_fixed_point() {
+        let markers = ("//", Some(("/*", "*/")));
+        let once = strip("a//*x*/*b*/c", markers);
+        assert_eq!(once, "a           ");
+        assert_eq!(strip(&once, markers), once);
+    }
+
+    #[test]
+    fn text_after_a_block_comment_keeps_its_offset() {
+        let out = strip("a/*x*/b", ("//", Some(("/*", "*/"))));
+        assert_eq!(out, "a     b");
+        assert_eq!(out.find('b'), Some(6));
+    }
+
+    #[test]
+    fn block_comments_nest() {
+        let src = "/- a /- b -/ sorry -/ x";
+        assert_eq!(
+            strip(src, ("--", Some(("/-", "-/")))),
+            "                      x"
+        );
+        let src = "(* (* *) sorry *) oops";
+        assert_eq!(
+            strip(src, ("", Some(("(*", "*)")))),
+            "                  oops"
+        );
+    }
+
+    #[test]
+    fn an_unterminated_block_comment_runs_to_the_end_keeping_newlines() {
+        let out = strip("a {- b\nc\n", ("--", Some(("{-", "-}"))));
+        assert_eq!(out, "a     \n \n");
+    }
+
+    #[test]
+    fn multibyte_text_keeps_its_byte_offsets() {
+        let src = "/* é */x // ü\ny";
+        let out = strip(src, ("//", Some(("/*", "*/"))));
+        assert_eq!(out.len(), src.len());
+        assert_eq!(out.find('x'), src.find('x'));
+        assert_eq!(out.find('y'), src.find('y'));
+        assert!(!out.contains('é') && !out.contains('ü'));
+    }
+
+    #[test]
+    fn empty_markers_switch_that_comment_kind_off() {
+        assert_eq!(strip("a // b", ("", None)), "a // b");
+        assert_eq!(strip("a /* b */", ("", Some(("", "*/")))), "a /* b */");
+    }
+
+    /// Exhaustive over every string up to the bound, for every marker set the
+    /// analyzers use: the result has the input's length, keeps every byte
+    /// outside a comment and every newline, blanks the rest with spaces, and
+    /// is a fixed point.
+    #[test]
+    fn stripping_preserves_positions_and_is_idempotent_exhaustively() {
+        for (markers, alphabet) in CONFIGS {
+            let max_len = if alphabet.len() > 4 { 7 } else { 8 };
+            for src in all_strings(alphabet, max_len) {
+                let out = strip(&src, markers);
+                assert_eq!(out.len(), src.len(), "{markers:?} {src:?}");
+                for (a, b) in src.bytes().zip(out.bytes()) {
+                    assert!(
+                        a == b || (b == b' ' && a != b'\n'),
+                        "{markers:?} {src:?} -> {out:?}"
+                    );
+                }
+                assert_eq!(strip(&out, markers), out, "{markers:?} {src:?}");
+            }
+        }
+    }
+
+    /// The line-comment model in `src/abi/PanicAttack/ABI/Stripping.idr`,
+    /// transcribed equation by equation. Idris2 proves the model idempotent.
+    fn idris_model(s: &[char]) -> String {
+        fn code(s: &[char], out: &mut String) {
+            match s {
+                [] => {}
+                ['/', '/', rest @ ..] => {
+                    out.push_str("  ");
+                    body(rest, out);
+                }
+                [c, rest @ ..] => {
+                    out.push(*c);
+                    code(rest, out);
+                }
+            }
+        }
+        fn body(s: &[char], out: &mut String) {
+            match s {
+                [] => {}
+                ['\n', rest @ ..] => {
+                    out.push('\n');
+                    code(rest, out);
+                }
+                [_, rest @ ..] => {
+                    out.push(' ');
+                    body(rest, out);
+                }
+            }
+        }
+        let mut out = String::new();
+        code(s, &mut out);
+        out
+    }
+
+    /// With only a `//` marker, the Rust function and the Idris2 model agree
+    /// on every input up to the bound, so the model's idempotence theorem is
+    /// about this function's behaviour on that slice, not about a different
+    /// function.
+    #[test]
+    fn the_line_comment_slice_matches_the_idris_model() {
+        for src in all_strings(&['/', '\n', 'x', ' '], 8) {
+            let chars: Vec<char> = src.chars().collect();
+            assert_eq!(strip(&src, ("//", None)), idris_model(&chars), "{src:?}");
+        }
     }
 }

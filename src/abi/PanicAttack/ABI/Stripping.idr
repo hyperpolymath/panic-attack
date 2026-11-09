@@ -4,18 +4,18 @@
 
 ||| Comment and String Stripping Idempotence (PROOF-PROGRAMME Layer 1.0)
 |||
-||| Models the line-comment slice of the analyzer's comment-stripping pass,
-||| `src/assail/analyzer.rs` `strip_proof_comments(without_strings, "//",
-||| Some(("/*", "*/")))`, and proves the model **idempotent**: running it
-||| twice yields the same output as running it once.
+||| Models `src/assail/analyzer.rs` `strip_proof_comments(s, "//", None)`, the
+||| line-comment slice of the analyzer's comment-stripping pass, and proves
+||| the model **idempotent**: running it twice yields the same output as
+||| running it once.
 |||
 ||| What this establishes, and what it does not:
 |||
-||| * The theorem is about this Idris2 model, not the Rust function, and the
-|||   model does not reproduce the Rust output. The model replaces comment
-|||   characters with spaces and keeps every newline; the Rust pass deletes
-|||   comment text and drops a trailing newline (`//x` gives three spaces
-|||   here and the empty string in Rust). Block comments and string literals
+||| * The theorem is about this Idris2 model, not the Rust function. The
+|||   two agree on that slice: the compiled model and the Rust function give
+|||   the same output on every string of length at most 9 over `/`, newline,
+|||   `x` and space, and a Rust test re-checks a transcription of these
+|||   equations up to length 8. Block comments, nesting and string literals
 |||   are not modelled. See PROOF-NEEDS.adoc for the Rust function's own
 |||   status.
 ||| * Multi-comment semantics: every `//` comment is stripped, not only the
@@ -64,9 +64,8 @@ cls _    = Other
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- Stripping functions: a model of the line-comment slice of
--- src/assail/analyzer.rs strip_proof_comments. The model keeps spaces and
--- newlines where the Rust function deletes comment text and drops a
--- trailing newline.
+-- src/assail/analyzer.rs strip_proof_comments, which also blanks comment
+-- text with spaces and keeps every newline.
 --
 -- `stripStep`, `slashStep` and `bodyStep` take the class of the character
 -- in hand, so each recursive call is on a strict sub-list and the
