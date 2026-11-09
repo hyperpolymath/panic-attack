@@ -52,9 +52,9 @@ The README makes claims. This file backs them up.
 | `src/comment_marker.rs` | Inline `// panic-attack: accepted [- reason]` suppression marker — `//` / `#` / `--` / `;` / `%` leaders, string-literal aware
 | `src/ffi_kind.rs` | UnsafeFFI (PA013) subtyping: BuildSystem (`build.zig` / `build.rs` — audit-accepted), RuntimeAbi (`bindings/` / `ffi/` / `sys/` / `cdef.zig`), TestMock (`tests/mocks/` / `_stub`), Unknown
 | `src/jit_context.rs` | JIT-framework classifier: Cranelift / Llvm / Wasm / Javascript / None; `transmute_targets_fn_ptr` recogniser for fn-ptr type-punning
-| `src/abi/PatternCompleteness.idr` | PA1 Idris2 proof — every Lang/Category has a detector
-| `src/abi/ClassificationSoundness.idr` | PA2 Idris2 proof — severity total order + maxSeverity commutativity
-| `src/abi/Stripping.idr` | Layer 1.0 partial — line-comment-strip foundation (shape lemma + base cases of `stripLineCommentsIdempotent` Qed-closed)
+| `src/abi/PanicAttack/ABI/PatternCompleteness.idr` | PA1 Idris2 model of analyzer dispatch; vacuous as stated (see `PROOF-NEEDS.adoc`)
+| `src/abi/PanicAttack/ABI/ClassificationSoundness.idr` | PA2 Idris2 proof — severity total order, `sevMax` upper bounds, monotone encoding
+| `src/abi/PanicAttack/ABI/Stripping.idr` | Layer 1.0 — Idris2 model of line-comment stripping, proved idempotent (`stripLineCommentsIdempotent`)
 | `src/kanren/` | Logic engine (unification, fact database, taint, cross-lang)
 | `src/kanren/core.rs` | Term, substitution, unification, FactDB, forward chaining
 | `src/kanren/taint.rs` | Source→sink tracking (user input, network, deserialization)

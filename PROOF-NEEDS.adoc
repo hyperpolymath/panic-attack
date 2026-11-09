@@ -27,27 +27,29 @@ compiles at `f2a6a70eaec0cb02331e3264e05f185b5faab0f7`. The only `unsafe`
 is in `examples/vulnerable_program.rs`, a deliberately buggy program that
 exists to be scanned.
 
-== Receipt for the Idris2 modules
+== How the Idris2 modules are checked
 
-* *Checker:* Idris2 0.7.0, the version `proven-tests.yml` pins, built from
-  tag `v0.7.0` (`27780073c8631826d846499840b3857d9b9a4fd5`) on Chez Scheme
-  9.5.8.
-* *Source:* `src/abi/*.idr` at
-  `3dc4728762f37c1e5bebdb988783c7683c50fb55`.
-* *Invocation:* the modules are named `PanicAttack.ABI.<M>` but live in
-  `src/abi/`, so `idris2 --check src/abi/<M>.idr` fails on a module-name
-  mismatch from any directory. Each was checked from a tree that places
-  `src/abi/<M>.idr` at `PanicAttack/ABI/<M>.idr`, with
-  `idris2 --check PanicAttack/ABI/<M>.idr`. A pass is exit 0 *and* no
-  `Error:` line, because `idris2 --check` can exit 0 while printing an
-  error.
-* *Result:* all five modules pass. Every module sets `%default total` and
-  uses no `believe_me`, `assert_total`, `postulate` or holes.
-* *Negative controls:* a planted false lemma and a planted non-terminating
-  definition in `Stripping.idr` were both rejected, so the check can fail.
-* *Gate:* no CI job runs this check. That obligation is `OPEN` below. Until
-  it closes, the statuses here rest on this one local run, and any change
-  to `src/abi/` invalidates them.
+The modules live at `src/abi/PanicAttack/ABI/<M>.idr`, so each path matches
+its module name, and `src/abi/panic-attack-abi.ipkg` lists them all.
+
+* *Gate:* the `abi-proofs` job in `.github/workflows/proven-tests.yml` runs
+  on every pull request and on pushes to `main`:
+  `idris2 --typecheck src/abi/panic-attack-abi.ipkg`. A pass is exit 0
+  *and* no `Error:` line, because `idris2 --check` can exit 0 while printing
+  an error. Its toolchain is Idris2 0.7.0 from the same pinned installer and
+  cache as the framework job. Each green run of that job is the current
+  receipt; a failing run revokes the statuses below.
+* *Negative controls* for the package route: a planted false lemma and a
+  planted missing import each make it exit non-zero with an `Error:` line.
+* *Hygiene:* every module sets `%default total` and uses no `believe_me`,
+  `assert_total`, `postulate` or holes.
+
+First receipt, before the gate existed: Idris2 0.7.0, built from tag
+`v0.7.0` (`27780073c8631826d846499840b3857d9b9a4fd5`) on Chez Scheme 9.5.8,
+over `src/abi/*.idr` at `3dc4728762f37c1e5bebdb988783c7683c50fb55`. Each
+module was checked from a module-shaped copy of the tree. All five passed,
+and a planted false lemma and a planted non-terminating definition in
+`Stripping.idr` were both rejected.
 
 == Ledger
 
@@ -57,14 +59,14 @@ exists to be scanned.
 
 |Severity order: `Low < Medium < High < Critical` is a total order;
 `sevMax` is an upper bound; the numeric encoding is monotone (PA2)
-|`src/abi/ClassificationSoundness.idr`
+|`src/abi/PanicAttack/ABI/ClassificationSoundness.idr`
 |`PROVEN` (model)
 |The model's `Severity` matches the variant names and order of
 `src/types.rs`; that correspondence is `ASSUMED` (a hand transcription).
 The Rust order itself comes from `#[derive(PartialOrd, Ord)]`.
 
 |Line-comment stripping is idempotent: `strip (strip s) = strip s`
-|`src/abi/Stripping.idr`
+|`src/abi/PanicAttack/ABI/Stripping.idr`
 |`PROVEN` (model)
 |Did not compile on `main` before `3dc4728`; repaired there without
 changing the theorem. The repaired model equals the previous one:
@@ -74,7 +76,7 @@ comments and string literals are not modelled. Model to Rust
 `strip_proof_comments`: `ASSUMED`.
 
 |Attestation chain: integrity, authenticity, non-repudiation
-|`src/abi/AttestationUnforgeability.idr`
+|`src/abi/PanicAttack/ABI/AttestationUnforgeability.idr`
 |`PROVEN` (model), relative to the `ASSUMED` hypotheses listed here
 |The module's `parameters` block assumes:
 
@@ -92,7 +94,7 @@ model, not a computational security reduction. Model to
 
 |Every language reaches an analyzer; every weak-point category has a
 detector; cross-language checks run on every file (PA1)
-|`src/abi/PatternCompleteness.idr`
+|`src/abi/PanicAttack/ABI/PatternCompleteness.idr`
 |`PROVEN` (model); supports no claim about the Rust code
 |The theorem is vacuous: `GenericAnalyzer : HasAnalyzer lang` inhabits
 the witness type for every language, so it holds whatever the dispatch
@@ -107,7 +109,7 @@ when `configuration.is_some()`. That model claim is false of the
 implementation.
 
 |Declarations for the ABI-facing types and their C integer encodings
-|`src/abi/Types.idr`
+|`src/abi/PanicAttack/ABI/Types.idr`
 |No theorem
 |Repaired in `3dc4728` so it compiles. It contains no proof and nothing
 imports it. Drift: its `Severity` is `Info / Warning / Error / Critical`
@@ -129,12 +131,6 @@ not establish a faithful hexad-to-octad map.
 [cols="3,2,5",options="header"]
 |===
 |Obligation |Verifier (§1, §1.2) |Notes
-
-|Gate the Idris2 modules in CI
-|CI
-|Run the receipt's invocation on every change to `src/abi/`, failing on
-any `Error:` line. Moving the files to `src/abi/PanicAttack/ABI/` would
-let a plain `idris2 --check` work.
 
 |`strip_proof_comments` is idempotent and preserves positions outside
 comments and strings

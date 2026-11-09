@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MPL-2.0
+-- SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+--
+-- The Idris2 ABI models and proofs. Type-check with:
+--   idris2 --typecheck src/abi/panic-attack-abi.ipkg
+-- A pass is exit 0 and no `Error:` line in the output.
+package panic-attack-abi
+
+sourcedir = "."
+
+modules = PanicAttack.ABI.Types
+        , PanicAttack.ABI.PatternCompleteness
+        , PanicAttack.ABI.ClassificationSoundness
+        , PanicAttack.ABI.Stripping
+        , PanicAttack.ABI.AttestationUnforgeability

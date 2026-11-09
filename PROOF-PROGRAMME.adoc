@@ -14,12 +14,12 @@ ____
 [width="100%",cols="34%,33%,33%",options="header",]
 |===
 |ID |File |Mechanises
-|*PA1* |`+src/abi/PatternCompleteness.idr+` |Every `+Lang+` constructor
+|*PA1* |`+src/abi/PanicAttack/ABI/PatternCompleteness.idr+` |Every `+Lang+` constructor
 has at least one analyzer; every `+WPCategory+` has at least one
 detector; cross-language checks apply uniformly. Top theorem:
 `+completeScanForAll+`.
 
-|*PA2* |`+src/abi/ClassificationSoundness.idr+` |`+Severity+` is totally
+|*PA2* |`+src/abi/PanicAttack/ABI/ClassificationSoundness.idr+` |`+Severity+` is totally
 ordered (`+LTE+`); `+maxSeverity+` is commutative + idempotent; numeric
 ABI encoding preserves the ordering.
 |===
@@ -81,7 +81,7 @@ Worked example — *PA004 (UnsafeCode)*:
 
 [source,idris]
 ----
--- src/abi/PA004_UnsafeCode.idr
+-- src/abi/PanicAttack/ABI/PA004_UnsafeCode.idr
 SoundnessPA004 : (file : String) -> (loc : Loc)
               -> contains (stripStrings file) "unsafe " loc
               -> isUnsafeBlock (locate file loc)
@@ -266,7 +266,7 @@ Recommended order (each row is parallel-iseable; rows are sequenced):
 |===
 |# |Phase |Output |Estimated effort |Risk
 |1 |*Foundation*: Layer 1.0 (comment/string-strip idempotence + token
-preservation) |`+src/abi/Stripping.idr+` + 1 Idris2 module |3–5 days
+preservation) |`+src/abi/PanicAttack/ABI/Stripping.idr+` + 1 Idris2 module |3–5 days
 |low
 
 |2 |*Quick wins*: Hexad↔Octad roundtrip proptest + Layer 1
@@ -316,8 +316,8 @@ docs/proof artefacts that don’t touch the hot path.
 
 * `+PROOF-NEEDS.md+` — current proof-debt ledger (this document is the
 long-term plan; that one tracks the immediate next step).
-* `+src/abi/PatternCompleteness.idr+` (PA1)
-* `+src/abi/ClassificationSoundness.idr+` (PA2)
+* `+src/abi/PanicAttack/ABI/PatternCompleteness.idr+` (PA1)
+* `+src/abi/PanicAttack/ABI/ClassificationSoundness.idr+` (PA2)
 * `+hyperpolymath/proven+` — leaf validator library; cross-fit
 candidates listed above.
 * ROADMAP.adoc "`Long-Term`" section: "`Formal verification of core

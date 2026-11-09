@@ -3,7 +3,7 @@
 #
 # proven-tests.yml — the estate's evidence-graded test framework, wired.
 #
-# THE TWO JOBS DO DIFFERENT THINGS AND NEITHER PRETENDS TO BE THE OTHER
+# THE JOBS DO DIFFERENT THINGS AND NONE PRETENDS TO BE ANOTHER
 # ---------------------------------------------------------------------
 # `ledger` (every PR, blocking, minutes): derives a proven-tests run report from
 #   THIS repo's suite — from a test inventory the runner emitted in the same
@@ -21,6 +21,10 @@
 #   every pull request buys nothing that the ledger job does not already prove,
 #   and it would make every contributor wait on a compiler that cannot change
 #   for them.
+#
+# `abi-proofs` (every PR, blocking): type-checks this repository's own Idris2
+#   proofs in src/abi with the same pinned Idris2. It reuses the framework job's
+#   toolchain cache, so it costs a compiler build only on a cold cache.
 #
 # WHY THE REPORT IS A FILE, NOT A PARAGRAPH: docs/INTEROP-PANIC-ATTACK.adoc in
 # proven-tests-and-benches fixes the mapping in prose; a report plus a verifier
@@ -141,6 +145,56 @@ jobs:
             /tmp/proven-aggregate.json
           retention-days: 30
           if-no-files-found: warn
+
+  abi-proofs:
+    # Every PR: type-check this repo's own Idris2 ABI proofs (src/abi). Without
+    # this, src/abi/PanicAttack/ABI/Stripping.idr sat on main not compiling
+    # while PROOF-NEEDS.adoc called it closed. The toolchain comes from the same
+    # pinned installer and cache key as the framework job, so a warm cache makes
+    # this a type-check, not a compiler build.
+    name: Idris2 — src/abi proofs type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout proven-tests-and-benches at the pinned commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: hyperpolymath/proven-tests-and-benches
+          ref: ${{ env.PROVEN_TESTS_PIN }}
+          path: .proven-tests
+          persist-credentials: false
+
+      - name: Cache the Idris2 toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.idris2
+          key: idris2-v${{ env.IDRIS2_VERSION }}-${{ runner.os }}
+
+      - name: Install Idris2 (chez backend)
+        working-directory: .proven-tests
+        env:
+          IDRIS2_VERSION: v${{ env.IDRIS2_VERSION }}
+        run: bash scripts/install-idris2.sh
+
+      - name: Type-check src/abi
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.idris2/bin:$PATH"
+          idris2 --version
+          # `idris2 --check` can exit 0 while printing an error, so require
+          # both a zero exit and no `Error:` line.
+          status=0
+          out="$(idris2 --typecheck src/abi/panic-attack-abi.ipkg 2>&1)" || status=$?
+          printf '%s\n' "$out"
+          if [ "$status" -ne 0 ] || grep -q '^Error' <<<"$out"; then
+            echo "::error::src/abi Idris2 proofs do not type-check (exit $status)"
+            exit 1
+          fi
 
   framework:
     name: Framework — the grader is exercised (scheduled)
