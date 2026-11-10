@@ -9,6 +9,32 @@ vocabulary: `PROVEN`, `PROVEN-WITH-AXIOMS`, `TESTED`, `ASSUMED`, `OPEN`.
 None of these obligations is a theory theorem (§1), so none carries a Proof
 Witness Grade.
 
+*Receipts (2026-11-09).* Until this date no CI job type-checked
+`+src/abi/+`, and as committed none of the five modules checked: their module
+names did not match their paths, `+Types.idr+` and `+Stripping.idr+` had syntax
+errors, and `+Stripping.idr+`'s main theorem did not type-check at all. The ✅
+marks below therefore had no receipt before that date. Each module is now
+checked on every PR by the `+idris-abi+` job in
+`+.github/workflows/proven-tests.yml+` (`+scripts/ci/check-idris-abi.sh+`, Idris2
+0.7.0, `+%default total+`, no `+believe_me+`, `+assert_total+`,
+`+assert_smaller+`, `+postulate+` or `+idris_crash+`). PROOF-POLICY §6 deviation,
+state open: Idris2 is built from its v0.7.0 tag, because the repo's Guix
+manifest and container do not provide it.
+
+* **src/abi/*.idr**: 5 files — `+Types.idr+`,
+`+PatternCompleteness.idr+` (PA1 ✅ 2026-04-11),
+`+ClassificationSoundness.idr+` (PA2 ✅ 2026-04-11), `+Stripping.idr+`
+(PROOF-PROGRAMME Layer 1.0 line-comment slice: claimed 2026-06-02 but
+never checked; re-proved and checked 2026-11-09),
+`+AttestationUnforgeability.idr+` (PROOF-PROGRAMME §3.2 ✅ 2026-06-04 —
+conditional unforgeability from Ed25519 EUF-CMA + chain-hash
+collision-resistance hypotheses)
+* *Dangerous patterns*: 0 in own code (3 references are in the analyzer
+that DETECTS believe_me in other repos); 282 `+unwrap()+` calls
+* *LOC*: ~31,700 (Rust)
+* *ABI layer*: Idris2 with completeness + soundness proofs + Layer-1.0
+stripping foundation
+
 == Where each kind of obligation belongs
 
 * *Behaviour of first-party Rust code* (stripping, reachability, taint
@@ -32,24 +58,24 @@ exists to be scanned.
 * *Checker:* Idris2 0.7.0, the version `proven-tests.yml` pins, built from
   tag `v0.7.0` (`27780073c8631826d846499840b3857d9b9a4fd5`) on Chez Scheme
   9.5.8.
-* *Source:* `src/abi/*.idr` at
-  `3dc4728762f37c1e5bebdb988783c7683c50fb55`. `Stripping.idr` was rechecked
-  after the comment-only edits in `ab0fdb2107e034e99b4b4f2fd7fb7366750d536e`
-  and still passes; the other four modules are unchanged since `3dc4728`.
+* *Source:* `src/abi/*.idr` as committed. `Stripping.idr` is the re-proof
+  from #281 (see the ledger row below).
 * *Invocation:* the modules are named `PanicAttack.ABI.<M>` but live in
   `src/abi/`, so `idris2 --check src/abi/<M>.idr` fails on a module-name
-  mismatch from any directory. Each was checked from a tree that places
-  `src/abi/<M>.idr` at `PanicAttack/ABI/<M>.idr`, with
-  `idris2 --check PanicAttack/ABI/<M>.idr`. A pass is exit 0 *and* no
-  `Error:` line, because `idris2 --check` can exit 0 while printing an
-  error.
+  mismatch from any directory. `scripts/ci/check-idris-abi.sh` stages the
+  committed files at `PanicAttack/ABI/<M>.idr` as links and checks those.
+  A pass is exit 0 *and* no `Error:` line, because `idris2 --check` can
+  exit 0 while printing an error.
 * *Result:* all five modules pass. Every module sets `%default total` and
-  uses no `believe_me`, `assert_total`, `postulate` or holes.
-* *Negative controls:* a planted false lemma and a planted non-terminating
-  definition in `Stripping.idr` were both rejected, so the check can fail.
-* *Gate:* no CI job runs this check. That obligation is `OPEN` below. Until
-  it closes, the statuses here rest on this one local run, and any change
-  to `src/abi/` invalidates them.
+  uses no `believe_me`, `assert_total`, `assert_smaller`, `postulate` or
+  `idris_crash`.
+* *Negative controls:* against this PR's earlier `Stripping.idr`
+  (`3dc4728`), a planted false lemma and a planted non-terminating
+  definition were both rejected, so the check can fail.
+* *Gate:* the `idris-abi` job in `.github/workflows/proven-tests.yml` runs
+  this check on every PR and blocks on failure (#281). The statuses here
+  rest on that job's receipt for the commit in question; it passed on
+  `main` at `36f1055`.
 
 == Ledger
 
@@ -68,11 +94,19 @@ The Rust order itself comes from `#[derive(PartialOrd, Ord)]`.
 |Line-comment stripping is idempotent: `strip (strip s) = strip s`
 |`src/abi/Stripping.idr`
 |`PROVEN` (model)
-|Did not compile on `main` before `3dc4728`; repaired there without
-changing the theorem. The repaired model equals the previous one:
-`TESTED`, exhaustively on all 349,525 strings of length at most 9 over
-`/`, newline, `x` and space. That comparison is model against model, not
-model against Rust.
+|*Re-proved 2026-11-09.* The 2026-06-02 proof (issue #113) never
+type-checked: its `+//+` case relied on reductions that do not hold for a
+variable character, and it used `+decEq+` without importing it. The new proof
+shows `+stripLineCommentsIdempotent+` (stripping twice equals stripping once)
+through two facts: stripping is the identity on text with no `+//+`
+(`+stripIsIdOnClean+`), and the strippers' output has no `+//+`
+(`+stripIsClean+`/`+bodyIsClean+`, by mutual induction). `+bodyIsFixedPoint+`
+follows. The strippers are restated with explicit `+Bool+` tests. An
+exhaustive differential run over every string of length up to 9 on
+`+{/, x, \n}+` (29,524 inputs) found no difference from the previous
+definitions. A mutant that blanks with `+/+` instead of a space is rejected.
+Nine closed sanity theorems, including two comments on different lines and
+`+///+`.
 
 The model does *not* match `strip_proof_comments`, so it is evidence about
 the model only. It replaces comment characters with spaces and keeps every
@@ -148,17 +182,38 @@ obligation. The gateway octad projection is lossy by design, so this does
 not establish a faithful hexad-to-octad map.
 |===
 
+== Model-checked (TESTED, bounded)
+
+[width="100%",cols="26%,30%,44%",options="header",]
+|===
+|Obligation |Artefact |Status and bounds
+|Generation-publish protocol P1–P3 (prototype, `src/publish.rs`;
+design `docs/design/GENERATION-PUBLISH.adoc`) |`verification/proofs/tlaplus/GenerationPublish.tla`
+(TLC 2.19, tla2tools v1.7.4, run by `verify.yml` job `tlaplus`) and
+`tests/publish_model.rs` (independent explicit-state checker) |*TESTED*: up to
+3 writers, 1 reader, 2 files, crash at every writer step, collection of crashed
+and live writers' partial generations, `keep` 0 and 1. P1 (`CURRENT` names a
+complete generation), P2 (never moves backwards) and P3 (manifest reader never
+fails) hold. P4 (mirrors consistent once quiet) holds without crashes and
+*fails* after a crash, the documented limit. Three mutants each violate P1 or
+P2, so the invariants are not vacuous. *PROOF-POLICY §4 exception*: a
+concurrency protocol over crash interleavings, which Creusot and Verus do not
+state. *§6 deviation (open)*: TLC is fetched from its release, digest-checked,
+because neither Guix nor the container provides it yet.
+|===
+
 == Open obligations
 
 [cols="3,2,5",options="header"]
 |===
 |Obligation |Verifier (§1, §1.2) |Notes
 
-|Gate the Idris2 modules in CI
-|CI
-|Run the receipt's invocation on every change to `src/abi/`, failing on
-any `Error:` line. Moving the files to `src/abi/PanicAttack/ABI/` would
-let a plain `idris2 --check` work.
+|Generation publish: pure decisions (`src/publish.rs`). The supersede
+comparison and the collect selection never remove the current or a newer
+generation, and keep the `keep` newest older ones
+|Creusot/Pearlite and Verus (§1.2)
+|*OPEN*. The model check above covers the protocol, not the Rust code;
+these contracts tie the implementation to P1 and P2.
 
 |`strip_proof_comments` is idempotent and preserves positions outside
 comments and strings

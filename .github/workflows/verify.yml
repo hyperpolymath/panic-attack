@@ -242,3 +242,32 @@ jobs:
           assert any(i.get('status') not in ('analyzed', 'excluded') for i in coverage['inputs']), coverage
           print(f"coverage={coverage['status']} (gap recorded)")
           PY
+
+  # The generation-publish protocol (src/publish.rs) is model-checked with TLC,
+  # PROOF-POLICY §4's worked exception for concurrency protocols. Results are
+  # TESTED with the bounds in each .cfg, never PROVEN. Every config states its
+  # expected outcome; the expected violations (the documented mirror limit and
+  # three mutants) show the invariants can fail.
+  #
+  # Deviation (PROOF-POLICY §6), state: open. Leg: protocol model check. Tool:
+  # tla2tools.jar v1.7.4 (TLC 2.19), SHA-256 below, checked by check.sh. Why not
+  # Guix or the container: neither provides TLC yet. Java comes from the runner.
+  tlaplus:
+    name: TLA+ model check (GenerationPublish)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch the pinned TLC and model-check every config
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          tools_dir=$(mktemp -d)
+          trap 'rm -rf "$tools_dir"' EXIT
+          curl --fail --silent --show-error --location --max-time 120 \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar \
+            --output "$tools_dir/tla2tools.jar"
+          TLA2TOOLS="$tools_dir/tla2tools.jar" bash verification/proofs/tlaplus/check.sh

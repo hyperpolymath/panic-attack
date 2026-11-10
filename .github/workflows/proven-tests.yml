@@ -22,6 +22,12 @@
 #   and it would make every contributor wait on a compiler that cannot change
 #   for them.
 #
+# `idris-abi` (every PR, blocking): type-checks this repo's own Idris2 ABI
+#   proofs in src/abi/. This is a departure from the rule above, made because
+#   these proofs are claims in PROOF-NEEDS.adoc and a claim needs a receipt on
+#   every change. Idris2 is built from source once and cached by version and
+#   commit, so after the first run a PR waits only for the check itself.
+#
 # WHY THE REPORT IS A FILE, NOT A PARAGRAPH: docs/INTEROP-PANIC-ATTACK.adoc in
 # proven-tests-and-benches fixes the mapping in prose; a report plus a verifier
 # is the same mapping with something at stake.
@@ -191,3 +197,54 @@ jobs:
           path: .proven-tests/build/report/*.json
           retention-days: 30
           if-no-files-found: warn
+
+  # The Idris2 ABI proofs in src/abi/ (PA1, PA2, Layer 1.0 stripping,
+  # attestation unforgeability, ABI types). Until this job, none was ever
+  # type-checked. scripts/ci/check-idris-abi.sh fails on any type error,
+  # a missing `%default total`, or an escape hatch.
+  #
+  # Deviation (PROOF-POLICY §6), state: open. Leg: Idris2 ABI proofs. Tool:
+  # Idris2 0.7.0 built from the v0.7.0 tag (commit checked below) with the
+  # runner's Chez Scheme. Why not Guix or the container: panic-attack's Guix
+  # manifest and container do not provide Idris2 yet.
+  idris-abi:
+    name: Idris2 ABI proofs type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      IDRIS2_COMMIT: 27780073c8631826d846499840b3857d9b9a4fd5
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache the Idris2 toolchain built from source
+        id: idris2-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.idris2-src-build
+          key: idris2-src-${{ env.IDRIS2_VERSION }}-${{ env.IDRIS2_COMMIT }}-${{ runner.os }}
+
+      - name: Build Idris2 from the pinned tag (cache miss only)
+        if: steps.idris2-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq chezscheme
+          src=$(mktemp -d)
+          git clone --quiet --depth 1 --branch "v${IDRIS2_VERSION}" \
+            https://github.com/idris-lang/Idris2.git "$src"
+          test "$(git -C "$src" rev-parse HEAD)" = "$IDRIS2_COMMIT"
+          make -C "$src" bootstrap SCHEME=scheme PREFIX="$HOME/.idris2-src-build"
+          make -C "$src" install PREFIX="$HOME/.idris2-src-build"
+
+      - name: Type-check every module in src/abi
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The cached build still needs Chez Scheme at run time.
+          command -v scheme >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq chezscheme; }
+          export PATH="$HOME/.idris2-src-build/bin:$PATH"
+          bash scripts/ci/check-idris-abi.sh

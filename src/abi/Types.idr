@@ -21,6 +21,7 @@ public export
 data Severity = Info | Warning | Error | Critical
 
 public export
+||| Equality on severity, required by `Ord`.
 Eq Severity where
   Info     == Info     = True
   Warning  == Warning  = True
