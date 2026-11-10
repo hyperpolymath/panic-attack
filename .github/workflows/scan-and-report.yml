@@ -26,7 +26,20 @@ on:
       VERISIMDB_PAT:
         description: 'PAT with repo scope for cross-repo dispatch to verisimdb-data'
         required: false
+  # A run of this file by hand has its own `inputs`: the workflow_call inputs
+  # above do not exist for it. Without these two, `inputs.repo_path` and
+  # `inputs.fail_on_severity` are empty strings, "Run scan" has no target and
+  # the severity gate rejects the empty threshold. Same names, same defaults.
   workflow_dispatch:
+    inputs:
+      repo_path:
+        description: 'Path to scan (default: .)'
+        default: '.'
+        type: string
+      fail_on_severity:
+        description: 'Fail on an unsuppressed finding at or above: none | low | medium | high | critical'
+        default: 'none'
+        type: string
 
 permissions:
   contents: read
