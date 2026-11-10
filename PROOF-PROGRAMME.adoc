@@ -14,10 +14,11 @@ ____
 [width="100%",cols="34%,33%,33%",options="header",]
 |===
 |ID |File |Mechanises
-|*PA1* |`+src/abi/PatternCompleteness.idr+` |Every `+Lang+` constructor
-has at least one analyzer; every `+WPCategory+` has at least one
-detector; cross-language checks apply uniformly. Top theorem:
-`+completeScanForAll+`.
+|*PA1* |`+src/assail/routing.rs+` |The routing table the dispatch uses: every
+language analyzer is reached, no language falls back to the generic
+analyzer while a dedicated one exists, cross-language checks run exactly
+off configuration, and the README language counts match. Tested
+exhaustively; the earlier Idris2 model was vacuous and is retired.
 
 |*PA2* |`+src/abi/ClassificationSoundness.idr+` |`+Severity+` is totally
 ordered (`+LTE+`); `+maxSeverity+` is commutative + idempotent; numeric
@@ -316,7 +317,7 @@ docs/proof artefacts that don’t touch the hot path.
 
 * `+PROOF-NEEDS.md+` — current proof-debt ledger (this document is the
 long-term plan; that one tracks the immediate next step).
-* `+src/abi/PatternCompleteness.idr+` (PA1)
+* `+src/assail/routing.rs+` (PA1)
 * `+src/abi/ClassificationSoundness.idr+` (PA2)
 * `+hyperpolymath/proven+` — leaf validator library; cross-fit
 candidates listed above.

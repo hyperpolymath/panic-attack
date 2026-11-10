@@ -14,6 +14,7 @@ mod forth;
 mod input_adapters;
 pub mod patterns;
 pub mod php;
+mod routing;
 mod templates;
 
 use crate::kanren::core::{FactDB, LogicEngine};

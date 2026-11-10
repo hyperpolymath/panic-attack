@@ -12,7 +12,7 @@ image:https://api.thegreenwebfoundation.org/greencheckimage/github.com[Green Web
 image:https://img.shields.io/badge/status-active-green[Status]
 image:https://img.shields.io/badge/domain-security--analysis-blue[Domain]
 image:https://img.shields.io/badge/tests-897%20passing-brightgreen[Tests]
-image:https://img.shields.io/badge/languages-49-blue[Languages]
+image:https://img.shields.io/badge/languages-51-blue[Languages]
 
 **panic-attack** is a multi-language security analysis and stress-testing system.
 
@@ -69,7 +69,7 @@ panic-attack exists to address this by combining:
 
 panic-attack provides:
 
-* **49-language static analysis** across multiple families
+* **51-language static analysis** across multiple families
 * **Weak point detection** (30 canonical categories; see the PA rule-ID table below)
 * **Attack simulation (6 axes)**: CPU, memory, disk, network, concurrency, time
 * **miniKanren logic engine** for taint analysis and cross-language reasoning
@@ -235,7 +235,7 @@ Current state: **v2.5.0**
 * v2.5.5 cohort landed 2026-06-02: context-aware FP suppression via `test_context` / `comment_marker` / `ffi_kind` / `jit_context` modules — `// panic-attack: accepted` inline markers, automatic PanicPath suppression in test-only code, build.zig/build.rs auto-accept, Cranelift/LLVM/Wasm/JS JIT detection. See `PROOF-PROGRAMME.md` for the formal soundness landscape
 * 0 warnings
 * 38 CLI subcommands
-* 49 supported languages (30 canonical weak-point categories PA001–PA029; `PA001b` is a distinct stable rule ID grouped with PA001 under one allocation semantic class for cross-tool de-duplication)
+* 51 supported languages (30 canonical weak-point categories PA001–PA029; `PA001b` is a distinct stable rule ID grouped with PA001 under one allocation semantic class for cross-tool de-duplication)
 
 See link:ROADMAP.adoc[ROADMAP.adoc] for full capability breakdown and milestones.
 

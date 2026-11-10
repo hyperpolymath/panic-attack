@@ -52,7 +52,7 @@ The README makes claims. This file backs them up.
 | `src/comment_marker.rs` | Inline `// panic-attack: accepted [- reason]` suppression marker — `//` / `#` / `--` / `;` / `%` leaders, string-literal aware
 | `src/ffi_kind.rs` | UnsafeFFI (PA013) subtyping: BuildSystem (`build.zig` / `build.rs` — audit-accepted), RuntimeAbi (`bindings/` / `ffi/` / `sys/` / `cdef.zig`), TestMock (`tests/mocks/` / `_stub`), Unknown
 | `src/jit_context.rs` | JIT-framework classifier: Cranelift / Llvm / Wasm / Javascript / None; `transmute_targets_fn_ptr` recogniser for fn-ptr type-punning
-| `src/abi/PatternCompleteness.idr` | PA1 Idris2 proof — every Lang/Category has a detector
+| `src/assail/routing.rs` | PA1 routing table: which analyzer each language reaches and when cross-language checks run; its claims are tested exhaustively (see `PROOF-NEEDS.adoc`)
 | `src/abi/ClassificationSoundness.idr` | PA2 Idris2 proof — severity total order + maxSeverity commutativity
 | `src/abi/Stripping.idr` | Layer 1.0 — line-comment stripping is idempotent (`stripLineCommentsIdempotent`; re-proved 2026-11-09, type-checked by the `idris-abi` CI job)
 | `src/kanren/` | Logic engine (unification, fact database, taint, cross-lang)
