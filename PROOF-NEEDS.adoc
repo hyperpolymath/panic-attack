@@ -2,12 +2,23 @@
 
 === Current State
 
+*Receipts (2026-11-09).* Until this date no CI job type-checked
+`+src/abi/+`, and as committed none of the five modules checked: their module
+names did not match their paths, `+Types.idr+` and `+Stripping.idr+` had syntax
+errors, and `+Stripping.idr+`'s main theorem did not type-check at all. The ✅
+marks below therefore had no receipt before that date. Each module is now
+checked on every PR by the `+idris-abi+` job in
+`+.github/workflows/proven-tests.yml+` (`+scripts/ci/check-idris-abi.sh+`, Idris2
+0.7.0, `+%default total+`, no `+believe_me+`, `+assert_total+`,
+`+assert_smaller+`, `+postulate+` or `+idris_crash+`). PROOF-POLICY §6 deviation,
+state open: Idris2 is built from its v0.7.0 tag, because the repo's Guix
+manifest and container do not provide it.
+
 * **src/abi/*.idr**: 5 files — `+Types.idr+`,
 `+PatternCompleteness.idr+` (PA1 ✅ 2026-04-11),
 `+ClassificationSoundness.idr+` (PA2 ✅ 2026-04-11), `+Stripping.idr+`
-(PROOF-PROGRAMME Layer 1.0 line-comment slice ✅ 2026-06-02 —
-multi-comment semantics + slash-slash closure both Qed via
-mutual-recursive `+bodyIsFixedPoint+`),
+(PROOF-PROGRAMME Layer 1.0 line-comment slice: claimed 2026-06-02 but
+never checked; re-proved and checked 2026-11-09),
 `+AttestationUnforgeability.idr+` (PROOF-PROGRAMME §3.2 ✅ 2026-06-04 —
 conditional unforgeability from Ed25519 EUF-CMA + chain-hash
 collision-resistance hypotheses)
@@ -34,15 +45,19 @@ top-level theorem.
 preserves the ordering.
 
 |Layer 1.0 line-comment idempotence |`+src/abi/Stripping.idr+`
-|*2026-06-02 close-out (issue #113)*: corrects PR #111’s single-comment
-model to multi-comment via mutual recursion
-(`+stripLineComments ↔ stripLineCommentBody+` — body calls back into
-main after each preserved newline). Qed-closes
-`+stripLineCommentsIdempotent+` for ALL cases including the slash-slash
-inductive via the load-bearing `+bodyIsFixedPoint+` lemma proved by
-mutual induction with the main theorem. 7 sanity-check theorems
-including the two-comments-on-different-lines case PR #111 silently
-mis-stripped.
+|*Re-proved 2026-11-09.* The 2026-06-02 proof (issue #113) never
+type-checked: its `+//+` case relied on reductions that do not hold for a
+variable character, and it used `+decEq+` without importing it. The new proof
+shows `+stripLineCommentsIdempotent+` (stripping twice equals stripping once)
+through two facts: stripping is the identity on text with no `+//+`
+(`+stripIsIdOnClean+`), and the strippers' output has no `+//+`
+(`+stripIsClean+`/`+bodyIsClean+`, by mutual induction). `+bodyIsFixedPoint+`
+follows. The strippers are restated with explicit `+Bool+` tests. An
+exhaustive differential run over every string of length up to 9 on
+`+{/, x, \n}+` (29,524 inputs) found no difference from the previous
+definitions. A mutant that blanks with `+/+` instead of a space is rejected.
+Nine closed sanity theorems, including two comments on different lines and
+`+///+`.
 
 |Attestation chain unforgeability
 |`+src/abi/AttestationUnforgeability.idr+` |*PROOF-PROGRAMME §3.2
@@ -66,11 +81,37 @@ obligation. The gateway octad projection is lossy by design, so this property
 also does not establish a faithful hexad↔octad map.
 |===
 
+=== Model-Checked (TESTED, bounded)
+
+[width="100%",cols="26%,30%,44%",options="header",]
+|===
+|Obligation |Artefact |Status and bounds
+|Generation-publish protocol P1–P3 (prototype, `src/publish.rs`;
+design `docs/design/GENERATION-PUBLISH.adoc`) |`verification/proofs/tlaplus/GenerationPublish.tla`
+(TLC 2.19, tla2tools v1.7.4, run by `verify.yml` job `tlaplus`) and
+`tests/publish_model.rs` (independent explicit-state checker) |*TESTED*: up to
+3 writers, 1 reader, 2 files, crash at every writer step, collection of crashed
+and live writers' partial generations, `keep` 0 and 1. P1 (`CURRENT` names a
+complete generation), P2 (never moves backwards) and P3 (manifest reader never
+fails) hold. P4 (mirrors consistent once quiet) holds without crashes and
+*fails* after a crash, the documented limit. Three mutants each violate P1 or
+P2, so the invariants are not vacuous. *PROOF-POLICY §4 exception*: a
+concurrency protocol over crash interleavings, which Creusot and Verus do not
+state. *§6 deviation (open)*: TLC is fetched from its release, digest-checked,
+because neither Guix nor the container provides it yet.
+|===
+
 === What Still Needs Proving
 
 [width="100%",cols="51%,27%,22%",options="header",]
 |===
 |Component |What |Why
+|Generation publish: pure decisions (`src/publish.rs`) |*OPEN* (PROOF-POLICY
+§1.2): Creusot/Pearlite and Verus contracts for the supersede comparison and
+the collect selection (never removes the current or a newer generation; keeps
+the `keep` newest older ones) |The model check covers the protocol, not the Rust
+code; these tie the implementation to P1 and P2
+
 |*Layer 1.0 — stripBlockComments + Strings + Composition +
 Position-Preservation* (issue #114) |Block-comment (`+/* */+`) and
 string-literal (`+"..."+`) strippers with same mutual-recursive shape;

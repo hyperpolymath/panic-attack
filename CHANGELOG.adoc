@@ -2,34 +2,23 @@
 
 === [Unreleased]
 
-==== Changed — Lean and Isabelle `+sorry+` findings are line-anchored
+==== Fixed — the Idris2 ABI proofs are type-checked, and the stripping proof is re-proved
 
-* Each `+sorry+` in a Lean or Isabelle file is now its own ProofDrift finding
-with a `+line+`, instead of one finding per file with a count and no line.
-A file with three `+sorry+` therefore reports three Critical findings; the
-pass/fail outcome of a severity gate is unchanged.
-* Because the findings now carry a line, an inline
-`+panic-attack: accepted+` marker on the same or previous line suppresses
-that occurrence, and only that one. Before, these findings could only be
-suppressed through the retired A2ML classification registry, which matches a
-whole file and category.
-* The comment strippers behind the proof detectors now keep every newline of
-a removed comment or Isabelle prose block, so line numbers taken from the
-stripped text are line numbers in the file. A property test checks this.
-
-==== Added — `+(*+` marker leader
-
-* `+(* panic-attack: accepted … *)+` is recognised at the start of a line, for
-Isabelle, Coq/Rocq, OCaml, SML and F*. The trailing `+*)+` is dropped from the
-recorded reason. Mid-line `+(*+` is not a leader, because it is also a C
-dereference or a Python splat.
-
-==== Fixed — inline markers when the scan root is not the working directory
-
-* `+assail <dir>+` run from anywhere but `+<dir>+` ignored every inline marker.
-Finding locations are relative to the scan root, but the marker pass read them
-relative to the process working directory, so the read failed silently.
-Locations are now resolved against the scan root first.
+* No CI job had ever type-checked `+src/abi/+`, and as committed none of its
+five modules checked. A new `+idris-abi+` job (`+proven-tests.yml+`, using
+`+scripts/ci/check-idris-abi.sh+`) now checks all five on every PR with Idris2
+0.7.0. It fails on a type error, on a missing `+%default total+`, or on
+`+believe_me+`, `+assert_total+`, `+assert_smaller+`, `+postulate+` or
+`+idris_crash+`.
+* `+Stripping.idr+`: the 2026-06-02 proof of `+stripLineCommentsIdempotent+`
+never type-checked, so it is re-proved through two facts: stripping is the
+identity on text with no `+//+`, and the strippers' output has no `+//+`. The
+strippers are restated with explicit `+Bool+` tests. An exhaustive run over
+29,524 inputs shows they behave exactly as before.
+* `+Types.idr+`: adds the missing `+Eq Severity+` that `+Ord+` needs, and fixes
+the `+LangId+` declaration syntax.
+* `+PROOF-NEEDS.adoc+` and `+EXPLAINME.adoc+` now say that the earlier claims had
+no receipt.
 
 ==== Added — `+assail --output-format kyaml+` writes a KYAML copy
 
@@ -41,6 +30,10 @@ may be the same file: a symbolic link at any of their paths, or two existing
 paths that are hard links to one file, is refused before anything is written.
 So is a path that exists but is not a regular file (a directory, say) or that
 cannot be looked up, such as a derived name over the filesystem's length limit.
+Each output is also opened for writing before anything is written (an absent
+one is created and removed again), so a read-only copy or sidecar, or a
+directory the caller cannot create files in, is refused too, instead of
+failing after the report has been replaced.
 These checks run before the writes, so a link swapped in between a check and
 its write is not caught, and a crash can leave a partial file: the planned
 generation-directory publish is meant to close both.

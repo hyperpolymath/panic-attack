@@ -1443,6 +1443,31 @@ fn kyaml_copy_path(out: &Path, sidecar: Option<&Path>) -> Result<PathBuf> {
             }
         }
     }
+    // Lookup alone does not show that a path can be written: a read-only
+    // copy or sidecar, or a directory the caller may not create files in,
+    // would fail only after the report had been replaced. Open each output
+    // for writing now, without truncating it; an absent one is created and
+    // removed again. The kernel decides, so ACLs and ownership count too.
+    for (&(role, candidate), &existed) in outputs.iter().zip(&exists) {
+        let probe = if existed {
+            fs::OpenOptions::new().write(true).open(candidate).map(drop)
+        } else {
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(candidate)
+                .and_then(|file| {
+                    drop(file);
+                    fs::remove_file(candidate)
+                })
+        };
+        probe.map_err(|err| {
+            anyhow::anyhow!(
+                "cannot write the {role} {}: {err}; nothing was written",
+                candidate.display()
+            )
+        })?;
+    }
     Ok(path)
 }
 
