@@ -26,7 +26,20 @@ on:
       VERISIMDB_PAT:
         description: 'PAT with repo scope for cross-repo dispatch to verisimdb-data'
         required: false
+  # A run of this file by hand has its own `inputs`: the workflow_call inputs
+  # above do not exist for it. Without these two, `inputs.repo_path` and
+  # `inputs.fail_on_severity` are empty strings, "Run scan" has no target and
+  # the severity gate rejects the empty threshold. Same names, same defaults.
   workflow_dispatch:
+    inputs:
+      repo_path:
+        description: 'Path to scan (default: .)'
+        default: '.'
+        type: string
+      fail_on_severity:
+        description: 'Fail on an unsuppressed finding at or above: none | low | medium | high | critical'
+        default: 'none'
+        type: string
 
 permissions:
   contents: read
@@ -36,7 +49,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # The scan target. In a reusable workflow, a checkout with no
+      # `repository:` is the CALLER, not this repository.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The scanner source, at the commit of THIS workflow file. `job.workflow_*`
+      # names the workflow that defines the job: for a caller that pins
+      # `scan-and-report.yml@<sha>` it is this repository at that SHA, and for a
+      # run of this file in its own repository it is the commit under test. It is
+      # never `main` by name.
+      #
+      # The source goes to the runner's temp directory, outside the workspace,
+      # so the scan below cannot report on the scanner's own files.
+      - name: Fetch the scanner source at this workflow's commit
+        env:
+          SCANNER_REPOSITORY: ${{ job.workflow_repository }}
+          SCANNER_SHA: ${{ job.workflow_sha }}
+          SCANNER_SRC: ${{ runner.temp }}/panic-attack-src
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          set -euo pipefail
+          [[ "$SCANNER_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+            || { echo "::error::scanner repository is not owner/name (got '${SCANNER_REPOSITORY}'); no scanner was built"; exit 2; }
+          [[ "$SCANNER_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error::scanner commit is not a full SHA (got '${SCANNER_SHA}'); no scanner was built"; exit 2; }
+          git init -q "$SCANNER_SRC"
+          git -C "$SCANNER_SRC" fetch -q --depth 1 "https://github.com/${SCANNER_REPOSITORY}.git" "$SCANNER_SHA"
+          git -C "$SCANNER_SRC" checkout -q --detach FETCH_HEAD
+          [[ "$(git -C "$SCANNER_SRC" rev-parse HEAD)" == "$SCANNER_SHA" ]] \
+            || { echo "::error::fetched scanner source is not ${SCANNER_SHA}"; exit 2; }
+          echo "scanner source: ${SCANNER_REPOSITORY}@${SCANNER_SHA}"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
@@ -45,20 +87,32 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Key and save the scanner's build, not the caller's workspace.
+          workspaces: ${{ runner.temp }}/panic-attack-src -> target
 
-      # Build the commit under test, not `main`. The previous step was
-      # `cargo install --git … --branch main`, so every pull request was scanned
-      # by whatever happened to be on main at that moment: the workflow reported
-      # on code it had not checked out, and a PR that broke the scanner could
-      # pass with the last good binary.
-      - name: Build the commit under test
-        run: cargo build --locked --release
+      # Build the scanner at the fetched commit, not `main` and not the caller.
+      # History of this step: `cargo install --git … --branch main` scanned
+      # every pull request with whatever was on main (#212). Its replacement,
+      # `cargo build` in the workspace, built the CALLER, so every external
+      # caller failed at "Run scan" with exit 127 (#276).
+      - name: Build the scanner at this workflow's commit
+        env:
+          SCANNER_SRC: ${{ runner.temp }}/panic-attack-src
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --manifest-path "$SCANNER_SRC/Cargo.toml"
+          test -x "$SCANNER_SRC/target/release/panic-attack"
 
       - name: Run scan
         id: scan
+        env:
+          SCANNER: ${{ runner.temp }}/panic-attack-src/target/release/panic-attack
+          REPO_PATH: ${{ inputs.repo_path }}
         run: |
-          ./target/release/panic-attack assail ${{ inputs.repo_path }} --output scan-result.json
-          echo "scan_complete=true" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          "$SCANNER" assail "$REPO_PATH" --output scan-result.json
+          echo "scan_complete=true" >> "$GITHUB_OUTPUT"
 
       - name: Enforce severity gate
         if: steps.scan.outputs.scan_complete == 'true' && inputs.fail_on_severity != 'none'
