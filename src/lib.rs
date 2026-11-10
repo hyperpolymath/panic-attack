@@ -40,6 +40,7 @@ pub mod kyaml;
 pub mod mass_panic;
 pub mod notify;
 pub mod panll;
+pub mod publish;
 pub mod query;
 pub mod report;
 pub mod safe_path;

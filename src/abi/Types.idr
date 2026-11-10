@@ -20,6 +20,7 @@ import Data.Fin
 public export
 data Severity = Info | Warning | Error | Critical
 
+||| Equality on severity, required by `Ord`.
 public export
 Eq Severity where
   Info     == Info     = True

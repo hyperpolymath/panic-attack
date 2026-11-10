@@ -437,6 +437,15 @@ pub fn apply_v255_context_suppression(report: &mut AssailReport) -> usize {
     let mut newly_suppressed = 0usize;
     let mut content_cache: std::collections::HashMap<String, Option<String>> =
         std::collections::HashMap::new();
+    // Finding locations are relative to the scan root, not to the process
+    // working directory, so resolve them against the root. Without this,
+    // `assail <dir>` run from anywhere but <dir> silently ignored every
+    // inline marker.
+    let scan_root: Option<std::path::PathBuf> = if report.program_path.is_dir() {
+        Some(report.program_path.clone())
+    } else {
+        report.program_path.parent().map(Path::to_path_buf)
+    };
 
     for wp in &mut report.weak_points {
         // Determine the file path; prefer the structured `file` field,
@@ -456,7 +465,14 @@ pub fn apply_v255_context_suppression(report: &mut AssailReport) -> usize {
         // None so we don't repeatedly retry.
         let content_opt = content_cache
             .entry(file.clone())
-            .or_insert_with(|| std::fs::read_to_string(&file).ok())
+            .or_insert_with(|| {
+                let rel = Path::new(&file);
+                scan_root
+                    .as_deref()
+                    .filter(|_| rel.is_relative())
+                    .and_then(|root| std::fs::read_to_string(root.join(rel)).ok())
+                    .or_else(|| std::fs::read_to_string(rel).ok())
+            })
             .clone();
 
         // Always set test_context — even when the finding isn't a
@@ -889,6 +905,66 @@ mod v255_context_suppression_tests {
         assert_eq!(
             report.weak_points[0].test_context,
             Some(TestContext::TestOnly)
+        );
+    }
+}
+
+#[cfg(test)]
+mod proof_marker_tests {
+    use super::*;
+    use crate::types::WeakPointCategory;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// End to end through `analyze()`: each `sorry` is its own finding on
+    /// its own line, an inline marker suppresses only the occurrence it sits
+    /// above, and markers resolve against the scan root rather than the
+    /// process working directory (the test runs from the crate root).
+    #[test]
+    fn sorry_markers_suppress_only_the_marked_occurrence() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("Fix.lean"),
+            "theorem a : True := by\n  -- panic-attack: accepted (detector fixture)\n  sorry\n\n\
+             /- a\n   multi-line\n   comment -/\ntheorem b : True := by\n  sorry\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("Fix.thy"),
+            "theory Fix imports Main begin\n(* a\n   multi-line comment *)\n\
+             text \\<open>prose\n  over lines\\<close>\nlemma a: True\n  \
+             (* panic-attack: accepted (detector fixture) *)\n  sorry\nlemma b: True\n  sorry\nend\n",
+        )
+        .unwrap();
+
+        let report = analyze(tmp.path()).unwrap();
+        let mut got: Vec<(String, u32, bool)> = report
+            .weak_points
+            .iter()
+            .filter(|w| matches!(w.category, WeakPointCategory::ProofDrift))
+            .filter(|w| w.description.contains("sorry"))
+            .map(|w| {
+                let loc = w.location.clone().unwrap_or_default();
+                let name = Path::new(&loc)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or(loc);
+                (
+                    name,
+                    w.line.expect("sorry findings are line-anchored"),
+                    w.suppressed,
+                )
+            })
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![
+                ("Fix.lean".to_string(), 3, true),
+                ("Fix.lean".to_string(), 9, false),
+                ("Fix.thy".to_string(), 8, true),
+                ("Fix.thy".to_string(), 10, false),
+            ]
         );
     }
 }

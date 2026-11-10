@@ -3,7 +3,7 @@
 #
 # proven-tests.yml — the estate's evidence-graded test framework, wired.
 #
-# THE JOBS DO DIFFERENT THINGS AND NONE PRETENDS TO BE ANOTHER
+# THE TWO JOBS DO DIFFERENT THINGS AND NEITHER PRETENDS TO BE THE OTHER
 # ---------------------------------------------------------------------
 # `ledger` (every PR, blocking, minutes): derives a proven-tests run report from
 #   THIS repo's suite — from a test inventory the runner emitted in the same
@@ -22,9 +22,11 @@
 #   and it would make every contributor wait on a compiler that cannot change
 #   for them.
 #
-# `abi-proofs` (every PR, blocking): type-checks this repository's own Idris2
-#   proofs in src/abi with the same pinned Idris2. It reuses the framework job's
-#   toolchain cache, so it costs a compiler build only on a cold cache.
+# `idris-abi` (every PR, blocking): type-checks this repo's own Idris2 ABI
+#   proofs in src/abi/. This is a departure from the rule above, made because
+#   these proofs are claims in PROOF-NEEDS.adoc and a claim needs a receipt on
+#   every change. Idris2 is built from source once and cached by version and
+#   commit, so after the first run a PR waits only for the check itself.
 #
 # WHY THE REPORT IS A FILE, NOT A PARAGRAPH: docs/INTEROP-PANIC-ATTACK.adoc in
 # proven-tests-and-benches fixes the mapping in prose; a report plus a verifier
@@ -146,56 +148,6 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-  abi-proofs:
-    # Every PR: type-check this repo's own Idris2 ABI proofs (src/abi). Without
-    # this, src/abi/PanicAttack/ABI/Stripping.idr sat on main not compiling
-    # while PROOF-NEEDS.adoc called it closed. The toolchain comes from the same
-    # pinned installer and cache key as the framework job, so a warm cache makes
-    # this a type-check, not a compiler build.
-    name: Idris2 — src/abi proofs type-check
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - name: Checkout this repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Checkout proven-tests-and-benches at the pinned commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          repository: hyperpolymath/proven-tests-and-benches
-          ref: ${{ env.PROVEN_TESTS_PIN }}
-          path: .proven-tests
-          persist-credentials: false
-
-      - name: Cache the Idris2 toolchain
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: ~/.idris2
-          key: idris2-v${{ env.IDRIS2_VERSION }}-${{ runner.os }}
-
-      - name: Install Idris2 (chez backend)
-        working-directory: .proven-tests
-        env:
-          IDRIS2_VERSION: v${{ env.IDRIS2_VERSION }}
-        run: bash scripts/install-idris2.sh
-
-      - name: Type-check src/abi
-        run: |
-          set -euo pipefail
-          export PATH="$HOME/.idris2/bin:$PATH"
-          idris2 --version
-          # `idris2 --check` can exit 0 while printing an error, so require
-          # both a zero exit and no `Error:` line.
-          status=0
-          out="$(idris2 --typecheck src/abi/panic-attack-abi.ipkg 2>&1)" || status=$?
-          printf '%s\n' "$out"
-          if [ "$status" -ne 0 ] || grep -q '^Error' <<<"$out"; then
-            echo "::error::src/abi Idris2 proofs do not type-check (exit $status)"
-            exit 1
-          fi
-
   framework:
     name: Framework — the grader is exercised (scheduled)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -245,3 +197,54 @@ jobs:
           path: .proven-tests/build/report/*.json
           retention-days: 30
           if-no-files-found: warn
+
+  # The Idris2 ABI proofs in src/abi/ (PA1, PA2, Layer 1.0 stripping,
+  # attestation unforgeability, ABI types). Until this job, none was ever
+  # type-checked. scripts/ci/check-idris-abi.sh fails on any type error,
+  # a missing `%default total`, or an escape hatch.
+  #
+  # Deviation (PROOF-POLICY §6), state: open. Leg: Idris2 ABI proofs. Tool:
+  # Idris2 0.7.0 built from the v0.7.0 tag (commit checked below) with the
+  # runner's Chez Scheme. Why not Guix or the container: panic-attack's Guix
+  # manifest and container do not provide Idris2 yet.
+  idris-abi:
+    name: Idris2 ABI proofs type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      IDRIS2_COMMIT: 27780073c8631826d846499840b3857d9b9a4fd5
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache the Idris2 toolchain built from source
+        id: idris2-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.idris2-src-build
+          key: idris2-src-${{ env.IDRIS2_VERSION }}-${{ env.IDRIS2_COMMIT }}-${{ runner.os }}
+
+      - name: Build Idris2 from the pinned tag (cache miss only)
+        if: steps.idris2-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq chezscheme
+          src=$(mktemp -d)
+          git clone --quiet --depth 1 --branch "v${IDRIS2_VERSION}" \
+            https://github.com/idris-lang/Idris2.git "$src"
+          test "$(git -C "$src" rev-parse HEAD)" = "$IDRIS2_COMMIT"
+          make -C "$src" bootstrap SCHEME=scheme PREFIX="$HOME/.idris2-src-build"
+          make -C "$src" install PREFIX="$HOME/.idris2-src-build"
+
+      - name: Type-check every module in src/abi
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The cached build still needs Chez Scheme at run time.
+          command -v scheme >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq chezscheme; }
+          export PATH="$HOME/.idris2-src-build/bin:$PATH"
+          bash scripts/ci/check-idris-abi.sh
