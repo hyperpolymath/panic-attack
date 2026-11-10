@@ -3,11 +3,13 @@
 -- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 ||| ABI Types for panic-attack static analysis engine
 |||
-||| Defines the formal interface for the scanner's operations.
-||| Proves that:
-|||   1. Severity levels are totally ordered
-|||   2. Scan results cannot be fabricated (constructive)
-|||   3. Language coverage is bounded
+||| Declares ABI-facing types and their C integer encodings. It contains no
+||| theorems, and no other module imports it. The severity order is proved
+||| in ClassificationSoundness.idr, over its own Severity type.
+|||
+||| Known drift (see PROOF-NEEDS.adoc): this Severity type does not match
+||| src/types.rs, and LangId is bounded at 47 while src/types.rs has 52
+||| Language variants.
 module PanicAttack.ABI.Types
 
 import Data.Fin
@@ -18,14 +20,14 @@ import Data.Fin
 public export
 data Severity = Info | Warning | Error | Critical
 
-||| Equality on severity, required by `Ord`.
 public export
+||| Equality on severity, required by `Ord`.
 Eq Severity where
-  Info == Info = True
-  Warning == Warning = True
-  Error == Error = True
+  Info     == Info     = True
+  Warning  == Warning  = True
+  Error    == Error    = True
   Critical == Critical = True
-  _ == _ = False
+  _        == _        = False
 
 ||| Total ordering on severity
 public export
