@@ -2,6 +2,17 @@
 
 === [Unreleased]
 
+==== Fixed — the shell `/tmp/` rule ignores comments and reports a line
+
+* `+analyze_shell+` raised "Hardcoded /tmp/ path without mktemp" on a
+whole-file substring match, so a `+/tmp/+` mentioned only in a `+#+` comment
+fired, and the word `+mktemp+` in a comment silenced a real `+/tmp/+` use. Both
+tests now look only at code: full-line comments and trailing `+ #+` comments
+outside quotes are skipped, while `+#+` inside quotes, `+$#+`, `+${#var}+` and
+heredoc bodies are kept as code, so any doubt still fires the rule. The finding
+now carries the first offending line number.
+
+
 ==== Fixed — the Idris2 ABI proofs are type-checked, and the stripping proof is re-proved
 
 * No CI job had ever type-checked `+src/abi/+`, and as committed none of its

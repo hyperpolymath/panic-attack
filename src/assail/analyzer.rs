@@ -320,6 +320,100 @@ pub struct Analyzer {
     browser_extension: bool,
 }
 
+/// Split shell `content` into `(1-based line number, code text)` pairs with
+/// comments removed. A `#` starts a comment only when it is unquoted and at
+/// the start of a word (line start or after whitespace), so `$#`, `${#var}`
+/// and `#` inside quotes are kept. Quote state carries across lines, and
+/// heredoc bodies are returned verbatim as code. Conservative by design: any
+/// doubt leaves text in place as code so rules still fire.
+fn shell_code_lines(content: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut heredocs: std::collections::VecDeque<(String, bool)> = Default::default();
+    for (idx, line) in content.lines().enumerate() {
+        if quote.is_none() {
+            if let Some((tag, strip_tabs)) = heredocs.front() {
+                let candidate = if *strip_tabs {
+                    line.trim_start_matches('\t')
+                } else {
+                    line
+                };
+                if candidate == tag.as_str() {
+                    heredocs.pop_front();
+                }
+                out.push((idx + 1, line.to_string()));
+                continue;
+            }
+        }
+        let chars: Vec<char> = line.chars().collect();
+        let mut code = String::new();
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            match quote {
+                Some(q) => {
+                    if q == '"' && c == '\\' && i + 1 < chars.len() {
+                        code.push(c);
+                        i += 1;
+                        code.push(chars[i]);
+                    } else {
+                        if c == q {
+                            quote = None;
+                        }
+                        code.push(c);
+                    }
+                }
+                None => {
+                    if c == '\\' && i + 1 < chars.len() {
+                        code.push(c);
+                        i += 1;
+                        code.push(chars[i]);
+                    } else if c == '\'' || c == '"' {
+                        quote = Some(c);
+                        code.push(c);
+                    } else if c == '#' && (i == 0 || chars[i - 1].is_whitespace()) {
+                        break;
+                    } else if c == '<'
+                        && chars.get(i + 1) == Some(&'<')
+                        && chars.get(i + 2) != Some(&'<')
+                    {
+                        // Heredoc introducer: <<[-] ['"]TAG['"]
+                        let mut j = i + 2;
+                        let strip_tabs = chars.get(j) == Some(&'-');
+                        if strip_tabs {
+                            j += 1;
+                        }
+                        while chars.get(j).is_some_and(|ch| *ch == ' ' || *ch == '\t') {
+                            j += 1;
+                        }
+                        let q = chars.get(j).copied().filter(|ch| *ch == '\'' || *ch == '"');
+                        if q.is_some() {
+                            j += 1;
+                        }
+                        let start = j;
+                        while chars
+                            .get(j)
+                            .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_')
+                        {
+                            j += 1;
+                        }
+                        if j > start {
+                            heredocs.push_back((chars[start..j].iter().collect(), strip_tabs));
+                        }
+                        code.push_str("<<");
+                        i += 1;
+                    } else {
+                        code.push(c);
+                    }
+                }
+            }
+            i += 1;
+        }
+        out.push((idx + 1, code));
+    }
+    out
+}
+
 impl Analyzer {
     pub fn new(target: &Path) -> Result<Self> {
         Self::build(target, false, false)
@@ -4708,11 +4802,19 @@ impl Analyzer {
             });
         }
 
-        // Unsafe temp files
-        if content.contains("/tmp/") && !content.contains("mktemp") {
+        // Unsafe temp files. Comments are ignored for both the `/tmp/` and the
+        // `mktemp` test (see `shell_code_lines`); the first offending code line
+        // is reported.
+        let code_lines = shell_code_lines(content);
+        let first_tmp_line = code_lines
+            .iter()
+            .find(|(_, code)| code.contains("/tmp/"))
+            .map(|(n, _)| *n);
+        let has_mktemp = code_lines.iter().any(|(_, code)| code.contains("mktemp"));
+        if let (Some(tmp_line), false) = (first_tmp_line, has_mktemp) {
             weak_points.push(WeakPoint {
                 file: None,
-                line: None,
+                line: u32::try_from(tmp_line).ok(),
                 category: WeakPointCategory::PathTraversal,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -6360,6 +6462,77 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    // ---------------------------------------------------------------
+    // Shell /tmp rule is comment-aware
+    // ---------------------------------------------------------------
+
+    fn shell_tmp_findings(content: &str) -> Vec<WeakPoint> {
+        let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
+        let mut stats = ProgramStatistics::default();
+        let mut wp = Vec::new();
+        analyzer
+            .analyze_shell(content, &mut stats, &mut wp, "fixture.sh")
+            .expect("analyze_shell");
+        wp.into_iter()
+            .filter(|w| matches!(w.category, WeakPointCategory::PathTraversal))
+            .collect()
+    }
+
+    #[test]
+    fn shell_tmp_in_comment_only_is_not_flagged() {
+        let src = "#!/bin/sh\n# In memory, not /tmp/mint-tokens-answers.$$: keep it\necho ok # see /tmp/x\n";
+        assert!(shell_tmp_findings(src).is_empty());
+    }
+
+    #[test]
+    fn shell_tmp_in_code_is_flagged_with_line() {
+        let src = "#!/bin/sh\necho hi\nrm -f /tmp/foo\n";
+        let f = shell_tmp_findings(src);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(3));
+    }
+
+    #[test]
+    fn shell_mktemp_only_in_comment_does_not_silence() {
+        let src = "# use mktemp instead\nrm -f /tmp/foo\n";
+        let f = shell_tmp_findings(src);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+    }
+
+    #[test]
+    fn shell_mktemp_in_code_silences() {
+        assert!(shell_tmp_findings("t=$(mktemp /tmp/x.XXXXXX)\n").is_empty());
+    }
+
+    #[test]
+    fn shell_tmp_in_quoted_string_is_flagged() {
+        let f = shell_tmp_findings("echo \"# not a comment /tmp/x\"\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(1));
+    }
+
+    #[test]
+    fn shell_hash_inside_quotes_arg_does_not_hide_tmp() {
+        let f = shell_tmp_findings("echo \"#\" /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(1));
+    }
+
+    #[test]
+    fn shell_param_length_hash_is_not_a_comment() {
+        let f = shell_tmp_findings("n=${#v}; echo $# /tmp/x\n");
+        assert_eq!(f.len(), 1);
+    }
+
+    #[test]
+    fn shell_heredoc_body_is_kept_as_code() {
+        let src = "cat <<EOF\n# /tmp/x\nEOF\n";
+        let f = shell_tmp_findings(src);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+    }
 
     // ---------------------------------------------------------------
     // 0b. JSON-LD / JSON-Schema identifier exemption (cross-lang URLs)
