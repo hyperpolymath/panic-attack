@@ -15,7 +15,9 @@ escaped space and in heredoc bodies is kept as code, and any doubt still fires
 the rule. Here-strings (`+<<<+`) are not heredocs, and heredoc delimiters are
 parsed whole (`+'---'+`, `+EOF-TEXT+`). The finding carries the first offending
 line number; findings from embedded scripts carry none, because their lines are
-relative to the extracted block.
+relative to the extracted block. Word state carries across line breaks inside a
+quote and over a backslash-newline continuation, so `+"a<newline>b"# /tmp/x+`
+is not mistaken for a comment.
 
 ==== Fixed — readiness tests find the binary under Cargo's split build directory
 

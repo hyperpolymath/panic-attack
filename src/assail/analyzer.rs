@@ -337,146 +337,245 @@ fn is_shell_operator(c: char) -> bool {
     matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>')
 }
 
+/// Line-by-line shell scanner behind [`shell_code_lines`]. All state that
+/// survives a line break lives here: the open quote, pending heredoc
+/// delimiters, and whether the next character begins a word.
+struct ShellScanner {
+    quote: ShellQuote,
+    /// Pending heredoc delimiters: `(tag, strip_leading_tabs)`.
+    heredocs: std::collections::VecDeque<(String, bool)>,
+    /// True when the next character begins a shell word. Carried across line
+    /// breaks inside a quote and over a backslash-newline continuation.
+    word_start: bool,
+    /// The previous line ended in an unescaped backslash outside any quote.
+    continued: bool,
+}
+
+impl ShellScanner {
+    fn new() -> Self {
+        Self {
+            quote: ShellQuote::None,
+            heredocs: Default::default(),
+            word_start: true,
+            continued: false,
+        }
+    }
+
+    /// If `line` is part of a heredoc body, consume it (closing the heredoc
+    /// when it is the delimiter) and return true.
+    fn heredoc_body_line(&mut self, line: &str) -> bool {
+        if self.quote != ShellQuote::None {
+            return false;
+        }
+        let Some((tag, strip_tabs)) = self.heredocs.front() else {
+            return false;
+        };
+        let candidate = if *strip_tabs {
+            line.trim_start_matches('\t')
+        } else {
+            line
+        };
+        if candidate == tag.as_str() {
+            self.heredocs.pop_front();
+        }
+        true
+    }
+
+    /// Scan one non-heredoc line, returning it with any comment removed.
+    fn scan_line(&mut self, line: &str) -> String {
+        let chars: Vec<char> = line.chars().collect();
+        let mut code = String::new();
+        // A new line starts a new word, unless we are inside a quote or the
+        // previous line ended in a backslash continuation.
+        if self.quote == ShellQuote::None && !self.continued {
+            self.word_start = true;
+        }
+        self.continued = false;
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            let stop = match self.quote {
+                ShellQuote::Single => {
+                    self.step_single(c, &mut code);
+                    false
+                }
+                ShellQuote::Double | ShellQuote::AnsiC => {
+                    self.step_escaping_quote(&chars, &mut i, &mut code);
+                    false
+                }
+                ShellQuote::None => self.step_unquoted(&chars, &mut i, &mut code),
+            };
+            if stop {
+                break;
+            }
+            i += 1;
+        }
+        code
+    }
+
+    /// Inside `'...'`: no escapes, only the closing quote matters.
+    fn step_single(&mut self, c: char, code: &mut String) {
+        if c == '\'' {
+            self.quote = ShellQuote::None;
+        }
+        code.push(c);
+    }
+
+    /// Inside `"..."` or `$'...'`: a backslash escapes the next character.
+    fn step_escaping_quote(&mut self, chars: &[char], i: &mut usize, code: &mut String) {
+        let c = chars[*i];
+        if c == '\\' && *i + 1 < chars.len() {
+            code.push(c);
+            *i += 1;
+            code.push(chars[*i]);
+            return;
+        }
+        let closer = if self.quote == ShellQuote::Double {
+            '"'
+        } else {
+            '\''
+        };
+        if c == closer {
+            self.quote = ShellQuote::None;
+        }
+        code.push(c);
+    }
+
+    /// Unquoted character at `chars[*i]`. Returns true when a comment starts
+    /// and the rest of the line must be dropped.
+    fn step_unquoted(&mut self, chars: &[char], i: &mut usize, code: &mut String) -> bool {
+        let c = chars[*i];
+        if c == '\\' {
+            self.step_backslash(chars, i, code);
+        } else if c == '$' && chars.get(*i + 1) == Some(&'\'') {
+            self.open_quote(ShellQuote::AnsiC, code);
+            code.push('\'');
+            *i += 1;
+        } else if c == '\'' || c == '"' {
+            let q = if c == '\'' {
+                ShellQuote::Single
+            } else {
+                ShellQuote::Double
+            };
+            self.open_quote(q, code);
+        } else if c == '#' && self.word_start {
+            return true;
+        } else if c == '<' && chars.get(*i + 1) == Some(&'<') {
+            self.step_heredoc_or_here_string(chars, i, code);
+        } else {
+            code.push(c);
+            self.word_start = c.is_whitespace() || is_shell_operator(c);
+        }
+        false
+    }
+
+    /// Open a quote; the opening delimiter itself is pushed by the caller for
+    /// `$'` and here for plain quotes.
+    fn open_quote(&mut self, quote: ShellQuote, code: &mut String) {
+        self.quote = quote;
+        match quote {
+            ShellQuote::Single => code.push('\''),
+            ShellQuote::Double => code.push('"'),
+            ShellQuote::AnsiC => code.push('$'),
+            ShellQuote::None => {}
+        }
+        self.word_start = false;
+    }
+
+    /// Unquoted backslash: escapes the next character, or, at end of line,
+    /// is a line continuation that leaves the word state untouched.
+    fn step_backslash(&mut self, chars: &[char], i: &mut usize, code: &mut String) {
+        code.push('\\');
+        if *i + 1 < chars.len() {
+            *i += 1;
+            code.push(chars[*i]);
+            self.word_start = false;
+        } else {
+            self.continued = true;
+        }
+    }
+
+    /// `<<<` here-string (consumed whole) or `<<[-] WORD` heredoc introducer.
+    fn step_heredoc_or_here_string(&mut self, chars: &[char], i: &mut usize, code: &mut String) {
+        if chars.get(*i + 2) == Some(&'<') {
+            code.push_str("<<<");
+            *i += 2;
+        } else {
+            let (end, tag, strip_tabs) = parse_heredoc_delimiter(chars, *i + 2);
+            if !tag.is_empty() {
+                self.heredocs.push_back((tag, strip_tabs));
+            }
+            // Delimiter text is plain code; resume after it.
+            code.push_str("<<");
+            code.extend(&chars[*i + 2..end]);
+            *i = end.saturating_sub(1).max(*i + 1);
+        }
+        self.word_start = true;
+    }
+}
+
+/// Parse a heredoc delimiter starting just after `<<` at `chars[from]`.
+/// Returns `(end index, tag, strip_tabs)`. Quoted runs contribute their
+/// contents literally; a backslash escapes the next character.
+fn parse_heredoc_delimiter(chars: &[char], from: usize) -> (usize, String, bool) {
+    let mut j = from;
+    let strip_tabs = chars.get(j) == Some(&'-');
+    if strip_tabs {
+        j += 1;
+    }
+    while chars.get(j).is_some_and(|ch| *ch == ' ' || *ch == '\t') {
+        j += 1;
+    }
+    let start = j;
+    let mut tag = String::new();
+    while let Some(&ch) = chars.get(j) {
+        if ch.is_whitespace() || is_shell_operator(ch) {
+            break;
+        }
+        match ch {
+            '\'' | '"' => {
+                let mut k = j + 1;
+                while k < chars.len() && chars[k] != ch {
+                    tag.push(chars[k]);
+                    k += 1;
+                }
+                j = (k + 1).min(chars.len());
+            }
+            '\\' if j + 1 < chars.len() => {
+                tag.push(chars[j + 1]);
+                j += 2;
+            }
+            _ => {
+                tag.push(ch);
+                j += 1;
+            }
+        }
+    }
+    (j.max(start), tag, strip_tabs)
+}
+
 /// Split shell `content` into `(1-based line number, code text)` pairs with
 /// comments removed. A `#` starts a comment only when it is unquoted and
 /// begins a word: at line start, after unescaped whitespace, or after an
 /// operator such as `;`. So `$#`, `${#var}`, `name\ #x` and `#` inside quotes
-/// (including `$'...\'...'`) are kept. Quote state carries across lines.
+/// (including `$'...\'...'`) are kept. Quote and word state carry across
+/// lines (so `"a<newline>b"# x` and `foo\<newline>#x` are not comments).
 /// Heredoc bodies are returned verbatim as code; a here-string `<<<` is
 /// consumed whole and never opens a heredoc. Conservative by design: any
 /// doubt leaves text in place as code so rules still fire.
 fn shell_code_lines(content: &str) -> Vec<(usize, String)> {
-    let mut out = Vec::new();
-    let mut quote = ShellQuote::None;
-    let mut heredocs: std::collections::VecDeque<(String, bool)> = Default::default();
-    for (idx, line) in content.lines().enumerate() {
-        if quote == ShellQuote::None {
-            if let Some((tag, strip_tabs)) = heredocs.front() {
-                let candidate = if *strip_tabs {
-                    line.trim_start_matches('\t')
-                } else {
-                    line
-                };
-                if candidate == tag.as_str() {
-                    heredocs.pop_front();
-                }
-                out.push((idx + 1, line.to_string()));
-                continue;
+    let mut scanner = ShellScanner::new();
+    content
+        .lines()
+        .enumerate()
+        .map(|(idx, line)| {
+            if scanner.heredoc_body_line(line) {
+                (idx + 1, line.to_string())
+            } else {
+                (idx + 1, scanner.scan_line(line))
             }
-        }
-        let chars: Vec<char> = line.chars().collect();
-        let mut code = String::new();
-        let mut word_start = true;
-        let mut i = 0;
-        while i < chars.len() {
-            let c = chars[i];
-            match quote {
-                ShellQuote::Single => {
-                    if c == '\'' {
-                        quote = ShellQuote::None;
-                    }
-                    code.push(c);
-                }
-                ShellQuote::Double | ShellQuote::AnsiC => {
-                    if c == '\\' && i + 1 < chars.len() {
-                        code.push(c);
-                        i += 1;
-                        code.push(chars[i]);
-                    } else {
-                        let closer = if quote == ShellQuote::Double {
-                            '"'
-                        } else {
-                            '\''
-                        };
-                        if c == closer {
-                            quote = ShellQuote::None;
-                        }
-                        code.push(c);
-                    }
-                }
-                ShellQuote::None => {
-                    if c == '\\' && i + 1 < chars.len() {
-                        code.push(c);
-                        i += 1;
-                        code.push(chars[i]);
-                        word_start = false;
-                    } else if c == '$' && chars.get(i + 1) == Some(&'\'') {
-                        quote = ShellQuote::AnsiC;
-                        code.push_str("$'");
-                        i += 1;
-                        word_start = false;
-                    } else if c == '\'' {
-                        quote = ShellQuote::Single;
-                        code.push(c);
-                        word_start = false;
-                    } else if c == '"' {
-                        quote = ShellQuote::Double;
-                        code.push(c);
-                        word_start = false;
-                    } else if c == '#' && word_start {
-                        break;
-                    } else if c == '<' && chars.get(i + 1) == Some(&'<') {
-                        if chars.get(i + 2) == Some(&'<') {
-                            // Here-string: consume all three, no heredoc.
-                            code.push_str("<<<");
-                            i += 2;
-                        } else {
-                            // Heredoc introducer: <<[-] WORD (quotes allowed).
-                            let mut j = i + 2;
-                            let strip_tabs = chars.get(j) == Some(&'-');
-                            if strip_tabs {
-                                j += 1;
-                            }
-                            while chars.get(j).is_some_and(|ch| *ch == ' ' || *ch == '\t') {
-                                j += 1;
-                            }
-                            let start = j;
-                            let mut tag = String::new();
-                            while let Some(&ch) = chars.get(j) {
-                                if ch.is_whitespace() || is_shell_operator(ch) {
-                                    break;
-                                }
-                                match ch {
-                                    '\'' | '"' => {
-                                        // Quoted run: contents literal, quotes removed.
-                                        let mut k = j + 1;
-                                        while k < chars.len() && chars[k] != ch {
-                                            tag.push(chars[k]);
-                                            k += 1;
-                                        }
-                                        j = (k + 1).min(chars.len());
-                                    }
-                                    '\\' if j + 1 < chars.len() => {
-                                        tag.push(chars[j + 1]);
-                                        j += 2;
-                                    }
-                                    _ => {
-                                        tag.push(ch);
-                                        j += 1;
-                                    }
-                                }
-                            }
-                            if !tag.is_empty() {
-                                heredocs.push_back((tag, strip_tabs));
-                            }
-                            // Delimiter text is plain code; resume after it.
-                            let end = j.max(start);
-                            code.push_str("<<");
-                            code.extend(&chars[i + 2..end]);
-                            i = end.saturating_sub(1).max(i + 1);
-                        }
-                        word_start = true;
-                    } else {
-                        code.push(c);
-                        word_start = c.is_whitespace() || is_shell_operator(c);
-                    }
-                }
-            }
-            i += 1;
-        }
-        out.push((idx + 1, code));
-    }
-    out
+        })
+        .collect()
 }
 
 impl Analyzer {
@@ -6638,6 +6737,24 @@ mod tests {
         assert_eq!(f[0].line, Some(2));
     }
 
+    #[test]
+    fn shell_hash_after_multiline_quote_is_not_a_comment() {
+        // The `#` follows the closing quote with no space, so it is part of
+        // the same word (`end"#`), not a comment: `/tmp/x` must be flagged.
+        let f = shell_tmp_findings("echo \"start\nend\"# /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+    }
+
+    #[test]
+    fn shell_hash_after_backslash_newline_word_is_not_a_comment() {
+        // `foo\<newline>#bar` joins into the single word `foo#bar`.
+        let f = shell_tmp_findings("echo foo\\\n# /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+        // After whitespace the continuation still starts a new word: comment.
+        assert!(shell_tmp_findings("echo foo \\\n# /tmp/x\n").is_empty());
+    }
     #[test]
     fn shell_heredoc_hyphenated_delimiter() {
         let src = "cat <<EOF-TEXT\n# /tmp/x\nEOF-TEXT\n# /tmp/y\n";
