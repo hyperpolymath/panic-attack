@@ -181,7 +181,7 @@ module MassPanic {
         // Always build via list to avoid Chapel array-shape mismatch on assignment.
         var filteredList: list(RepoResult);
         for r in resultsArr {
-            if !findingsOnly || r.weakPointCount > 0 || r.error != "" then
+            if !findingsOnly || hasFindings(r) then
                 filteredList.pushBack(r);
         }
         var filteredResults = filteredList.toArray();

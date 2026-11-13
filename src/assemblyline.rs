@@ -59,6 +59,14 @@ pub struct RepoResult {
     pub report: Option<AssailReport>,
 }
 
+/// True when a result has anything to report: weak points or a scan error.
+/// `--findings-only` keeps exactly these, so a repository whose scan failed is
+/// never silently dropped from the report. Mirrors `hasFindings` in
+/// `chapel/src/Protocol.chpl` (which also keeps non-pass adjudication verdicts).
+pub fn has_findings(r: &RepoResult) -> bool {
+    r.weak_point_count > 0 || r.error.is_some()
+}
+
 /// Complete assemblyline report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssemblylineReport {
@@ -451,7 +459,7 @@ pub fn run_with_cache(
 
     // Apply filters
     if config.findings_only {
-        results.retain(|r| r.weak_point_count > 0);
+        results.retain(has_findings);
     }
     if config.min_findings > 0 {
         results.retain(|r| r.weak_point_count >= config.min_findings);
@@ -542,6 +550,31 @@ pub fn write_report(report: &AssemblylineReport, path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn result(weak_points: usize, error: Option<&str>) -> RepoResult {
+        RepoResult {
+            repo_path: PathBuf::from("/tmp/r"),
+            repo_name: "r".into(),
+            weak_point_count: weak_points,
+            critical_count: 0,
+            high_count: 0,
+            total_files: 0,
+            total_lines: 0,
+            error: error.map(str::to_string),
+            fingerprint: None,
+            report: None,
+        }
+    }
+
+    #[test]
+    fn findings_only_keeps_failed_scans_and_drops_clean_ones() {
+        assert!(!has_findings(&result(0, None)), "a clean scan is dropped");
+        assert!(has_findings(&result(3, None)), "weak points are kept");
+        assert!(
+            has_findings(&result(0, Some("assail failed"))),
+            "a failed scan must never vanish from a findings-only report"
+        );
+    }
 
     #[test]
     fn test_is_source_file() {
