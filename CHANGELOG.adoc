@@ -2,6 +2,30 @@
 
 === [Unreleased]
 
+==== Fixed — the shell `/tmp/` rule ignores comments and reports a line
+
+* `+analyze_shell+` raised "Hardcoded /tmp/ path without mktemp" on a
+whole-file substring match, so a `+/tmp/+` mentioned only in a `+#+` comment
+fired, and the word `+mktemp+` in a comment silenced a real `+/tmp/+` use. Both
+tests now look only at code: full-line comments and trailing `+ #+` comments
+outside quotes are skipped. A `+#+` starts a comment only at an unquoted word
+boundary (line start, after whitespace, or after an operator such as `+;+`), so
+`+#+` inside quotes (including ANSI-C `+$'...\'...'+`), `+$#+`, `+${#var}+`, after an
+escaped space and in heredoc bodies is kept as code, and any doubt still fires
+the rule. Here-strings (`+<<<+`) are not heredocs, and heredoc delimiters are
+parsed whole (`+'---'+`, `+EOF-TEXT+`). The finding carries the first offending
+line number; findings from embedded scripts carry none, because their lines are
+relative to the extracted block. Word state carries across line breaks inside a
+quote and over a backslash-newline continuation, so `+"a<newline>b"# /tmp/x+`
+is not mistaken for a comment.
+
+==== Fixed — readiness tests find the binary under Cargo's split build directory
+
+* `+tests/readiness.rs+` derived the binary path from `+current_exe+`, which
+fails when Cargo places test binaries under `+build/<pkg>/<hash>/out/+` (15 of
+21 tests failed in CI). It now uses `+CARGO_BIN_EXE_panic-attack+`.
+
+
 ==== Fixed — the Idris2 ABI proofs are type-checked, and the stripping proof is re-proved
 
 * No CI job had ever type-checked `+src/abi/+`, and as committed none of its

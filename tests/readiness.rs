@@ -28,22 +28,11 @@ use tempfile::TempDir;
 
 /// Path to the compiled panic-attack binary.
 ///
-/// This is structurally infallible in a cargo test context: `current_exe`
-/// only fails if the OS cannot locate the test binary, which would mean
-/// cargo test itself is broken.
+/// Resolved through `CARGO_BIN_EXE_*`, which Cargo sets for integration tests.
+/// Deriving it from `current_exe` broke when Cargo moved test binaries under
+/// `target/<profile>/build/<pkg>/<hash>/out/`.
 fn binary() -> PathBuf {
-    let mut p = std::env::current_exe()
-        .expect("test runtime: current_exe should always succeed in cargo test");
-    p.pop(); // remove test binary name
-    p.pop(); // remove deps/
-    p.push("panic-attack");
-    if !p.exists() {
-        p.pop();
-        p.pop();
-        p.push("release");
-        p.push("panic-attack");
-    }
-    p
+    PathBuf::from(env!("CARGO_BIN_EXE_panic-attack"))
 }
 
 /// Run a panic-attack subcommand and return (success, stdout, stderr).
