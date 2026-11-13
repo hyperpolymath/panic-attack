@@ -320,18 +320,37 @@ pub struct Analyzer {
     browser_extension: bool,
 }
 
+/// Quote state tracked by [`shell_code_lines`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ShellQuote {
+    None,
+    /// `'...'`: no escapes.
+    Single,
+    /// `"..."`: backslash escapes the next character.
+    Double,
+    /// `$'...'`: backslash escapes the next character, including `\'`.
+    AnsiC,
+}
+
+/// True for the shell operator characters that end a word.
+fn is_shell_operator(c: char) -> bool {
+    matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>')
+}
+
 /// Split shell `content` into `(1-based line number, code text)` pairs with
-/// comments removed. A `#` starts a comment only when it is unquoted and at
-/// the start of a word (line start or after whitespace), so `$#`, `${#var}`
-/// and `#` inside quotes are kept. Quote state carries across lines, and
-/// heredoc bodies are returned verbatim as code. Conservative by design: any
+/// comments removed. A `#` starts a comment only when it is unquoted and
+/// begins a word: at line start, after unescaped whitespace, or after an
+/// operator such as `;`. So `$#`, `${#var}`, `name\ #x` and `#` inside quotes
+/// (including `$'...\'...'`) are kept. Quote state carries across lines.
+/// Heredoc bodies are returned verbatim as code; a here-string `<<<` is
+/// consumed whole and never opens a heredoc. Conservative by design: any
 /// doubt leaves text in place as code so rules still fire.
 fn shell_code_lines(content: &str) -> Vec<(usize, String)> {
     let mut out = Vec::new();
-    let mut quote: Option<char> = None;
+    let mut quote = ShellQuote::None;
     let mut heredocs: std::collections::VecDeque<(String, bool)> = Default::default();
     for (idx, line) in content.lines().enumerate() {
-        if quote.is_none() {
+        if quote == ShellQuote::None {
             if let Some((tag, strip_tabs)) = heredocs.front() {
                 let candidate = if *strip_tabs {
                     line.trim_start_matches('\t')
@@ -347,63 +366,109 @@ fn shell_code_lines(content: &str) -> Vec<(usize, String)> {
         }
         let chars: Vec<char> = line.chars().collect();
         let mut code = String::new();
+        let mut word_start = true;
         let mut i = 0;
         while i < chars.len() {
             let c = chars[i];
             match quote {
-                Some(q) => {
-                    if q == '"' && c == '\\' && i + 1 < chars.len() {
-                        code.push(c);
-                        i += 1;
-                        code.push(chars[i]);
-                    } else {
-                        if c == q {
-                            quote = None;
-                        }
-                        code.push(c);
+                ShellQuote::Single => {
+                    if c == '\'' {
+                        quote = ShellQuote::None;
                     }
+                    code.push(c);
                 }
-                None => {
+                ShellQuote::Double | ShellQuote::AnsiC => {
                     if c == '\\' && i + 1 < chars.len() {
                         code.push(c);
                         i += 1;
                         code.push(chars[i]);
-                    } else if c == '\'' || c == '"' {
-                        quote = Some(c);
+                    } else {
+                        let closer = if quote == ShellQuote::Double {
+                            '"'
+                        } else {
+                            '\''
+                        };
+                        if c == closer {
+                            quote = ShellQuote::None;
+                        }
                         code.push(c);
-                    } else if c == '#' && (i == 0 || chars[i - 1].is_whitespace()) {
-                        break;
-                    } else if c == '<'
-                        && chars.get(i + 1) == Some(&'<')
-                        && chars.get(i + 2) != Some(&'<')
-                    {
-                        // Heredoc introducer: <<[-] ['"]TAG['"]
-                        let mut j = i + 2;
-                        let strip_tabs = chars.get(j) == Some(&'-');
-                        if strip_tabs {
-                            j += 1;
-                        }
-                        while chars.get(j).is_some_and(|ch| *ch == ' ' || *ch == '\t') {
-                            j += 1;
-                        }
-                        let q = chars.get(j).copied().filter(|ch| *ch == '\'' || *ch == '"');
-                        if q.is_some() {
-                            j += 1;
-                        }
-                        let start = j;
-                        while chars
-                            .get(j)
-                            .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_')
-                        {
-                            j += 1;
-                        }
-                        if j > start {
-                            heredocs.push_back((chars[start..j].iter().collect(), strip_tabs));
-                        }
-                        code.push_str("<<");
+                    }
+                }
+                ShellQuote::None => {
+                    if c == '\\' && i + 1 < chars.len() {
+                        code.push(c);
                         i += 1;
+                        code.push(chars[i]);
+                        word_start = false;
+                    } else if c == '$' && chars.get(i + 1) == Some(&'\'') {
+                        quote = ShellQuote::AnsiC;
+                        code.push_str("$'");
+                        i += 1;
+                        word_start = false;
+                    } else if c == '\'' {
+                        quote = ShellQuote::Single;
+                        code.push(c);
+                        word_start = false;
+                    } else if c == '"' {
+                        quote = ShellQuote::Double;
+                        code.push(c);
+                        word_start = false;
+                    } else if c == '#' && word_start {
+                        break;
+                    } else if c == '<' && chars.get(i + 1) == Some(&'<') {
+                        if chars.get(i + 2) == Some(&'<') {
+                            // Here-string: consume all three, no heredoc.
+                            code.push_str("<<<");
+                            i += 2;
+                        } else {
+                            // Heredoc introducer: <<[-] WORD (quotes allowed).
+                            let mut j = i + 2;
+                            let strip_tabs = chars.get(j) == Some(&'-');
+                            if strip_tabs {
+                                j += 1;
+                            }
+                            while chars.get(j).is_some_and(|ch| *ch == ' ' || *ch == '\t') {
+                                j += 1;
+                            }
+                            let start = j;
+                            let mut tag = String::new();
+                            while let Some(&ch) = chars.get(j) {
+                                if ch.is_whitespace() || is_shell_operator(ch) {
+                                    break;
+                                }
+                                match ch {
+                                    '\'' | '"' => {
+                                        // Quoted run: contents literal, quotes removed.
+                                        let mut k = j + 1;
+                                        while k < chars.len() && chars[k] != ch {
+                                            tag.push(chars[k]);
+                                            k += 1;
+                                        }
+                                        j = (k + 1).min(chars.len());
+                                    }
+                                    '\\' if j + 1 < chars.len() => {
+                                        tag.push(chars[j + 1]);
+                                        j += 2;
+                                    }
+                                    _ => {
+                                        tag.push(ch);
+                                        j += 1;
+                                    }
+                                }
+                            }
+                            if !tag.is_empty() {
+                                heredocs.push_back((tag, strip_tabs));
+                            }
+                            // Delimiter text is plain code; resume after it.
+                            let end = j.max(start);
+                            code.push_str("<<");
+                            code.extend(&chars[i + 2..end]);
+                            i = end.saturating_sub(1).max(i + 1);
+                        }
+                        word_start = true;
                     } else {
                         code.push(c);
+                        word_start = c.is_whitespace() || is_shell_operator(c);
                     }
                 }
             }
@@ -660,6 +725,9 @@ impl Analyzer {
                                     &rel_path,
                                 )?;
                                 for finding in &mut file_weak_points[start..] {
+                                    // Lines are relative to the extracted block, not the
+                                    // enclosing file; do not report a misleading one.
+                                    finding.line = None;
                                     finding.description.push_str(&format!(
                                         " (embedded {:?} input at {})",
                                         script.language, script.origin
@@ -6532,6 +6600,73 @@ mod tests {
         let f = shell_tmp_findings(src);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].line, Some(2));
+    }
+
+    #[test]
+    fn shell_ansi_c_escaped_quote_keeps_hash_literal() {
+        let f = shell_tmp_findings("printf '%s\\n' $'it\\' # literal'; rm -f /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(1));
+    }
+
+    #[test]
+    fn shell_escaped_space_does_not_start_comment() {
+        let f = shell_tmp_findings("rm -f name\\ #suffix /tmp/x\n");
+        assert_eq!(f.len(), 1);
+    }
+
+    #[test]
+    fn shell_hash_after_operator_starts_comment() {
+        // `;#` begins a comment, so the `mktemp` inside it must not silence.
+        let f = shell_tmp_findings("rm -f /tmp/x;# mktemp\n");
+        assert_eq!(f.len(), 1);
+        // And a `/tmp/` only inside such a comment is not flagged.
+        assert!(shell_tmp_findings("echo ok;# /tmp/x\n").is_empty());
+    }
+
+    #[test]
+    fn shell_here_string_is_not_a_heredoc() {
+        let f = shell_tmp_findings("cat <<< data\n# mktemp\nrm -f /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(3));
+    }
+
+    #[test]
+    fn shell_heredoc_quoted_punctuation_delimiter() {
+        let f = shell_tmp_findings("cat <<'---'\n# /tmp/x\n---\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+    }
+
+    #[test]
+    fn shell_heredoc_hyphenated_delimiter() {
+        let src = "cat <<EOF-TEXT\n# /tmp/x\nEOF-TEXT\n# /tmp/y\n";
+        let f = shell_tmp_findings(src);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+        // After the body ends, comments are comments again.
+        let lines = shell_code_lines(src);
+        assert_eq!(lines[3].1, "");
+    }
+
+    #[test]
+    fn embedded_shell_findings_carry_no_line() {
+        // package.json scripts are analysed as embedded shell; their lines are
+        // relative to the extracted script, so the finding must carry none.
+        let dir = TempDir::new().expect("tempdir");
+        fs::write(
+            dir.path().join("package.json"),
+            "{\"name\":\"x\",\"scripts\":{\"clean\":\"rm -f /tmp/x\"}}\n",
+        )
+        .expect("write package.json");
+        let report = crate::assail::analyze(dir.path()).expect("analyze");
+        let embedded: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|w| w.description.contains("embedded") && w.description.contains("/tmp/"))
+            .collect();
+        assert!(!embedded.is_empty(), "expected an embedded /tmp/ finding");
+        assert!(embedded.iter().all(|w| w.line.is_none()));
     }
 
     // ---------------------------------------------------------------
