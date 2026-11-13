@@ -843,11 +843,7 @@ module MassPanic {
             }
             sub.wait();
 
-            // Exit contract: 0 pass/warn, 1 complete fail (a valid verdict),
-            // 2 incomplete/error (no verdict is trustworthy).
-            if sub.exitCode == 2 {
-                adjResult.verdict = "error";
-            } else if sub.exitCode == 0 || sub.exitCode == 1 {
+            if sub.exitCode == 0 {
                 result = parseRepoResult(jsonOutput, repoPath);
                 result.fingerprint = computeFingerprint(repoPath);
             } else {
@@ -1052,7 +1048,11 @@ module MassPanic {
             }
             sub.wait();
 
-            if sub.exitCode == 0 {
+            // adjudicate exit contract: 0 pass/warn, 1 complete fail (a valid
+            // verdict), 2 incomplete input or error (no verdict is trustworthy).
+            if sub.exitCode == 2 {
+                adjResult.verdict = "error";
+            } else if sub.exitCode == 0 || sub.exitCode == 1 {
                 // Extract crash count from adjudicate JSON
                 adjResult.crashes = extractInt(jsonOutput, "\"crashes\":");
                 if adjResult.crashes == 0 then
