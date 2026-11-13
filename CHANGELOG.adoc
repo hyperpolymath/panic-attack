@@ -2,6 +2,20 @@
 
 === [Unreleased]
 
+==== Fixed — adjudicate no longer passes when it processed nothing
+
+* `+panic-attack adjudicate+` printed `+verdict: pass (processed 0, failed 1)+` and
+exited 0 when a report was missing or unrecognised. A run that processed no
+report, or failed to load any report, now gets the new verdict `+error+` (JSON
+`+verdict+`; each failure is in `+notes+` and echoed to stderr) and exits with
+status 2, the same code as `+assail --fail-on-incomplete+`. Verdict precedence is
+`+fail+` > `+error+` > `+warn+` > `+pass+`: a real `+fail+` from a loaded report is
+still reported as `+fail+`. Exit contract: `+2+` for incomplete input (zero
+processed or any report failed to load), whatever the verdict, winning over
+everything; `+1+` for a complete `+fail+` (new: previously exit 0); `+0+` for a
+complete `+pass+` or `+warn+`. The Chapel `+MassPanic+` adjudicate pass now reads
+exit 1 as a valid `+fail+` verdict and exit 2 as `+error+`.
+
 ==== Fixed — the shell `/tmp/` rule ignores comments and reports a line
 
 * `+analyze_shell+` raised "Hardcoded /tmp/ path without mktemp" on a

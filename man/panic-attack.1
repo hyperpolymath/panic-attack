@@ -33,6 +33,11 @@ Copies a target into an isolated workspace, optionally includes related files, a
 .TP
 .B adjudicate REPORTS...
 Aggregates assault/amuck/abduct report artifacts into a campaign-level verdict using rule-based inference.
+Verdict precedence is fail > error > warn > pass. The verdict error means no report was processed or at least one failed to load; it is never a pass.
+.RS
+.PP
+Exit status: 2 if the input is incomplete (zero reports processed or any report failed to load), whatever the verdict; this wins over every other status. 1 if all reports loaded and the verdict is fail. 0 if all reports loaded and the verdict is pass or warn.
+.RE
 .TP
 .B axial TARGET
 Observes reaction signals by executing an external tool against a target and/or by inspecting existing report artifacts.
