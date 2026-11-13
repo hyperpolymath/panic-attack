@@ -2049,6 +2049,16 @@ fn run_main() -> Result<()> {
                 "adjudicate report saved to: {}",
                 report_path.display()
             );
+            for note in &report.notes {
+                eprintln!("adjudicate: {}", note);
+            }
+            if report.is_incomplete() {
+                eprintln!(
+                    "adjudicate: incomplete ({} processed, {} failed); verdict is not a pass",
+                    report.processed_reports, report.failed_reports
+                );
+                std::process::exit(report.exit_code());
+            }
         }
 
         Commands::Axial {

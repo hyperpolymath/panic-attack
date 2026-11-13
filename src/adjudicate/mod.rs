@@ -75,6 +75,31 @@ pub struct PriorityFinding {
     pub message: String,
 }
 
+/// Verdict for a run that could not adjudicate its input: no report processed,
+/// or at least one report failed to load/parse. Distinct from `pass`/`warn`/`fail`.
+pub const VERDICT_ERROR: &str = "error";
+
+/// Process exit status for an incomplete adjudication (`error` verdict). Matches
+/// `assail --fail-on-incomplete`: 2 means "ran, but the result is not trustworthy".
+pub const EXIT_INCOMPLETE: i32 = 2;
+
+impl AdjudicateReport {
+    /// True when no report was processed or any report failed to load.
+    pub fn is_incomplete(&self) -> bool {
+        self.processed_reports == 0 || self.failed_reports > 0
+    }
+
+    /// Exit status: `EXIT_INCOMPLETE` when incomplete, otherwise 0 (a `fail`
+    /// verdict on fully loaded input keeps its existing exit 0).
+    pub fn exit_code(&self) -> i32 {
+        if self.is_incomplete() {
+            EXIT_INCOMPLETE
+        } else {
+            0
+        }
+    }
+}
+
 pub fn run(config: AdjudicateConfig) -> Result<AdjudicateReport> {
     if config.reports.is_empty() {
         return Err(anyhow!("provide at least one report path"));
@@ -198,15 +223,36 @@ pub fn run(config: AdjudicateConfig) -> Result<AdjudicateReport> {
 
     let has_fail = !db.get_facts("campaign_fail").is_empty();
     let has_warn = !db.get_facts("campaign_warn").is_empty();
+    // Fail-closed: a run that processed nothing, or could not load every report,
+    // has not adjudicated the campaign and must never read as `pass`/`warn`.
+    // A genuine `fail` signal from a loaded report still dominates `error`.
+    let incomplete = processed == 0 || failed > 0;
+    if processed == 0 {
+        notes.push("no report was processed; nothing was adjudicated".to_string());
+    }
     let verdict = if has_fail {
         "fail"
+    } else if incomplete {
+        VERDICT_ERROR
     } else if has_warn {
         "warn"
     } else {
         "pass"
     };
 
-    let priorities = build_priorities(&totals, verdict);
+    let mut priorities = build_priorities(&totals, verdict);
+    if incomplete {
+        priorities.insert(
+            0,
+            PriorityFinding {
+                level: "high".to_string(),
+                message: format!(
+                    "adjudication incomplete: {} report(s) processed, {} failed to load",
+                    processed, failed
+                ),
+            },
+        );
+    }
 
     Ok(AdjudicateReport {
         schema_version: adjudicate_schema_version(),
@@ -396,5 +442,19 @@ mod tests {
         assert_eq!(out.processed_reports, 1);
         assert_eq!(out.totals.amuck_reports, 1);
         assert_eq!(out.verdict, "warn");
+    }
+
+    #[test]
+    fn adjudicate_zero_processed_is_error_not_pass() {
+        let dir = TempDir::new().expect("tempdir should create");
+        let out = run(AdjudicateConfig {
+            reports: vec![dir.path().join("missing.json")],
+        })
+        .expect("adjudicate should run");
+        assert_eq!(out.processed_reports, 0);
+        assert_eq!(out.failed_reports, 1);
+        assert_eq!(out.verdict, VERDICT_ERROR);
+        assert!(out.is_incomplete());
+        assert_eq!(out.exit_code(), EXIT_INCOMPLETE);
     }
 }
