@@ -46,6 +46,16 @@ module Protocol {
         var categories: list(CategoryCount);
     }
 
+    // True when a result has anything to report: weak points, a scan error,
+    // or an adjudication verdict other than pass. `--findingsOnly` keeps
+    // exactly these results, so an incomplete adjudication (verdict "error")
+    // or a fail/warn verdict with no weak points is never silently dropped.
+    proc hasFindings(r: RepoResult): bool {
+        return r.weakPointCount > 0
+            || r.error != ""
+            || (r.verdict != "" && r.verdict != "pass");
+    }
+
     record CategoryCount {
         var name: string;
         var count: int;
