@@ -104,3 +104,107 @@ fn zero_arguments_is_rejected() {
     assert_eq!(o.status.code(), Some(2));
     assert!(!String::from_utf8_lossy(&o.stdout).contains("verdict: pass"));
 }
+
+fn assault_json(crashes: usize) -> String {
+    assault_json_with(crashes, false)
+}
+
+fn assault_json_with(crashes: usize, failed_attack: bool) -> String {
+    use panic_attack::types::*;
+    let report = AssaultReport {
+        schema_version: "2.5".to_string(),
+        assail_report: AssailReport {
+            coverage: Default::default(),
+            schema_version: "2.5".to_string(),
+            program_path: std::path::PathBuf::from("/tmp/t"),
+            language: Language::Rust,
+            frameworks: vec![],
+            weak_points: vec![],
+            statistics: ProgramStatistics {
+                total_lines: 1,
+                unsafe_blocks: 0,
+                panic_sites: 0,
+                unwrap_calls: 0,
+                safe_unwrap_calls: 0,
+                allocation_sites: 0,
+                io_operations: 0,
+                threading_constructs: 0,
+            },
+            file_statistics: vec![],
+            dependency_graph: DependencyGraph { edges: vec![] },
+            taint_matrix: TaintMatrix { rows: vec![] },
+            recommended_attacks: vec![],
+            migration_metrics: None,
+            suppressed_count: 0,
+        },
+        attack_results: if failed_attack {
+            vec![AttackResult {
+                program: std::path::PathBuf::from("/tmp/t"),
+                axis: AttackAxis::Cpu,
+                success: false,
+                skipped: false,
+                skip_reason: None,
+                exit_code: Some(1),
+                duration: std::time::Duration::from_millis(1),
+                peak_memory: 0,
+                crashes: vec![],
+                signatures_detected: vec![],
+            }]
+        } else {
+            vec![]
+        },
+        total_crashes: crashes,
+        total_signatures: 0,
+        overall_assessment: OverallAssessment {
+            robustness_score: 50.0,
+            critical_issues: vec![],
+            recommendations: vec![],
+        },
+        timeline: None,
+    };
+    serde_json::to_string(&report).unwrap()
+}
+
+#[test]
+fn exit_0_on_complete_pass() {
+    let dir = TempDir::new().unwrap();
+    let p = dir.path().join("clean.json");
+    fs::write(&p, assault_json(0)).unwrap();
+    let (o, j) = adjudicate(dir.path(), &[&p]);
+    assert_eq!(j["verdict"], "pass", "{:?}", o);
+    assert_eq!(o.status.code(), Some(0));
+}
+
+#[test]
+fn exit_0_on_complete_warn() {
+    let dir = TempDir::new().unwrap();
+    let p = dir.path().join("flaky.json");
+    fs::write(&p, assault_json_with(0, true)).unwrap();
+    let (o, j) = adjudicate(dir.path(), &[&p]);
+    assert_eq!(j["verdict"], "warn", "{:?}", o);
+    assert_eq!(o.status.code(), Some(0));
+}
+
+#[test]
+fn exit_1_on_complete_fail() {
+    let dir = TempDir::new().unwrap();
+    let p = dir.path().join("crashy.json");
+    fs::write(&p, assault_json(3)).unwrap();
+    let (o, j) = adjudicate(dir.path(), &[&p]);
+    assert_eq!(j["verdict"], "fail", "{:?}", o);
+    assert_eq!(j["failed_reports"], 0);
+    assert_eq!(o.status.code(), Some(1));
+}
+
+#[test]
+fn exit_2_wins_over_fail_when_a_report_is_missing() {
+    let dir = TempDir::new().unwrap();
+    let p = dir.path().join("crashy.json");
+    fs::write(&p, assault_json(3)).unwrap();
+    let missing = dir.path().join("gone.json");
+    let (o, j) = adjudicate(dir.path(), &[&p, &missing]);
+    // Verdict precedence keeps the real failure visible...
+    assert_eq!(j["verdict"], "fail");
+    // ...but incomplete input wins the exit code.
+    assert_eq!(o.status.code(), Some(2));
+}

@@ -2057,7 +2057,10 @@ fn run_main() -> Result<()> {
                     "adjudicate: incomplete ({} processed, {} failed); verdict is not a pass",
                     report.processed_reports, report.failed_reports
                 );
-                std::process::exit(report.exit_code());
+            }
+            let code = report.exit_code();
+            if code != 0 {
+                std::process::exit(code);
             }
         }
 

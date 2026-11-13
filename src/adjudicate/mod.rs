@@ -79,8 +79,12 @@ pub struct PriorityFinding {
 /// or at least one report failed to load/parse. Distinct from `pass`/`warn`/`fail`.
 pub const VERDICT_ERROR: &str = "error";
 
-/// Process exit status for an incomplete adjudication (`error` verdict). Matches
-/// `assail --fail-on-incomplete`: 2 means "ran, but the result is not trustworthy".
+/// Exit status for a complete run whose verdict is `fail`.
+pub const EXIT_FAIL: i32 = 1;
+
+/// Exit status for incomplete input (zero processed or any report failed to load),
+/// whatever the verdict. Matches `assail --fail-on-incomplete`: 2 means "ran, but
+/// the result is not trustworthy". Wins over every other status.
 pub const EXIT_INCOMPLETE: i32 = 2;
 
 impl AdjudicateReport {
@@ -89,11 +93,13 @@ impl AdjudicateReport {
         self.processed_reports == 0 || self.failed_reports > 0
     }
 
-    /// Exit status: `EXIT_INCOMPLETE` when incomplete, otherwise 0 (a `fail`
-    /// verdict on fully loaded input keeps its existing exit 0).
+    /// Exit status. Precedence: incomplete input (2) > complete `fail` (1) >
+    /// complete `pass`/`warn` (0).
     pub fn exit_code(&self) -> i32 {
         if self.is_incomplete() {
             EXIT_INCOMPLETE
+        } else if self.verdict == "fail" {
+            EXIT_FAIL
         } else {
             0
         }

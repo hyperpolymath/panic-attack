@@ -843,7 +843,11 @@ module MassPanic {
             }
             sub.wait();
 
-            if sub.exitCode == 0 {
+            // Exit contract: 0 pass/warn, 1 complete fail (a valid verdict),
+            // 2 incomplete/error (no verdict is trustworthy).
+            if sub.exitCode == 2 {
+                adjResult.verdict = "error";
+            } else if sub.exitCode == 0 || sub.exitCode == 1 {
                 result = parseRepoResult(jsonOutput, repoPath);
                 result.fingerprint = computeFingerprint(repoPath);
             } else {
