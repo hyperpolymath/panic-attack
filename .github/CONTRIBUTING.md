@@ -210,7 +210,7 @@ Example:
     │   ├── abduct/              # Isolation + time-skew
     │   ├── adjudicate/          # Campaign verdict aggregation
     │   ├── axial/               # Reaction observation
-    │   ├── a2ml/                # AI manifest protocol
+    │   ├── a2ml/                # AI manifest reader (deed first) + report bundles
     │   ├── panll/               # PanLL event-chain export
     │   ├── storage/             # Filesystem + VerisimDB persistence
     │   ├── i18n/                # Multi-language support (ISO 639-1, 10 languages)
@@ -229,7 +229,10 @@ This project follows RSR (Reproducible Software Repositories) standards:
 1.  **SCM files in .machine_readable/ only** - Never put STATE.scm,
     ECOSYSTEM.scm, or META.scm in the repository root
 
-2.  **AI manifest required** - AI.a2ml must be present and up-to-date
+2.  **Repo deed and AI manifest required** - `panic-attack_chora.deed`
+    and the pointer-only `0-AI-MANIFEST.deed` must be present and
+    up-to-date. A2ML is retired: never add a `.a2ml` file
+    (`docs/history/A2ML-REMOVED.adoc`)
 
 3.  **License consistency** - All files must use MPL-2.0 (SPDX header)
 

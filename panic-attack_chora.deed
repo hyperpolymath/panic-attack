@@ -2,12 +2,36 @@
 ;; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 ; Repository deed for hyperpolymath/panic-attack.
 ;
-; Grammar: hyperpolymath/standards 1-formats/deed/spec/abnf/deed.abnf (v1.2.0).
+; Grammar: hyperpolymath/standards 1-formats/deed/spec/abnf/deed.abnf.
 ; Vocabulary: 1-formats/deed/vocabulary/*.adoc.
 ;
 ; This file is why `dogfood-gate.yml`'s "no .deed found" warning is gone: every
 ; RSR repository carries a repo deed at its root, and a warning that never fails
 ; is a warning nobody reads.
+;
+; The A2ML descriptiles were retired on 2026-11-14 (owner approval). Each clause
+; below that came from one is translated field for field under the mapping spec
+; for its family, in standards 1-formats/deed/mappings/. A field a table does not
+; list does not translate: it was dropped, not re-homed.
+; docs/history/A2ML-REMOVED.adoc records each removed file, its git blob id and
+; what was dropped from it.
+;
+;   CLADE.a2ml      -> (identity) (clade) (forges) (lineage)
+;                      clade-to-repo-deed.adoc as updated by standards#1579.
+;                      Its [status] went to .machine_readable/descriptiles/STATE.deed
+;                      (A7 J15), not here.
+;   META.a2ml       -> (meta)       meta-ecosystem-to-repo-deed.adoc
+;   ECOSYSTEM.a2ml  -> (ecosystem)  meta-ecosystem-to-repo-deed.adoc
+;   ANCHOR.a2ml     -> (ecosystem (related … :relationship parent)), A7 6.4 and
+;                      J26. No (anchor …) clause: the source has no authority,
+;                      and a translator never invents one.
+;   AGENTIC.a2ml    -> (agentic)    agentic-neurosym-playbook-to-repo-deed.adoc
+;   NEUROSYM.a2ml   -> (neurosym)   agentic-neurosym-playbook-to-repo-deed.adoc
+;   PLAYBOOK.a2ml   -> (playbook)   agentic-neurosym-playbook-to-repo-deed.adoc
+;   STATE.a2ml      -> nothing      state-v1-decision.adoc option B: the source
+;                      has no maturity field, its status string duplicates the
+;                      CLADE phase, and the rest is journal, archived by
+;                      reference in the ledger.
 (repo-deed
   :schema-version "1.0.0"
   :canonical-name "panic-attack"
@@ -17,17 +41,107 @@
   ; repo deed names, e.g. hypatia_chora.deed.
   :repo-uuid #uuid"a39ad6b1-51e0-854d-aa9a-d9ee97ba519b"
   :beholding-chora #uuid"0889b37b-defb-831f-973c-e119500db00e"
-  (status
-    :phase active
-    :note "static analysis, stress testing and logic-based bug signature detection")
-  (maturity
-    :level stable
-    :since "2026-02-08")
+  ; CLADE.a2ml [identity] primary-owner, primary-forge and prefixed-name. Its
+  ; uuid (a v5) is the retired identity and is never copied (P-1); its
+  ; canonical-name repeats the head.
+  (identity :owner "hyperpolymath" :primary-forge github :prefixed-name "sc-panic-attack")
+  ; CLADE.a2ml [clade]. The source has no primary-name, so none is emitted.
+  ; chora-registry places the repo the same way (sc primary, rm rank 1).
+  (clade
+    :primary sc
+    :secondary (rm)
+    :assigned "2026-03-16"
+    :rationale "")
+  (forges
+    :github "hyperpolymath/panic-attack"
+    :gitlab "hyperpolymath/panic-attack"
+    :bitbucket "hyperpolymath/panic-attack")
+  ; :type is CLADE.a2ml's [lineage] type, which chora-registry also records.
+  ; This clause said `hub` before the translation; neither source did.
+  ; :parent stays "": chora-registry records no parent, and the CLADE value
+  ; ("Security scanning tool — static analysis") is a description, not a repo.
+  ; CLADE's born "2026-03-16" is not carried: it is the clade backfill date,
+  ; and the rename below shows the repo existed before it.
   (lineage
-    :type hub
+    :type standalone
     :parent ""
     :previous-names ("panic-attacker")
     :note "renamed 2026-02-08: binary panic-attacker -> panic-attack, xray -> assail, XRayReport -> AssailReport")
+  ; Unchanged by the A2ML retirement. `stable` is outside the closed set in
+  ; vocabulary/maturity.adoc, and the clause belongs in STATE.deed (A7 J15);
+  ; the right level is an owner decision, so it waits here.
+  (maturity
+    :level stable
+    :since "2026-02-08")
+  ; META.a2ml: [metadata] version and last-updated are the rows the table
+  ; lists. Not translated: [metadata] project, author, license, standard and
+  ; status (author and license are [project-info] rows, not [metadata]
+  ; ones); [project-context]; [dependencies]; the six [architecture.*]
+  ; decisions (decision, rationale and consequence prose with no id, status
+  ; or date, so not the (adr …) row); [practices]; [readiness-tests].
+  (meta
+    :version "2.5.5"
+    :last-updated "2026-06-04")
+  ; ECOSYSTEM.a2ml: [metadata] project and ecosystem, [position] type. Not
+  ; translated: [metadata] version and last-updated; [project] name,
+  ; full-name, purpose and role (the purpose row is [position] purpose);
+  ; [position] tier and hospital-model-role; [integration-surface]; and the
+  ; eight [related-projects] entries, whose relationships (active-integration,
+  ; active-consumer, core-subsystem, planned-integration, sibling,
+  ; parent-context) are outside the closed set of clauses/ecosystem.abnf.
+  ; The source has no [pipeline] section, so there is no :coordination.
+  (ecosystem
+    :project "panic-attack"
+    :ecosystem "hyperpolymath"
+    :position-type "component"
+    ; ANCHOR.a2ml's parents (A7 6.4, J26). Each uuid is the parent's v8 id in
+    ; chora-registry (pre-V9 ids, kept in their gv-clade-index domain).
+    ; .machine_readable/6a2/ANCHOR.a2ml named both; the copy in
+    ; .machine_readable/anchors/ named boj-server only.
+    (related
+      :name "boj-server"
+      :relationship parent
+      :notes "Parent named by ANCHOR.a2ml."
+      :uuid #uuid"6c7f9305-2a47-8f96-a1ed-bd0940e4d4e6")
+    (related
+      :name "ambientops"
+      :relationship parent
+      :notes "Parent named by .machine_readable/6a2/ANCHOR.a2ml."
+      :uuid #uuid"5c1e28a9-d8c0-8bfe-a57d-ae4abe7dc3be"))
+  ; AGENTIC.a2ml: [metadata] version and last-updated, and the five
+  ; [agent-permissions] booleans the table lists. The source has no @profile
+  ; line and no [maintenance-integrity] section, so there is no (profile) and
+  ; no (integrity). Not translated: [metadata] spec-version, authority and
+  ; conformance; [agent-permissions] can-run-scans,
+  ; can-edit-suppression-registry and can-push-verisimdb; [agent-constraints]
+  ; (never-use and always-do are unknown keys, which fail closed);
+  ; [agent-roles.*], [gating-policies], [entropy-budgets.*],
+  ; [risk-thresholds.*], [override-paths.*] and [decision-recording].
+  (agentic
+    :version "0.1.0"
+    :last-updated "2026-06-04"
+    (permissions :source #t :tests #t :docs #t :config #t :create-files #t))
+  ; NEUROSYM.a2ml: [metadata] version and last-updated, [hypatia-config]
+  ; scan-enabled and report-format. The source has no scan-depth. Not
+  ; translated: [hypatia-config] consumer, finding-codes, env-watcher and
+  ; planned; [architecture], [operation-definitions.*],
+  ; [composition-rules.*], [proof-obligations.*], [type-system.*] and
+  ; [search-strategy], which fail closed pending table rows.
+  (neurosym
+    :version "0.1.0"
+    :last-updated "2026-06-04"
+    (hypatia :scan-enabled #t :report-format "JSON (AssailReport)"))
+  ; PLAYBOOK.a2ml: [metadata] version and last-updated, and the two of the
+  ; five operational sections the source has, kept as positions (the slot
+  ; doctrine). Their contents have no table rows and did not translate; nor
+  ; did [build], [test], [install], [scan], [patch-bridge], [verisim-push],
+  ; [deployment-modes.*], [rollback-process], [suppression-runbook] and
+  ; [monitoring].
+  (playbook
+    :version "1.0.0"
+    :last-updated "2026-06-04"
+    (incident-response)
+    (release-process))
   (obligation
     :name "evidence-not-proof"
     :note "T0 syntax heuristics are labelled T0. A finding is never dressed up as a parser or dataflow proof; see docs/RECON-AND-EVIDENCE.adoc")

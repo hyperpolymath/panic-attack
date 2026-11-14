@@ -623,7 +623,8 @@ enum Commands {
 
     /// Export the AI manifest as Nickel
     Manifest {
-        /// Alternate AI manifest file
+        /// Alternate AI manifest file (default: 0-AI-MANIFEST.deed, else the
+        /// legacy 0-AI-MANIFEST.a2ml or AI.a2ml)
         #[arg(short, long, value_name = "PATH")]
         path: Option<PathBuf>,
 
@@ -709,7 +710,8 @@ enum Commands {
 
     /// Run panic-attack self-diagnostics for Hypatia/gitbot-fleet visibility
     Diagnostics {
-        /// Alternate AI manifest file (default: AI.a2ml)
+        /// Alternate AI manifest file (default: 0-AI-MANIFEST.deed, else the
+        /// legacy 0-AI-MANIFEST.a2ml or AI.a2ml)
         #[arg(long, value_name = "PATH")]
         manifest: Option<PathBuf>,
     },
@@ -2243,13 +2245,7 @@ fn run_main() -> Result<()> {
         }
 
         Commands::Manifest { path, output } => {
-            let target = path.unwrap_or_else(|| {
-                if PathBuf::from("0-AI-MANIFEST.a2ml").exists() {
-                    PathBuf::from("0-AI-MANIFEST.a2ml")
-                } else {
-                    PathBuf::from("AI.a2ml")
-                }
-            });
+            let target = path.unwrap_or_else(Manifest::default_path);
             let manifest = Manifest::load(&target).unwrap_or_default();
             let nickel = manifest.to_nickel();
             if let Some(output_path) = output {
