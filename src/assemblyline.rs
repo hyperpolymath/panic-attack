@@ -374,7 +374,10 @@ fn scan_repo(repo_path: &Path) -> RepoResult {
             high_count: 0,
             total_files: 0,
             total_lines: 0,
-            error: Some(e.to_string()),
+            // `{:#}` keeps the whole anyhow chain ("outer: inner: …"), so a
+            // malformed registry deed reports its line and reason here, not
+            // just the outermost context.
+            error: Some(format!("{e:#}")),
             fingerprint,
             report: None,
         },
@@ -573,6 +576,38 @@ mod tests {
         assert!(
             has_findings(&result(0, Some("assail failed"))),
             "a failed scan must never vanish from a findings-only report"
+        );
+    }
+
+    #[test]
+    fn scan_error_keeps_the_deed_line_and_reason() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("main.rs"), "fn main() {}\n").unwrap();
+        let audits = tmp.path().join("audits");
+        std::fs::create_dir_all(&audits).unwrap();
+        // Line 7 carries a category the registry does not know.
+        std::fs::write(
+            audits.join("assail-classifications_praxis.deed"),
+            ";; SPDX-License-Identifier: MPL-2.0\n\
+             (praxis-deed\n  \
+             :schema-version \"1.0.0\"\n  \
+             :canonical-name \"x\"\n  \
+             :beholding-chora #uuid\"0889b37b-defb-831f-973c-e119500db00e\"\n  \
+             :profile assail-classifications\n  \
+             (classification :file \"a.rs\" :category UnsafeKode))\n",
+        )
+        .unwrap();
+        let err = scan_repo(tmp.path())
+            .error
+            .expect("a malformed deed fails the scan");
+        assert!(
+            err.contains("assail-classifications_praxis.deed"),
+            "names the file: {err}"
+        );
+        assert!(err.contains("line 7"), "keeps the line: {err}");
+        assert!(
+            err.contains("unknown weak-point category UnsafeKode"),
+            "keeps the reason: {err}"
         );
     }
 

@@ -22,7 +22,7 @@ use crate::deed::{self, Item, Value};
 use crate::types::{AssailReport, WeakPointCategory};
 use anyhow::{anyhow, bail, Context, Result};
 use std::fs;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::path::Path;
 
 /// Repo-relative path of the deed registry.
@@ -88,9 +88,29 @@ pub struct UserClassification {
 ///
 /// `Ok(vec![])` when no registry exists. An unreadable, oversized or
 /// malformed deed registry is an `Err` naming the file and line.
+///
+/// Only a deed that is definitely absent lets the reader fall back to the
+/// legacy A2ML files: `NotFound`, or `NotADirectory` (`audits` is a regular
+/// file, so nothing can sit beneath it). Any other failure to stat the deed
+/// path, such as an unreadable `audits/` directory, is an error: treating it
+/// as absent would silently swap the registry the project wrote for an older
+/// one. A dangling symlink at the deed path is likewise not absent; it fails
+/// when it is opened.
 pub fn load_user_classifications(project_root: &Path) -> Result<Vec<UserClassification>> {
     let deed_path = project_root.join(DEED_PATH);
-    if deed_path.exists() {
+    let deed_present = match fs::symlink_metadata(&deed_path) {
+        Ok(_) => true,
+        Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => false,
+        Err(e) => {
+            return Err(e).with_context(|| {
+                format!(
+                    "cannot tell whether the classification registry {} exists",
+                    deed_path.display()
+                )
+            })
+        }
+    };
+    if deed_present {
         let text = read_capped(&deed_path)?;
         return parse_classification_deed(&text, &deed_path)
             .with_context(|| format!("malformed classification registry {}", deed_path.display()));

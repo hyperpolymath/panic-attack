@@ -824,6 +824,79 @@ mod classifications_tests {
         }
     }
 
+    /// An `audits/` the reader cannot search must not look like a missing
+    /// deed: that would silently fall back to the root `.a2ml` registry.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_audits_dir_is_an_error_not_a_fallback() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        write_deed(tmp.path(), &deed_with(ZIG_BRIDGE_DEED_ENTRY));
+        fs::write(
+            tmp.path().join(".panic-attack-classifications.a2ml"),
+            r#"(assail-classifications
+  (classification (file "a/b.rs") (category "PanicPath")))
+"#,
+        )
+        .unwrap();
+        let audits = tmp.path().join("audits");
+        fs::set_permissions(&audits, fs::Permissions::from_mode(0o000)).unwrap();
+        // Root, or any process with CAP_DAC_OVERRIDE/CAP_DAC_READ_SEARCH,
+        // ignores the mode bits, so the deed stays readable and there is
+        // nothing to test. Probe instead of checking the uid: the probe also
+        // covers capabilities granted to a non-root user.
+        let privileged = fs::read_dir(&audits).is_ok();
+        let result = load_user_classifications(tmp.path());
+        // Restore the mode so TempDir can clean up.
+        fs::set_permissions(&audits, fs::Permissions::from_mode(0o755)).unwrap();
+        if privileged {
+            eprintln!(
+                "skipped: running as root (or with DAC override), so a mode-000 directory stays readable"
+            );
+            return;
+        }
+        let err = result.expect_err("an unreadable audits/ must be an error");
+        assert!(
+            format!("{err:#}").contains("assail-classifications_praxis.deed"),
+            "error must name the registry: {err:#}"
+        );
+    }
+
+    #[test]
+    fn audits_as_a_regular_file_means_no_deed() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("audits"), "not a directory\n").unwrap();
+        fs::write(
+            tmp.path().join(".panic-attack-classifications.a2ml"),
+            r#"(assail-classifications
+  (classification (file "a/b.rs") (category "PanicPath")))
+"#,
+        )
+        .unwrap();
+        let classifications = load_user_classifications(tmp.path()).unwrap();
+        assert_eq!(classifications.len(), 1, "falls back to the root registry");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_deed_symlink_is_an_error_not_a_fallback() {
+        let tmp = TempDir::new().unwrap();
+        let audits = tmp.path().join("audits");
+        fs::create_dir_all(&audits).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("nowhere.deed"),
+            tmp.path().join(USER_CLASSIFICATIONS_DEED_PATH),
+        )
+        .unwrap();
+        write_registry(
+            tmp.path(),
+            r#"(assail-classifications
+  (classification (file "a/b.rs") (category "PanicPath")))
+"#,
+        );
+        assert!(load_user_classifications(tmp.path()).is_err());
+    }
+
     #[test]
     fn analyze_fails_on_a_malformed_deed() {
         let tmp = TempDir::new().unwrap();

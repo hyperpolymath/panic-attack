@@ -15,8 +15,8 @@
 //! consumed, `:schema-version` appears exactly once at the top level, no tab
 //! appears anywhere, no line exceeds 998 octets, a comment ends in a line-end,
 //! the filename dispatches to the doc-head it carries, and an identity field
-//! never carries a `#u5` or a non-version-8 `#uuid`. It does not implement the
-//! clause profiles (anchor, edict, descriptile …): a consumer checks the
+//! never carries a `#u5` or a non-version-8 `#uuid`. Clauses and lists nest no
+//! deeper than [`MAX_NESTING`] levels. It does not implement the clause profiles (anchor, edict, descriptile …): a consumer checks the
 //! profile it reads on top of the parsed tree.
 //!
 //! Every error carries the 1-based line it was found on. A malformed deed is
@@ -52,6 +52,15 @@ const IDENTITY_FIELDS: &[&str] = &[
 
 /// Longest line `deed.abnf` allows, in octets, line-end excluded.
 pub const MAX_LINE_OCTETS: usize = 998;
+
+/// Deepest nesting of clauses and lists the reader accepts. The limit is
+/// shared: every `(` inside the deed form that opens a clause, a list or a
+/// quoted list adds one level, and the form's own members sit at level 0.
+/// Real deeds nest a handful of levels, so 64 leaves ample room while
+/// bounding the reader's recursion: a hostile file of a few MB made of nested
+/// `(` returns an error instead of overflowing the stack and aborting the
+/// process. `deed.abnf` sets no limit; this is a resource bound of this reader.
+pub const MAX_NESTING: usize = 64;
 
 /// A parse or validation error, with the 1-based line it was found on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -270,6 +279,18 @@ impl Parser<'_> {
         }
     }
 
+    /// The level one deeper than `depth`, or an error naming the line of the
+    /// `(` that would pass [`MAX_NESTING`]. Called before every descent into
+    /// a clause or a list.
+    fn deeper(&self, depth: usize) -> Result<usize, DeedError> {
+        if depth >= MAX_NESTING {
+            return Err(self.err(format!(
+                "clauses and lists nest deeper than {MAX_NESTING} levels"
+            )));
+        }
+        Ok(depth + 1)
+    }
+
     fn peek(&self) -> Option<u8> {
         self.s.get(self.i).copied()
     }
@@ -420,12 +441,13 @@ impl Parser<'_> {
                 Some(_) if !had_sep => {
                     return Err(self.err("a separator is required before each field or clause"))
                 }
-                Some(b':') => items.push(self.field(head, in_top_rule)?),
+                Some(b':') => items.push(self.field(head, in_top_rule, depth)?),
                 Some(b'(') => {
+                    let inner_depth = self.deeper(depth)?;
                     self.i += 1;
                     let line = self.line;
                     let name = self.symbol()?;
-                    let inner = self.members(head, depth + 1, depth == 0 && name == "rule")?;
+                    let inner = self.members(head, inner_depth, depth == 0 && name == "rule")?;
                     items.push(Item::Clause {
                         name,
                         items: inner,
@@ -443,8 +465,9 @@ impl Parser<'_> {
         }
     }
 
-    /// `field = keyword token-sep value [token-sep bang]`.
-    fn field(&mut self, head: &str, in_top_rule: bool) -> Result<Item, DeedError> {
+    /// `field = keyword token-sep value [token-sep bang]`. `depth` is the
+    /// level of the form or clause the field belongs to.
+    fn field(&mut self, head: &str, in_top_rule: bool, depth: usize) -> Result<Item, DeedError> {
         let line = self.line;
         self.i += 1; // ':'
         let key = self.symbol()?;
@@ -453,7 +476,7 @@ impl Parser<'_> {
                 "a separator is required between :{key} and its value (there is no '=' form)"
             )));
         }
-        let value = self.value()?;
+        let value = self.value(depth)?;
         // "Never true, false, yes, no": they lex as symbols, so the ban is a
         // value-level rule (DEED-GRAMMAR-SPEC; deed_lint does the same).
         if matches!(&value, Value::Symbol(s) if ["true", "false", "yes", "no"].contains(&s.as_str()))
@@ -512,14 +535,15 @@ impl Parser<'_> {
         })
     }
 
-    fn value(&mut self) -> Result<Value, DeedError> {
+    /// A value at level `depth`; a list in it opens one level deeper.
+    fn value(&mut self, depth: usize) -> Result<Value, DeedError> {
         let v = match self.peek() {
             Some(b'"') => Value::Str(self.string()?),
             Some(b'#') => self.hash_form()?,
             Some(b'\'') => {
                 self.i += 1;
                 match self.peek() {
-                    Some(b'(') => Value::Quoted(Box::new(self.list()?)),
+                    Some(b'(') => Value::Quoted(Box::new(self.list(self.deeper(depth)?)?)),
                     Some(b) if is_symbol_start(b) => {
                         Value::Quoted(Box::new(Value::Symbol(self.symbol()?)))
                     }
@@ -528,7 +552,7 @@ impl Parser<'_> {
                     )),
                 }
             }
-            Some(b'(') => self.list()?,
+            Some(b'(') => self.list(self.deeper(depth)?)?,
             Some(b'-') | Some(b'0'..=b'9') => {
                 let start = self.i;
                 if self.peek() == Some(b'-') {
@@ -551,8 +575,9 @@ impl Parser<'_> {
         Ok(v)
     }
 
-    /// `list = "(" [token-sep] [value *(token-sep value)] [token-sep] ")"`.
-    fn list(&mut self) -> Result<Value, DeedError> {
+    /// `list = "(" [token-sep] [value *(token-sep value)] [token-sep] ")"`,
+    /// at level `depth` (the caller has checked it against [`MAX_NESTING`]).
+    fn list(&mut self, depth: usize) -> Result<Value, DeedError> {
         self.i += 1; // '('
         let mut out = Vec::new();
         loop {
@@ -571,7 +596,7 @@ impl Parser<'_> {
                         self.err("a list holds values only; a :keyword cannot appear in one")
                     )
                 }
-                Some(_) => out.push(self.value()?),
+                Some(_) => out.push(self.value(depth)?),
             }
         }
     }
@@ -737,15 +762,117 @@ mod tests {
             "(praxis-deed :schema-version \"1\" :b true)",
             "(praxis-deed :schema-version \"1\" (c :b no))",
             "(praxis-deed :schema-version \"1\" :u #uuid\"0889B37B-defb-831f-973c-e119500db00e\")",
-            "(praxis-deed :schema-version \"1\" :u #uuid\"0889b37b-defb-431f-973c-e119500db00e\")",
             "(praxis-deed :schema-version \"1\" :u #u8\"nodomain\")",
             "(praxis-deed :schema-version \"1\" :beholding-chora #u5\"x\")",
-            "(praxis-deed :schema-version \"1\" :repo-uuid #uuid\"0889b37b-defb-531f-973c-e119500db00e\")",
             "(praxis-deed :schema-version \"1\" :l (:k 1))",
             "(praxis-deed :schema-version \"1\") ; no line-end after this comment",
         ] {
             bad(body);
         }
+        // A version 4 id is not uuid-hex, and a version 5 id is not allowed
+        // in an identity field.
+        bad(&format!(
+            "(praxis-deed :schema-version \"1\" :u #uuid\"{}\")",
+            with_version('4')
+        ));
+        bad(&format!(
+            "(praxis-deed :schema-version \"1\" :repo-uuid #uuid\"{}\")",
+            with_version('5')
+        ));
+    }
+
+    /// A version 8 id for the fixtures.
+    const V8_ID: &str = "0889b37b-defb-831f-973c-e119500db00e";
+
+    /// [`V8_ID`] with its version nibble replaced. The ids the reader must
+    /// refuse are built at run time so that no non-v8 UUID literal sits in
+    /// the source, which the estate UUID gate (ADR-008) scans.
+    fn with_version(v: char) -> String {
+        let mut id = V8_ID.to_string();
+        id.replace_range(14..15, &v.to_string());
+        id
+    }
+
+    /// `n` nested clauses `(c (c …`, wrapped onto lines well under the
+    /// 998-octet limit, inside a praxis deed. Unclosed: the reader must stop
+    /// at the nesting limit long before the end of input.
+    fn nested_clauses(n: usize) -> String {
+        let opens: Vec<&str> = vec!["(c"; n];
+        let lines: Vec<String> = opens.chunks(200).map(|c| c.join(" ")).collect();
+        format!("(praxis-deed :schema-version \"1\"\n{}", lines.join("\n"))
+    }
+
+    /// A field whose value is `n` nested lists `(((…`, wrapped like
+    /// [`nested_clauses`].
+    fn nested_lists(n: usize) -> String {
+        let lines: Vec<String> = (0..n.div_ceil(500))
+            .map(|k| "(".repeat(500.min(n - k * 500)))
+            .collect();
+        format!(
+            "(praxis-deed :schema-version \"1\" :l\n{}",
+            lines.join("\n")
+        )
+    }
+
+    #[test]
+    fn nesting_up_to_the_limit_parses() {
+        let closed = |n: usize| format!("{}{}\n", nested_clauses(n), ")".repeat(n + 1));
+        assert!(parse(&format!("{H}{}", closed(MAX_NESTING)), None).is_ok());
+        let e = parse(&format!("{H}{}", closed(MAX_NESTING + 1)), None).unwrap_err();
+        assert!(e.message.contains("nest deeper"), "{e}");
+
+        let closed = |n: usize| format!("{}{}\n", nested_lists(n), ")".repeat(n + 1));
+        assert!(parse(&format!("{H}{}", closed(MAX_NESTING)), None).is_ok());
+        let e = parse(&format!("{H}{}", closed(MAX_NESTING + 1)), None).unwrap_err();
+        assert!(e.message.contains("nest deeper"), "{e}");
+    }
+
+    #[test]
+    fn deeply_nested_clauses_are_an_error_not_a_stack_overflow() {
+        let e = bad(&nested_clauses(100_000));
+        assert!(e.message.contains("nest deeper"), "{e}");
+        // Header on line 1, form head on line 2, the clauses from line 3.
+        assert_eq!(e.line, 3);
+    }
+
+    #[test]
+    fn deeply_nested_lists_are_an_error_not_a_stack_overflow() {
+        let e = bad(&nested_lists(100_000));
+        assert!(e.message.contains("nest deeper"), "{e}");
+        assert_eq!(e.line, 3);
+        // A quoted list counts the same.
+        let quoted = nested_lists(100_000).replacen(":l\n", ":l\n'", 1);
+        assert!(bad(&quoted).message.contains("nest deeper"));
+    }
+
+    #[test]
+    fn clauses_and_lists_share_one_nesting_limit() {
+        // Half the limit in clauses plus half in lists fits; one more list
+        // level does not.
+        let half = MAX_NESTING / 2;
+        let deed = |lists: usize| {
+            format!(
+                "{}\n:l {}{}{}\n",
+                nested_clauses(half),
+                "(".repeat(lists),
+                ")".repeat(lists),
+                ")".repeat(half + 1)
+            )
+        };
+        assert!(parse(&format!("{H}{}", deed(MAX_NESTING - half)), None).is_ok());
+        let e = parse(&format!("{H}{}", deed(MAX_NESTING - half + 1)), None).unwrap_err();
+        assert!(e.message.contains("nest deeper"), "{e}");
+        assert_eq!(e.line, 4);
+    }
+
+    #[test]
+    fn the_nesting_error_names_the_line_of_the_offending_paren() {
+        let one_per_line = format!(
+            "(praxis-deed :schema-version \"1\"\n{}",
+            ["(c"; MAX_NESTING + 1].join("\n")
+        );
+        // Header line 1, head line 2, clause k (1-based) on line k + 2.
+        assert_eq!(bad(&one_per_line).line, MAX_NESTING + 3);
     }
 
     #[test]
