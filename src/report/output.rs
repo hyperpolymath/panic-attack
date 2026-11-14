@@ -282,6 +282,45 @@ mod tests {
     }
 
     #[test]
+    fn nickel_strings_stay_literal() {
+        // `%{…}` is interpolation in Nickel and JSON quoting leaves it alone;
+        // JSON's `\b`, `\f` and `\u001f` are not Nickel escapes at all.
+        let tricky = [
+            "/tmp/%{true}/x",
+            "100% sure",
+            "a\u{8}b\u{c}c\u{1f}d",
+            "tab\tline\nret\r\"q\" back\\slash",
+            "plain ünïcode ✓",
+        ];
+        assert_eq!(nickel_escape_string("/tmp/%{true}"), "\"/tmp/\\%{true}\"");
+        assert_eq!(nickel_escape_string("a\u{1f}"), "\"a\\u{1f}\"");
+        assert!(!nickel_escape_string("a\u{8}").contains("\\b"));
+
+        let dir = TempDir::new().expect("tempdir");
+        let file = dir.path().join("strings.ncl");
+        let body = tricky
+            .iter()
+            .map(|s| nickel_escape_string(s))
+            .collect::<Vec<_>>()
+            .join(", ");
+        fs::write(&file, format!("[{body}]")).expect("write");
+        if let Ok(out) = std::process::Command::new("nickel")
+            .args(["export", "--format", "json"])
+            .arg(&file)
+            .output()
+        {
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let back: Vec<String> =
+                serde_json::from_slice(&out.stdout).expect("nickel export emits a JSON array");
+            assert_eq!(back, tricky);
+        }
+    }
+
+    #[test]
     fn non_finite_numbers_become_null() {
         assert_eq!(nickel_number(f64::NAN, Some(1)), "null");
         assert_eq!(nickel_number(f64::INFINITY, None), "null");

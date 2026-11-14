@@ -7,7 +7,6 @@ use crate::types::*;
 use anyhow::Result;
 use clap::ValueEnum;
 use colored::*;
-use serde_json;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -496,8 +495,31 @@ impl ReportFormatter {
     }
 }
 
+/// A Nickel string literal that evaluates to exactly `value`.
+///
+/// JSON quoting is not Nickel quoting:
+/// - Nickel interpolates `%{…}` inside a string, so every `%` is written `\%`
+///   (which Nickel reads back as `%`), and a path such as `/tmp/%{true}` stays
+///   literal;
+/// - Nickel has no `\b`, `\f` or `\uXXXX` escapes, so other control
+///   characters are written `\u{XX}`.
 pub(crate) fn nickel_escape_string(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| format!("\"{}\"", value))
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '%' => out.push_str("\\%"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{{{:x}}}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 struct AccordionSection {
