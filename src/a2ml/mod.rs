@@ -150,7 +150,11 @@ pub const MANIFEST_CANDIDATES: &[&str] = &["0-AI-MANIFEST.deed", "0-AI-MANIFEST.
 #[derive(Clone, Debug)]
 pub struct Manifest {
     root_name: String,
+    /// The legacy A2ML tree; empty for a deed.
     entries: Vec<Sexpr>,
+    /// The deed's members, kept typed so `to_nickel` renders lists, booleans,
+    /// integers and clauses as what they are; empty for legacy A2ML.
+    deed_items: Vec<crate::deed::Item>,
     /// The file the manifest was read from; `None` for the built-in defaults.
     path: Option<PathBuf>,
     /// True when read from a `0-AI-MANIFEST.deed`.
@@ -162,6 +166,7 @@ impl Default for Manifest {
         Self {
             root_name: "manifest".to_string(),
             entries: Vec::new(),
+            deed_items: Vec::new(),
             path: None,
             from_deed: false,
         }
@@ -220,8 +225,8 @@ impl Manifest {
         self.from_deed
     }
 
-    /// Parse a deed manifest. The head becomes the root name and each field
-    /// or clause one entry, so `to_nickel` renders the deed as it stands.
+    /// Parse a deed manifest. The head becomes the root name and the members
+    /// are kept as parsed, so `to_nickel` renders the deed as it stands.
     fn parse_deed(raw: &str, path: &Path) -> Result<Self> {
         let deed = crate::deed::parse(raw, Some(path))
             .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
@@ -238,7 +243,8 @@ impl Manifest {
         }
         Ok(Self {
             root_name: deed.head.clone(),
-            entries: deed.items.iter().map(deed_item_to_sexpr).collect(),
+            entries: Vec::new(),
+            deed_items: deed.items,
             path: None,
             from_deed: true,
         })
@@ -392,8 +398,11 @@ impl Manifest {
     }
 
     pub fn to_nickel(&self) -> String {
-        let entries = gather_entries(&self.entries);
-        let body = record_to_nickel(&entries);
+        let body = if self.from_deed {
+            deed_items_to_nickel(&self.deed_items)
+        } else {
+            record_to_nickel(&gather_entries(&self.entries))
+        };
         format!("let {} = {};\n{}", self.root_name, body, self.root_name)
     }
 
@@ -865,39 +874,73 @@ fn check_pointer_profile(items: &[crate::deed::Item]) -> Result<()> {
     Ok(())
 }
 
-/// A deed member as a manifest entry: a field `:key value` becomes
-/// `(key value)` (a list value contributes its elements), a clause
-/// `(name …)` becomes `(name …)` with its members converted in turn.
-fn deed_item_to_sexpr(item: &crate::deed::Item) -> Sexpr {
-    match item {
-        crate::deed::Item::Field { key, value, .. } => {
-            let mut list = vec![Sexpr::Atom(key.clone())];
-            match value {
-                crate::deed::Value::List(values) => {
-                    list.extend(values.iter().map(deed_value_to_sexpr));
-                }
-                other => list.push(deed_value_to_sexpr(other)),
-            }
-            Sexpr::List(list)
+/// Deed members as a Nickel record: a field `:key value` becomes
+/// `key = value` and a clause `(name …)` becomes `name = { … }`, however
+/// many members it has. A name given more than once (repeated clauses, such
+/// as several `(bot …)`) becomes an array of its values, in order.
+fn deed_items_to_nickel(items: &[crate::deed::Item]) -> String {
+    use crate::deed::Item;
+    let mut grouped: Vec<(&str, Vec<String>)> = Vec::new();
+    for item in items {
+        let (key, rendered) = match item {
+            Item::Field { key, value, .. } => (key.as_str(), deed_value_to_nickel(value)),
+            Item::Clause { name, items, .. } => (name.as_str(), deed_items_to_nickel(items)),
+        };
+        match grouped.iter_mut().find(|(existing, _)| *existing == key) {
+            Some((_, values)) => values.push(rendered),
+            None => grouped.push((key, vec![rendered])),
         }
-        crate::deed::Item::Clause { name, items, .. } => {
-            let mut list = vec![Sexpr::Atom(name.clone())];
-            list.extend(items.iter().map(deed_item_to_sexpr));
-            Sexpr::List(list)
-        }
+    }
+    nickel_record(
+        grouped
+            .into_iter()
+            .map(|(key, mut values)| {
+                let value = if values.len() == 1 {
+                    values.remove(0)
+                } else {
+                    format!("[{}]", values.join(", "))
+                };
+                format!("{} = {}", key_to_nickel(key), value)
+            })
+            .collect(),
+    )
+}
+
+/// A deed value as Nickel, keeping its type: a list is always an array (an
+/// empty one included), `#t`/`#f` are booleans, an integer is a number, and
+/// strings, symbols and ids are strings.
+fn deed_value_to_nickel(value: &crate::deed::Value) -> String {
+    use crate::deed::Value;
+    match value {
+        Value::Str(s) | Value::Uuid(s) | Value::Symbol(s) => nickel_escape_string(s),
+        Value::Uuid8(s) => nickel_escape_string(&format!("#u8:{s}")),
+        Value::Uuid5(s) => nickel_escape_string(&format!("#u5:{s}")),
+        Value::Integer(s) => nickel_integer(s),
+        Value::Boolean(b) => b.to_string(),
+        Value::Quoted(inner) => deed_value_to_nickel(inner),
+        Value::List(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(deed_value_to_nickel)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 
-fn deed_value_to_sexpr(value: &crate::deed::Value) -> Sexpr {
-    use crate::deed::Value;
-    match value {
-        Value::Str(s) | Value::Uuid(s) => Sexpr::String(s.clone()),
-        Value::Uuid8(s) => Sexpr::String(format!("#u8:{s}")),
-        Value::Uuid5(s) => Sexpr::String(format!("#u5:{s}")),
-        Value::Symbol(s) | Value::Integer(s) => Sexpr::Atom(s.clone()),
-        Value::Boolean(b) => Sexpr::Atom(if *b { "#t" } else { "#f" }.to_string()),
-        Value::Quoted(inner) => deed_value_to_sexpr(inner),
-        Value::List(values) => Sexpr::List(values.iter().map(deed_value_to_sexpr).collect()),
+/// A deed integer (`-?[0-9]+`, kept as written) as a Nickel number literal:
+/// leading zeros are dropped, since a deed integer is never octal.
+fn nickel_integer(written: &str) -> String {
+    let (sign, digits) = match written.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", written),
+    };
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        "0".to_string()
+    } else {
+        format!("{sign}{digits}")
     }
 }
 
@@ -936,6 +979,14 @@ fn record_to_nickel(entries: &[(String, Vec<Vec<Sexpr>>)]) -> String {
             format!("{} = {}", key_to_nickel(key), value)
         })
         .collect();
+    nickel_record(lines)
+}
+
+/// Field lines (`key = value`) as a Nickel record body.
+fn nickel_record(lines: Vec<String>) -> String {
+    if lines.is_empty() {
+        return "{}".to_string();
+    }
     format!("{{\n    {}\n}}", lines.join(";\n    "))
 }
 
@@ -1590,6 +1641,58 @@ mod tests {
             Manifest::load(&path).is_err(),
             "A2ML text in a .deed must be refused"
         );
+    }
+
+    /// `DEED_MANIFEST` with `clause` added before its front doors, loaded
+    /// and exported to Nickel.
+    fn deed_nickel_with(clause: &str) -> String {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("example_chora.deed");
+        let text = DEED_MANIFEST.replace("(front-doors", &format!("{clause}\n  (front-doors"));
+        fs::write(&path, text).expect("write");
+        Manifest::load(&path).expect("deed should load").to_nickel()
+    }
+
+    #[test]
+    fn deed_lists_stay_arrays_in_nickel() {
+        let nickel = deed_nickel_with("(clade :none () :one (\"panic-attacker\") :secondary (rm))");
+        assert!(nickel.contains("none = []"), "{nickel}");
+        assert!(nickel.contains("one = [\"panic-attacker\"]"), "{nickel}");
+        assert!(nickel.contains("secondary = [\"rm\"]"), "{nickel}");
+    }
+
+    #[test]
+    fn deed_booleans_render_as_nickel_booleans() {
+        let nickel = deed_nickel_with("(permissions :source #t :tests #f)");
+        assert!(nickel.contains("source = true"), "{nickel}");
+        assert!(nickel.contains("tests = false"), "{nickel}");
+        assert!(!nickel.contains("#t") && !nickel.contains("#f"), "{nickel}");
+    }
+
+    #[test]
+    fn deed_single_child_clause_stays_a_record() {
+        let one = deed_nickel_with("(bot-directives (bot :name panicbot :mode full))");
+        assert!(
+            one.contains("\"bot-directives\" = {\n    bot = {\n    name = \"panicbot\""),
+            "{one}"
+        );
+        assert!(!one.contains("[\"bot\""), "{one}");
+        // Repeated clauses are an array of records.
+        let two = deed_nickel_with("(bot-directives (bot :name panicbot) (bot :name rhodibot))");
+        assert!(
+            two.contains("bot = [{\n    name = \"panicbot\"\n}, {\n    name = \"rhodibot\"\n}]"),
+            "{two}"
+        );
+    }
+
+    #[test]
+    fn deed_integers_render_as_nickel_numbers() {
+        let nickel = deed_nickel_with("(limits :retries 3 :offset -2 :padded 007 :zero -0)");
+        assert!(nickel.contains("retries = 3"), "{nickel}");
+        assert!(nickel.contains("offset = -2"), "{nickel}");
+        assert!(nickel.contains("padded = 7"), "{nickel}");
+        assert!(nickel.contains("zero = 0"), "{nickel}");
+        assert!(!nickel.contains("\"3\""), "{nickel}");
     }
 
     #[test]
