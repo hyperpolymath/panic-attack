@@ -1539,7 +1539,8 @@ fn main() -> Result<()> {
 }
 
 /// Parse process arguments and execute the selected command, including its output
-/// and requested persistence. Default manifest settings are used if loading fails.
+/// and requested persistence. Default manifest settings are used when no manifest
+/// exists (silently) or when one exists but does not load (with a warning).
 /// Argument parsing exits the process for help or invalid CLI syntax.
 /// For assail with `--fail-on-incomplete`, exits with status 2 when coverage is
 /// not `complete`, after report output and any requested attestation are written.
@@ -1549,7 +1550,10 @@ fn main() -> Result<()> {
 /// operation errors that are not handled by a command-specific fallback.
 fn run_main() -> Result<()> {
     let cli = Cli::parse();
-    let manifest = match Manifest::load_default() {
+    // A missing manifest is the normal case for most directories: use the
+    // defaults without a word. Warn only when a manifest exists but cannot be
+    // read or parsed.
+    let manifest = match Manifest::load_if_exists(&Manifest::default_path()) {
         Ok(manifest) => manifest,
         Err(err) => {
             eprintln!("warning: failed to read AI manifest: {}", err);
