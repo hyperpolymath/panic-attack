@@ -68,6 +68,7 @@ src/
 │   ├── classify.rs      # Three-way classification: Mitigable/Unmitigable/Informational
 │   └── registry.rs      # Mitigation lifecycle registry (JSON persistence)
 ├── a2ml/                # AI manifest protocol (TOML-like format support, 0-AI-MANIFEST.a2ml priority lookup)
+├── deed.rs              # Minimal DEED reader (standards deed.abnf v2.0.0); used by the classification registry
 ├── panll/               # PanLL event-chain export
 ├── storage/             # Filesystem + VerisimDB persistence
 ├── i18n/                # Multi-language support (ISO 639-1, 10 languages)
@@ -193,24 +194,55 @@ All five detection categories shipped in v2.5.0 (2026-04-12):
 - **InputBoundary (PA024)**: Unchecked CBOR/MessagePack (Rust), JSON.parse without try-catch (JS/Julia)
 - **MutationGap (PA025)**: No cargo-mutants config (Rust), all-type-only assertions (Julia), no property testing (Elixir)
 
-## User-Classification Registry (2026-04-18)
+## User-Classification Registry (2026-04-18; deed-first 2026-11-14)
 
 Optional project-local classification file that flips audited findings
-to `suppressed = true` after the kanren structural-suppression pass:
+to `suppressed = true` after the kanren structural-suppression pass.
+Code: `src/assail/classifications.rs` (registry) and `src/deed.rs`
+(a minimal reader of the standards deed grammar, `deed.abnf` v2.0.0).
 
-- Path: `<project>/audits/assail-classifications.a2ml` (preferred) or
-  `<project>/.panic-attack-classifications.a2ml` (fallback).
-- Format (A2ML S-expression):
+- Read order, new input first:
+  1. `<project>/audits/assail-classifications_praxis.deed` — a DEED
+     `praxis-deed`. When it exists it *is* the registry; the A2ML files
+     below are not read at all.
+  2. `<project>/audits/assail-classifications.a2ml` (legacy fallback).
+  3. `<project>/.panic-attack-classifications.a2ml` (legacy fallback).
+- The deed name ends `_praxis.deed` because the deed grammar dispatches the
+  head on the file name: a bare `assail-classifications.deed` matches no
+  dispatch pattern and is not a conforming deed.
+- Deed form (`bun <standards>/1-formats/deed/tools/deed_lint.js FILE` passes):
   ```
-  (assail-classifications
+  ;; SPDX-License-Identifier: MPL-2.0
+  (praxis-deed
+    :schema-version "1.0.0"
+    :canonical-name "<repo>-assail-classifications"
+    :beholding-chora #uuid"0889b37b-defb-831f-973c-e119500db00e"  ; estate chora
+    :profile assail-classifications
     (classification
-      (file "crates/foo/src/bar.rs")
-      (category "UnsafeCode")
-      (audit "audits/audit-ffi-unsafe.md §1")
-      (rationale "one-line summary")))
+      :file "crates/foo/src/bar.rs"
+      :category UnsafeCode            ; a symbol: a WeakPointCategory variant
+      :audit "audits/audit-ffi-unsafe.md §1"
+      :rationale "one-line summary"))
   ```
-- Public API: `UserClassification`, `load_user_classifications(root)`,
-  `apply_user_classifications(&mut report, root)` in `src/assail/mod.rs`.
+  Top level: `:schema-version`, `:canonical-name`, `:beholding-chora` and
+  `:profile assail-classifications` exactly once each, then any number of
+  `(classification …)` clauses. Per clause: `:file` and `:category` exactly
+  once, `:audit` and `:rationale` at most once, nothing else.
+- **A malformed deed is an error, never a silent pass.** Any grammar or
+  profile violation (unknown field, string category, unknown category,
+  missing `:file`, wrong head, trailing content …) makes
+  `load_user_classifications` / `apply_user_classifications` return `Err`,
+  and `analyze()` / `analyze_verbose()` fail with the file and line. A
+  malformed deed never falls back to the A2ML files.
+- The legacy A2ML reader is unchanged and lenient: an entry without a quoted
+  `file` and `category` is skipped. It stays only until the repositories
+  that still carry an A2ML registry have moved to the deed. Never create a
+  new `.a2ml` registry; write the deed.
+- Public API: `UserClassification`, `load_user_classifications(root) ->
+  Result<Vec<_>>`, `apply_user_classifications(&mut report, root) ->
+  Result<()>`, `parse_classification_deed(text, path)`,
+  `USER_CLASSIFICATIONS_DEED_PATH` in `src/assail/` (re-exported from
+  `assail`).
 - Called automatically by `analyze()` / `analyze_verbose()` after
   `apply_suppression`.
 
@@ -221,9 +253,9 @@ suppressions non-gameable by single-side edits while still letting
 repositories record honest audits of legitimate-FFI and other
 genuinely-sound residuals.
 
-**Reference implementation**: `hyperpolymath/007`
-`audits/assail-classifications.a2ml` (cross-references
-`audits/audit-ffi-unsafe.md §1` for `zig_bridge.rs` UnsafeCode).
+**Worked example**: `hyperpolymath/hypatia`
+`audits/assail-classifications_praxis.deed` (translated entry for entry
+from its former A2ML registry).
 
 ## Integration Points
 

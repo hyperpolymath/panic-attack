@@ -2,6 +2,36 @@
 
 === [Unreleased]
 
+==== Added — the classification registry reads a deed first
+
+* `+load_user_classifications+` now reads
+`+<project_root>/audits/assail-classifications_praxis.deed+` first: a DEED
+`+praxis-deed+` with `+:profile assail-classifications+` and one
+`+(classification :file "…" :category <Symbol> :audit "…" :rationale "…")+`
+clause per audited finding. When the deed exists, the legacy
+`+audits/assail-classifications.a2ml+` and
+`+.panic-attack-classifications.a2ml+` are not read; otherwise they are, with
+their reader unchanged. Suppression semantics are identical: a finding is
+suppressed when its location and category match an entry. The name ends
+`+_praxis.deed+` because the standards deed grammar (`+deed.abnf+` v2.0.0)
+dispatches a deed's head on its file name, and a bare
+`+assail-classifications.deed+` matches no pattern.
+* New module `+panic_attack::deed+`: a minimal reader of the deed grammar
+(header, form, fields, clauses, every value form, filename dispatch, the
+`+:schema-version+` and identity-field side conditions), with line-numbered
+errors.
+
+==== Changed — a malformed deed registry is an error
+
+* `+load_user_classifications+` returns `+Result<Vec<UserClassification>>+`
+and `+apply_user_classifications+` returns `+Result<()>+` (both were
+infallible). A deed registry that breaks the grammar or the profile (unknown
+field or clause, a string `+:category+`, an unknown category, a missing
+`+:file+`, the wrong head, trailing content, over 4 MiB, not UTF-8) is an
+`+Err+` naming the file and line, and `+analyze()+` / `+analyze_verbose()+`
+fail with it instead of reading it as an empty registry or falling back to
+the A2ML files. Library callers must handle the `+Result+`.
+
 === [2.6.0] - 2026-11-14
 
 Release of the work merged on `+main+` since 2.5.5 (143 commits), including
