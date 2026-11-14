@@ -209,7 +209,8 @@ fn check_watcher(label: &'static str, env_key: &str) -> Diagnostic {
 ///   3. WeakPointCategory and Severity serialise in PascalCase (no serde rename_all)
 ///
 /// Failed JSON checks, including serialisation errors, yield an error diagnostic;
-/// a repo deed that does not parse yields a warning.
+/// a repo deed that does not parse, a directory with no repo deed, or one
+/// that cannot be listed yields a warning.
 fn check_panicbot_readiness() -> Diagnostic {
     let directives = panicbot_directives(Path::new("."));
 
@@ -261,16 +262,22 @@ fn check_panicbot_readiness() -> Diagnostic {
         );
     }
     match directives {
-        Ok(Some(deed)) => Diagnostic::ok(
+        Ok(PanicbotDirectives::Declared(deed)) => Diagnostic::ok(
             "panicbot integration",
             format!(
                 "directives declared in {} (bot-directives), JSON contract verified",
                 deed.display()
             ),
         ),
-        Ok(None) => Diagnostic::ok(
+        Ok(PanicbotDirectives::NotDeclared) => Diagnostic::ok(
             "panicbot integration",
             "no panicbot directives declared (panicbot runs the full suite), JSON contract verified"
+                .to_string(),
+        ),
+        Ok(PanicbotDirectives::NoRepoDeed) => Diagnostic::warning(
+            "panicbot integration",
+            "JSON contract OK but no <repo>_chora.deed found here, so whether panicbot \
+             directives are declared is unknown"
                 .to_string(),
         ),
         Err(err) => Diagnostic::warning(
@@ -280,15 +287,31 @@ fn check_panicbot_readiness() -> Diagnostic {
     }
 }
 
-/// The repo deed in `root` that declares `(bot-directives (bot :name
-/// panicbot …))`, if any. `Err` when a `*_chora.deed` there does not parse.
-fn panicbot_directives(root: &Path) -> Result<Option<std::path::PathBuf>> {
+/// What the repo deeds in a directory say about panicbot directives.
+#[derive(Debug, PartialEq, Eq)]
+enum PanicbotDirectives {
+    /// No `*_chora.deed` is there, so nothing can be said either way.
+    NoRepoDeed,
+    /// The repo deed parses and declares no panicbot directives.
+    NotDeclared,
+    /// This repo deed declares `(bot-directives (bot :name panicbot …))`.
+    Declared(std::path::PathBuf),
+}
+
+/// What the repo deeds in `root` say about panicbot directives. `Err` when
+/// the directory or one of its entries cannot be read, or when a
+/// `*_chora.deed` there does not parse: none of those shows that no
+/// directives are declared.
+fn panicbot_directives(root: &Path) -> Result<PanicbotDirectives> {
     use panic_attack::deed::{Item, Value};
-    let Ok(entries) = fs::read_dir(root) else {
-        return Ok(None);
-    };
-    let mut deeds: Vec<_> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
+    let listing = || format!("listing {}", root.display());
+    let paths = fs::read_dir(root)
+        .with_context(listing)?
+        .map(|entry| entry.map(|e| e.path()))
+        .collect::<std::io::Result<Vec<_>>>()
+        .with_context(listing)?;
+    let mut deeds: Vec<_> = paths
+        .into_iter()
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
@@ -296,6 +319,7 @@ fn panicbot_directives(root: &Path) -> Result<Option<std::path::PathBuf>> {
         })
         .collect();
     deeds.sort();
+    let any_deed = !deeds.is_empty();
     let names_panicbot = |items: &[Item]| {
         items.iter().any(|item| {
             matches!(item, Item::Field { key, value: Value::Symbol(name), .. }
@@ -317,10 +341,14 @@ fn panicbot_directives(root: &Path) -> Result<Option<std::path::PathBuf>> {
             _ => false,
         });
         if declared {
-            return Ok(Some(path));
+            return Ok(PanicbotDirectives::Declared(path));
         }
     }
-    Ok(None)
+    Ok(if any_deed {
+        PanicbotDirectives::NotDeclared
+    } else {
+        PanicbotDirectives::NoRepoDeed
+    })
 }
 
 /// Check attestation readiness: whether signing is available and if a
@@ -355,4 +383,48 @@ fn check_attestation_health() -> Diagnostic {
 enum Severity {
     Warn,
     Error,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn repo_deed(body: &str) -> String {
+        format!(
+            ";; SPDX-License-Identifier: MPL-2.0\n(repo-deed\n  :schema-version \"1.0.0\"{body})\n"
+        )
+    }
+
+    #[test]
+    fn panicbot_directives_tells_a_missing_repo_deed_from_no_directives() {
+        let dir = TempDir::new().expect("tempdir");
+        assert_eq!(
+            panicbot_directives(dir.path()).expect("empty directory lists"),
+            PanicbotDirectives::NoRepoDeed
+        );
+        let deed = dir.path().join("example_chora.deed");
+        fs::write(&deed, repo_deed("")).expect("write");
+        assert_eq!(
+            panicbot_directives(dir.path()).expect("deed parses"),
+            PanicbotDirectives::NotDeclared
+        );
+        fs::write(
+            &deed,
+            repo_deed("\n  (bot-directives (bot :name panicbot))"),
+        )
+        .expect("write");
+        assert_eq!(
+            panicbot_directives(dir.path()).expect("deed parses"),
+            PanicbotDirectives::Declared(deed)
+        );
+    }
+
+    #[test]
+    fn panicbot_directives_propagates_a_listing_error() {
+        let dir = TempDir::new().expect("tempdir");
+        let missing = dir.path().join("no-such-directory");
+        let err = panicbot_directives(&missing).expect_err("listing must fail");
+        assert!(err.to_string().contains("listing"), "{err:#}");
+    }
 }
