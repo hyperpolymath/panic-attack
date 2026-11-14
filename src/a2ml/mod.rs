@@ -177,12 +177,14 @@ impl Default for Manifest {
 impl Manifest {
     /// The manifest path in the current directory: the first of
     /// [`MANIFEST_CANDIDATES`] that exists, else the deed name (so a missing
-    /// manifest is reported under the name it should have).
+    /// manifest is reported under the name it should have). A candidate whose
+    /// existence cannot be determined (a symlink loop, a permission error) is
+    /// chosen too, so that loading it reports the error instead of skipping it.
     pub fn default_path() -> PathBuf {
         MANIFEST_CANDIDATES
             .iter()
             .map(PathBuf::from)
-            .find(|path| path.exists())
+            .find(|path| !matches!(path.try_exists(), Ok(false)))
             .unwrap_or_else(|| PathBuf::from(MANIFEST_CANDIDATES[0]))
     }
 
@@ -190,14 +192,20 @@ impl Manifest {
         Self::load(&Self::default_path())
     }
 
-    /// Load `path` if it exists, else the built-in defaults. A file that
-    /// exists but does not load (a malformed or misheaded deed, an unreadable
-    /// file) is an error, never the defaults.
+    /// Load `path` if it exists, else the built-in defaults. Only a path that
+    /// is definitely absent gives the defaults. A file that exists but does not
+    /// load (a malformed or misheaded deed, an unreadable file), or a path whose
+    /// existence cannot be determined (a symlink loop, a permission error), is
+    /// an error, never the defaults.
     pub fn load_if_exists(path: &Path) -> Result<Self> {
-        if path.exists() {
-            Self::load(path)
-        } else {
-            Ok(Self::default())
+        match path.try_exists() {
+            Ok(true) => Self::load(path),
+            Ok(false) => Ok(Self::default()),
+            Err(e) => Err(anyhow!(
+                "{}: cannot tell whether it exists: {}",
+                path.display(),
+                e
+            )),
         }
     }
 
@@ -1801,6 +1809,22 @@ mod tests {
         assert!(
             Manifest::load_if_exists(&path).is_err(),
             "a malformed manifest that exists must be an error, not the defaults"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_if_exists_reports_a_symlink_loop_instead_of_defaulting() {
+        // Path::exists() turns the ELOOP of a self-referential link into
+        // `false`; the loader must not treat that as an absent manifest.
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.deed");
+        std::os::unix::fs::symlink(&path, &path).expect("self-referential symlink");
+        assert!(!path.exists(), "precondition: exists() hides the loop");
+        let err = Manifest::load_if_exists(&path).expect_err("a symlink loop is an error");
+        assert!(
+            err.to_string().contains("cannot tell whether it exists"),
+            "{err}"
         );
     }
 
