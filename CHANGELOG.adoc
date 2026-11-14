@@ -2,6 +2,13 @@
 
 === [Unreleased]
 
+=== [2.6.0] - 2026-11-14
+
+Release of the work merged on `+main+` since 2.5.5 (143 commits), including
+PR #292 and PR #293. Contract change: `+panic-attack adjudicate+` now exits 1
+for a complete `+fail+` (previously 0) and 2 for incomplete input; see the
+first entry below.
+
 ==== Fixed — adjudicate no longer passes when it processed nothing
 
 * `+panic-attack adjudicate+` printed `+verdict: pass (processed 0, failed 1)+` and
