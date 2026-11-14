@@ -147,4 +147,16 @@
     :note "T0 syntax heuristics are labelled T0. A finding is never dressed up as a parser or dataflow proof; see docs/RECON-AND-EVIDENCE.adoc")
   (obligation
     :name "no-self-suppression"
-    :note "suppressions live in a separate registry file (audits/assail-classifications_praxis.deed) so one hand cannot both add a defect and hide it"))
+    :note "suppressions live in a separate registry file (audits/assail-classifications_praxis.deed) so one hand cannot both add a defect and hide it")
+  ; Declared egress for secret-bearing jobs (standards ADR-009; Hypatia RE001).
+  ; trigger-boj POSTs to the BoJ server named by BOJ_SERVER_URL (a secret or a
+  ; variable), over https only; nothing holds it to that host at run time.
+  (egress
+    :policy "standards ADR-009"
+    (job
+      :workflow ".github/workflows/boj-build.yml"
+      :job "trigger-boj"
+      :secrets ("BOJ_SERVER_URL")
+      :endpoints ("secret:BOJ_SERVER_URL" "var:BOJ_SERVER_URL")
+      :enforcement none
+      :reason "optional build notification; the URL is configuration, held as a secret or a variable")))
