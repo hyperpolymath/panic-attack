@@ -232,6 +232,10 @@ impl Manifest {
                 deed.head
             ));
         }
+        if path.file_name().and_then(|n| n.to_str()) == Some(MANIFEST_CANDIDATES[0]) {
+            check_pointer_profile(&deed.items)
+                .map_err(|e| anyhow!("{}: not a pointer-only manifest: {}", path.display(), e))?;
+        }
         Ok(Self {
             root_name: deed.head.clone(),
             entries: deed.items.iter().map(deed_item_to_sexpr).collect(),
@@ -808,6 +812,57 @@ impl<'a> Parser<'a> {
             Ok(Sexpr::Atom(value))
         }
     }
+}
+
+/// The pointer-only profile of `0-AI-MANIFEST.deed` (A7 ruling Q15): exactly
+/// one `(front-doors …)` clause, giving `:machine` and `:human` once each as
+/// non-empty strings. Other members are not refused here: estate manifests
+/// are still being reduced to pointer-only form, and the deed linter is the
+/// gate for that.
+fn check_pointer_profile(items: &[crate::deed::Item]) -> Result<()> {
+    use crate::deed::{Item, Value};
+    let mut doors = items.iter().filter_map(|item| match item {
+        Item::Clause { name, items, line } if name == "front-doors" => Some((items, *line)),
+        _ => None,
+    });
+    let (doors_items, doors_line) = doors
+        .next()
+        .ok_or_else(|| anyhow!("missing the (front-doors :machine … :human …) clause"))?;
+    if let Some((_, line)) = doors.next() {
+        return Err(anyhow!("line {line}: (front-doors) given more than once"));
+    }
+    for key in ["machine", "human"] {
+        let mut values = doors_items.iter().filter_map(|item| match item {
+            Item::Field {
+                key: k,
+                value,
+                line,
+                ..
+            } if k == key => Some((value, *line)),
+            _ => None,
+        });
+        match (values.next(), values.next()) {
+            (None, _) => {
+                return Err(anyhow!(
+                    "line {doors_line}: (front-doors) is missing :{key}"
+                ))
+            }
+            (Some(_), Some((_, line))) => {
+                return Err(anyhow!("line {line}: :{key} given more than once"))
+            }
+            (Some((Value::Str(s), _)), None) if !s.trim().is_empty() => {}
+            (Some((Value::Str(_), line)), None) => {
+                return Err(anyhow!("line {line}: :{key} is empty"))
+            }
+            (Some((value, line)), None) => {
+                return Err(anyhow!(
+                    "line {line}: :{key} must be a string, found {}",
+                    value.kind()
+                ))
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A deed member as a manifest entry: a field `:key value` becomes
@@ -1535,6 +1590,55 @@ mod tests {
             Manifest::load(&path).is_err(),
             "A2ML text in a .deed must be refused"
         );
+    }
+
+    #[test]
+    fn pointer_manifest_requires_its_front_doors() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.deed");
+        let front_doors = "(front-doors :machine \"example_chora.deed\" :human \"README.adoc\")";
+        let refused = [
+            (
+                "no front-doors clause",
+                DEED_MANIFEST.replace(front_doors, ""),
+            ),
+            (
+                "no :machine",
+                DEED_MANIFEST.replace(front_doors, "(front-doors :human \"README.adoc\")"),
+            ),
+            (
+                "no :human",
+                DEED_MANIFEST.replace(front_doors, "(front-doors :machine \"x_chora.deed\")"),
+            ),
+            (
+                "symbol :machine",
+                DEED_MANIFEST.replace("\"example_chora.deed\"", "example"),
+            ),
+            (
+                "empty :human",
+                DEED_MANIFEST.replace("\"README.adoc\"", "\"\""),
+            ),
+            (
+                "two front-doors clauses",
+                DEED_MANIFEST.replace(front_doors, &format!("{front_doors}\n  {front_doors}")),
+            ),
+        ];
+        for (why, text) in refused {
+            fs::write(&path, text).expect("write");
+            assert!(Manifest::load(&path).is_err(), "{why} must be refused");
+        }
+        // A pointer manifest with an extra front door is still accepted.
+        fs::write(
+            &path,
+            DEED_MANIFEST.replace(":human", ":agent \".claude/CLAUDE.md\" :human"),
+        )
+        .expect("write");
+        Manifest::load(&path).expect("extra front door is accepted");
+        // The profile is the manifest's: a repo deed under another name is not
+        // held to it.
+        let other = dir.path().join("example_chora.deed");
+        fs::write(&other, DEED_MANIFEST.replace(front_doors, "")).expect("write");
+        Manifest::load(&other).expect("a chora deed needs no front-doors clause");
     }
 
     #[test]
