@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
-//! Minimal A2ML parser and Nickel exporter
+//! AI manifest reader, Nickel exporter and the A2ML report-bundle codec.
+//!
+//! The AI manifest is read deed first: `0-AI-MANIFEST.deed` (a pointer-only
+//! `repo-deed`, A7 ruling Q15) when it exists, else the legacy
+//! `0-AI-MANIFEST.a2ml` or `AI.a2ml`, which are read only as a fallback for
+//! repositories that have not moved to the deed. A2ML is retired: nothing
+//! here writes a manifest.
 
 use crate::report::formatter::nickel_escape_string;
 use crate::report::ReportOutputFormat;
@@ -135,10 +141,20 @@ impl ReportBundle {
     }
 }
 
+/// The AI manifest file names, in read order: the pointer-only deed first,
+/// then the legacy A2ML names, read only as a fallback for repositories that
+/// have not yet moved to the deed. A deed that exists is the manifest; the
+/// A2ML files beside it are not read.
+pub const MANIFEST_CANDIDATES: &[&str] = &["0-AI-MANIFEST.deed", "0-AI-MANIFEST.a2ml", "AI.a2ml"];
+
 #[derive(Clone, Debug)]
 pub struct Manifest {
     root_name: String,
     entries: Vec<Sexpr>,
+    /// The file the manifest was read from; `None` for the built-in defaults.
+    path: Option<PathBuf>,
+    /// True when read from a `0-AI-MANIFEST.deed`.
+    from_deed: bool,
 }
 
 impl Default for Manifest {
@@ -146,30 +162,74 @@ impl Default for Manifest {
         Self {
             root_name: "manifest".to_string(),
             entries: Vec::new(),
+            path: None,
+            from_deed: false,
         }
     }
 }
 
 impl Manifest {
-    pub fn load_default() -> Result<Self> {
-        // Try RSR standard name first, then legacy name
-        let candidates = [
-            PathBuf::from("0-AI-MANIFEST.a2ml"),
-            PathBuf::from("AI.a2ml"),
-        ];
-        for path in &candidates {
-            if path.exists() {
-                return Self::load(path);
-            }
-        }
-        // Fall through with the primary name for a clear error message
-        Self::load(&candidates[0])
+    /// The manifest path in the current directory: the first of
+    /// [`MANIFEST_CANDIDATES`] that exists, else the deed name (so a missing
+    /// manifest is reported under the name it should have).
+    pub fn default_path() -> PathBuf {
+        MANIFEST_CANDIDATES
+            .iter()
+            .map(PathBuf::from)
+            .find(|path| path.exists())
+            .unwrap_or_else(|| PathBuf::from(MANIFEST_CANDIDATES[0]))
     }
 
+    pub fn load_default() -> Result<Self> {
+        Self::load(&Self::default_path())
+    }
+
+    /// Load a manifest. A `.deed` file is read with the deed grammar
+    /// (`crate::deed`) and must be a `repo-deed`; anything else is read as
+    /// legacy A2ML.
     pub fn load(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path)
-            .with_context(|| format!("reading A2ML manifest {}", path.display()))?;
+            .with_context(|| format!("reading AI manifest {}", path.display()))?;
+        let mut manifest = if path.extension().and_then(|e| e.to_str()) == Some("deed") {
+            Self::parse_deed(&raw, path)?
+        } else {
+            Self::parse_a2ml(&raw)?
+        };
+        manifest.path = Some(path.to_path_buf());
+        Ok(manifest)
+    }
 
+    /// The file this manifest was read from, if any.
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    /// True when this manifest was read from a deed.
+    pub fn is_deed(&self) -> bool {
+        self.from_deed
+    }
+
+    /// Parse a deed manifest. The head becomes the root name and each field
+    /// or clause one entry, so `to_nickel` renders the deed as it stands.
+    fn parse_deed(raw: &str, path: &Path) -> Result<Self> {
+        let deed = crate::deed::parse(raw, Some(path))
+            .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
+        if deed.head != "repo-deed" {
+            return Err(anyhow!(
+                "{}: expected a repo-deed, found {}",
+                path.display(),
+                deed.head
+            ));
+        }
+        Ok(Self {
+            root_name: deed.head.clone(),
+            entries: deed.items.iter().map(deed_item_to_sexpr).collect(),
+            path: None,
+            from_deed: true,
+        })
+    }
+
+    fn parse_a2ml(raw: &str) -> Result<Self> {
         // Detect format: TOML-like ([sections]) vs S-expression ((manifest ...))
         let trimmed = raw.trim_start();
         let first_meaningful = trimmed
@@ -182,10 +242,10 @@ impl Manifest {
 
         if first_meaningful.trim().starts_with('[') {
             // TOML-like A2ML format — parse sections into S-expression tree
-            Self::parse_toml_like(&raw)
+            Self::parse_toml_like(raw)
         } else {
             // Classic S-expression format
-            let mut parser = Parser::new(&raw);
+            let mut parser = Parser::new(raw);
             let tree = parser.parse_all()?;
             if let Sexpr::List(mut items) = tree {
                 if let Some(Sexpr::Atom(root)) = items.first() {
@@ -194,6 +254,7 @@ impl Manifest {
                     return Ok(Self {
                         root_name,
                         entries: items,
+                        ..Self::default()
                     });
                 }
             }
@@ -259,11 +320,18 @@ impl Manifest {
             })
             .collect();
 
-        Ok(Self { root_name, entries })
+        Ok(Self {
+            root_name,
+            entries,
+            ..Self::default()
+        })
     }
 
+    /// Report formats from a legacy manifest's `(reports (formats …))`, else
+    /// json and nickel. A deed manifest is pointer-only (A7 Q15) and carries
+    /// no report settings, so it always gets the defaults.
     pub fn report_formats(&self) -> Vec<ReportOutputFormat> {
-        self.section_entries("reports")
+        self.reports_section()
             .and_then(|entries| {
                 entries
                     .iter()
@@ -283,8 +351,10 @@ impl Manifest {
             .unwrap_or_else(|| vec![ReportOutputFormat::Json, ReportOutputFormat::Nickel])
     }
 
+    /// Storage targets from a legacy manifest's `(reports (storage-targets …))`,
+    /// else the filesystem. A deed manifest always gets the default.
     pub fn storage_modes(&self) -> Vec<StorageMode> {
-        self.section_entries("reports")
+        self.reports_section()
             .and_then(|entries| {
                 entries
                     .iter()
@@ -310,6 +380,14 @@ impl Manifest {
         let entries = gather_entries(&self.entries);
         let body = record_to_nickel(&entries);
         format!("let {} = {};\n{}", self.root_name, body, self.root_name)
+    }
+
+    /// The legacy `(reports …)` section; never read from a deed.
+    fn reports_section(&self) -> Option<Vec<(String, Vec<Vec<Sexpr>>)>> {
+        if self.from_deed {
+            return None;
+        }
+        self.section_entries("reports")
     }
 
     fn section_entries(&self, key: &str) -> Option<Vec<(String, Vec<Vec<Sexpr>>)>> {
@@ -718,6 +796,42 @@ impl<'a> Parser<'a> {
         } else {
             Ok(Sexpr::Atom(value))
         }
+    }
+}
+
+/// A deed member as a manifest entry: a field `:key value` becomes
+/// `(key value)` (a list value contributes its elements), a clause
+/// `(name …)` becomes `(name …)` with its members converted in turn.
+fn deed_item_to_sexpr(item: &crate::deed::Item) -> Sexpr {
+    match item {
+        crate::deed::Item::Field { key, value, .. } => {
+            let mut list = vec![Sexpr::Atom(key.clone())];
+            match value {
+                crate::deed::Value::List(values) => {
+                    list.extend(values.iter().map(deed_value_to_sexpr));
+                }
+                other => list.push(deed_value_to_sexpr(other)),
+            }
+            Sexpr::List(list)
+        }
+        crate::deed::Item::Clause { name, items, .. } => {
+            let mut list = vec![Sexpr::Atom(name.clone())];
+            list.extend(items.iter().map(deed_item_to_sexpr));
+            Sexpr::List(list)
+        }
+    }
+}
+
+fn deed_value_to_sexpr(value: &crate::deed::Value) -> Sexpr {
+    use crate::deed::Value;
+    match value {
+        Value::Str(s) | Value::Uuid(s) => Sexpr::String(s.clone()),
+        Value::Uuid8(s) => Sexpr::String(format!("#u8:{s}")),
+        Value::Uuid5(s) => Sexpr::String(format!("#u5:{s}")),
+        Value::Symbol(s) | Value::Integer(s) => Sexpr::Atom(s.clone()),
+        Value::Boolean(b) => Sexpr::Atom(if *b { "#t" } else { "#f" }.to_string()),
+        Value::Quoted(inner) => deed_value_to_sexpr(inner),
+        Value::List(values) => Sexpr::List(values.iter().map(deed_value_to_sexpr).collect()),
     }
 }
 
@@ -1333,5 +1447,99 @@ mod tests {
 "#;
         let mut parser = Parser::new(manifest);
         parser.parse_all().expect("parse should succeed");
+    }
+
+    const DEED_MANIFEST: &str = r#";; SPDX-License-Identifier: CC-BY-SA-4.0
+(repo-deed
+  :schema-version "1.0.0"
+  :canonical-name "example"
+  :repo-uuid #uuid"a39ad6b1-51e0-854d-aa9a-d9ee97ba519b"
+  :beholding-chora #uuid"0889b37b-defb-831f-973c-e119500db00e"
+  (front-doors :machine "example_chora.deed" :human "README.adoc"))
+"#;
+
+    const LEGACY_MANIFEST: &str = r#"(manifest
+  (project "example")
+  (reports (formats "json" "sarif") (storage-targets "filesystem" "verisimdb")))
+"#;
+
+    #[test]
+    fn manifest_candidates_put_the_deed_first() {
+        assert_eq!(MANIFEST_CANDIDATES[0], "0-AI-MANIFEST.deed");
+        assert!(MANIFEST_CANDIDATES[1..]
+            .iter()
+            .all(|c| c.ends_with(".a2ml")));
+    }
+
+    #[test]
+    fn deed_manifest_loads_and_exports_to_nickel() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.deed");
+        fs::write(&path, DEED_MANIFEST).expect("write");
+        let manifest = Manifest::load(&path).expect("deed manifest should load");
+        assert!(manifest.is_deed());
+        assert_eq!(manifest.path(), Some(path.as_path()));
+        let nickel = manifest.to_nickel();
+        assert!(nickel.starts_with("let repo-deed = "), "{nickel}");
+        assert!(nickel.contains("example_chora.deed"), "{nickel}");
+        assert!(
+            nickel.contains("a39ad6b1-51e0-854d-aa9a-d9ee97ba519b"),
+            "{nickel}"
+        );
+    }
+
+    #[test]
+    fn deed_manifest_carries_no_report_settings() {
+        // Pointer-only: even a (reports …) clause is not read from a deed.
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.deed");
+        let text = DEED_MANIFEST.replace(
+            "(front-doors",
+            "(reports :formats (\"sarif\") :storage-targets (\"verisimdb\"))\n  (front-doors",
+        );
+        fs::write(&path, text).expect("write");
+        let manifest = Manifest::load(&path).expect("load");
+        assert_eq!(
+            manifest.report_formats(),
+            vec![ReportOutputFormat::Json, ReportOutputFormat::Nickel]
+        );
+        assert_eq!(manifest.storage_modes(), vec![StorageMode::Filesystem]);
+    }
+
+    #[test]
+    fn malformed_or_misheaded_deed_manifest_is_an_error() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.deed");
+        fs::write(
+            &path,
+            DEED_MANIFEST.replace("#uuid\"a39ad6b1", "#u5\"a39ad6b1"),
+        )
+        .expect("write");
+        assert!(
+            Manifest::load(&path).is_err(),
+            "#u5 identity must be refused"
+        );
+        fs::write(&path, "(manifest (project \"x\"))\n").expect("write");
+        assert!(
+            Manifest::load(&path).is_err(),
+            "A2ML text in a .deed must be refused"
+        );
+    }
+
+    #[test]
+    fn legacy_a2ml_manifest_still_reads_report_settings() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.a2ml");
+        fs::write(&path, LEGACY_MANIFEST).expect("write");
+        let manifest = Manifest::load(&path).expect("legacy manifest should load");
+        assert!(!manifest.is_deed());
+        assert_eq!(
+            manifest.report_formats(),
+            vec![ReportOutputFormat::Json, ReportOutputFormat::Sarif]
+        );
+        assert_eq!(
+            manifest.storage_modes(),
+            vec![StorageMode::Filesystem, StorageMode::VerisimDb]
+        );
     }
 }

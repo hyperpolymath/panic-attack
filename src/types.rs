@@ -97,6 +97,67 @@ pub enum Language {
 }
 
 impl Language {
+    /// Every language, in declaration order, `Unknown` last. Tests iterate
+    /// over it, so a property checked "for every language" covers the whole
+    /// enum; `language_tests::all_lists_every_variant_once_in_order` keeps it
+    /// complete.
+    // The binary re-declares this module and never reads ALL itself.
+    #[allow(dead_code)]
+    pub const ALL: [Language; 52] = [
+        Language::Rust,
+        Language::C,
+        Language::Cpp,
+        Language::Go,
+        Language::Java,
+        Language::Python,
+        Language::JavaScript,
+        Language::Ruby,
+        Language::Php,
+        Language::Elixir,
+        Language::Erlang,
+        Language::Gleam,
+        Language::ReScript,
+        Language::OCaml,
+        Language::StandardML,
+        Language::Scheme,
+        Language::Racket,
+        Language::Haskell,
+        Language::PureScript,
+        Language::Idris,
+        Language::Lean,
+        Language::Agda,
+        Language::Isabelle,
+        Language::Coq,
+        Language::Prolog,
+        Language::Logtalk,
+        Language::Datalog,
+        Language::Zig,
+        Language::Ada,
+        Language::Odin,
+        Language::Nim,
+        Language::Pony,
+        Language::DLang,
+        Language::Nickel,
+        Language::Nix,
+        Language::Shell,
+        Language::Julia,
+        Language::Lua,
+        Language::Chapel,
+        Language::WokeLang,
+        Language::Eclexia,
+        Language::MyLang,
+        Language::JuliaTheViper,
+        Language::Oblibeny,
+        Language::Anvomidav,
+        Language::AffineScript,
+        Language::Ephapax,
+        Language::BetLang,
+        Language::ErrorLang,
+        Language::VCL,
+        Language::FBQL,
+        Language::Unknown,
+    ];
+
     /// Infer the language from the final, case-sensitive extension without reading
     /// the file. Missing or unrecognised extensions yield `Unknown`.
     ///
@@ -1151,6 +1212,79 @@ mod rule_id_tests {
                 .is_some_and(|s| !s.is_empty()));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::Language;
+
+    // Exhaustive, with no wildcard: a new variant fails to compile here
+    // until it is given a place, and the test below then fails until ALL
+    // lists it at that place.
+    fn ordinal(l: Language) -> usize {
+        use Language::*;
+        match l {
+            Rust => 0,
+            C => 1,
+            Cpp => 2,
+            Go => 3,
+            Java => 4,
+            Python => 5,
+            JavaScript => 6,
+            Ruby => 7,
+            Php => 8,
+            Elixir => 9,
+            Erlang => 10,
+            Gleam => 11,
+            ReScript => 12,
+            OCaml => 13,
+            StandardML => 14,
+            Scheme => 15,
+            Racket => 16,
+            Haskell => 17,
+            PureScript => 18,
+            Idris => 19,
+            Lean => 20,
+            Agda => 21,
+            Isabelle => 22,
+            Coq => 23,
+            Prolog => 24,
+            Logtalk => 25,
+            Datalog => 26,
+            Zig => 27,
+            Ada => 28,
+            Odin => 29,
+            Nim => 30,
+            Pony => 31,
+            DLang => 32,
+            Nickel => 33,
+            Nix => 34,
+            Shell => 35,
+            Julia => 36,
+            Lua => 37,
+            Chapel => 38,
+            WokeLang => 39,
+            Eclexia => 40,
+            MyLang => 41,
+            JuliaTheViper => 42,
+            Oblibeny => 43,
+            Anvomidav => 44,
+            AffineScript => 45,
+            Ephapax => 46,
+            BetLang => 47,
+            ErrorLang => 48,
+            VCL => 49,
+            FBQL => 50,
+            Unknown => 51,
+        }
+    }
+
+    #[test]
+    fn all_lists_every_variant_once_in_order() {
+        for (i, l) in Language::ALL.iter().enumerate() {
+            assert_eq!(ordinal(*l), i, "ALL[{i}] is {l:?}, out of place");
+        }
     }
 }
 

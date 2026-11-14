@@ -116,6 +116,29 @@ proc main(): int {
     ok &&= assertContains(blob, "\"total_weak_points\": 5", "aggregate total_weak_points (alpha only; beta errored)");
     ok &&= assertContains(blob, "\"total_critical\": 1", "aggregate total_critical (alpha only)");
 
+    // --findingsOnly keeps exactly the results hasFindings() accepts. A clean
+    // scan whose adjudication was incomplete, or failed, must not vanish.
+    proc verdictOnly(v: string): RepoResult {
+        var r = makeRepoResult("repo-v", "/tmp/smoke/repo-v", 0, 0, 0, 10, "00");
+        r.verdict = v;
+        return r;
+    }
+    proc expectFindings(r: RepoResult, want: bool, tag: string): bool {
+        if hasFindings(r) != want {
+            writeln("smoke: FAIL [", tag, "] — hasFindings is ", hasFindings(r));
+            return false;
+        }
+        if verbose then writeln("smoke: ok [", tag, "]");
+        return true;
+    }
+    ok &&= expectFindings(verdictOnly(""), false, "clean scan, no adjudication: dropped");
+    ok &&= expectFindings(verdictOnly("pass"), false, "clean scan, verdict pass: dropped");
+    ok &&= expectFindings(verdictOnly("error"), true, "incomplete adjudication (error): kept");
+    ok &&= expectFindings(verdictOnly("fail"), true, "verdict fail with no weak points: kept");
+    ok &&= expectFindings(verdictOnly("warn"), true, "verdict warn with no weak points: kept");
+    ok &&= expectFindings(results[0], true, "weak points: kept");
+    ok &&= expectFindings(results[1], true, "scan error: kept");
+
     try { remove(outputPath); } catch { }
 
     if ok {

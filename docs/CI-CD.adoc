@@ -174,7 +174,7 @@ in source is not an execution receipt; hosted results must record execution.
 ==== Updating the native lock
 
 Commit the reviewed source change first. Use the existing
-https://github.com/hyperpolymath/proven-cicd/actions/workflows/actions-lock-recovery.yml[canonical Actions Lock Recovery workflow]
+https://github.com/hyperpolymath/proven-cicd-and-workflows/actions/workflows/actions-lock-recovery.yml[canonical Actions Lock Recovery workflow]
 for `hyperpolymath/panic-attack` at that exact 40-character commit.
 Dispatch is a separate authorized operation; `just pins` prints the
 candidate SHA and exits nonzero without generating or dispatching anything.

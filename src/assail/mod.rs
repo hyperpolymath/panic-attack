@@ -7,6 +7,7 @@
 
 pub mod analyzer;
 mod build_inputs;
+mod classifications;
 mod configuration;
 mod configuration_scripts;
 pub mod coverage;
@@ -14,6 +15,7 @@ mod forth;
 mod input_adapters;
 pub mod patterns;
 pub mod php;
+mod routing;
 mod templates;
 
 use crate::kanren::core::{FactDB, LogicEngine};
@@ -25,6 +27,10 @@ use anyhow::Result;
 use std::path::Path;
 
 pub use analyzer::Analyzer;
+pub use classifications::{
+    apply_user_classifications, load_user_classifications, parse_classification_deed,
+    UserClassification, DEED_PATH as USER_CLASSIFICATIONS_DEED_PATH,
+};
 
 /// Run Assail analysis on a target program
 pub fn analyze<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
@@ -42,7 +48,7 @@ pub fn analyze<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     } else {
         target_ref.parent().unwrap_or(Path::new(".")).to_path_buf()
     };
-    apply_user_classifications(&mut report, &root);
+    apply_user_classifications(&mut report, &root)?;
     Ok(report)
 }
 
@@ -59,7 +65,7 @@ pub fn analyze_verbose<P: AsRef<Path>>(target: P) -> Result<AssailReport> {
     } else {
         target_ref.parent().unwrap_or(Path::new(".")).to_path_buf()
     };
-    apply_user_classifications(&mut report, &root);
+    apply_user_classifications(&mut report, &root)?;
 
     let active_count = report
         .weak_points
@@ -194,159 +200,6 @@ pub fn analyze_verbose_browser_extension<P: AsRef<Path>>(target: P) -> Result<As
     Ok(report)
 }
 
-/// A single classification entry read from a project's
-/// `audits/assail-classifications.a2ml` (or `.panic-attack-classifications.a2ml`).
-/// When such a file exists, findings matching `(file, category)` are flipped
-/// to `suppressed = true` after the kanren suppression pass runs.
-///
-/// The registry pattern lets repositories record "this finding has been
-/// audited and is sound" out-of-band from the source file — so the
-/// suppression is not gameable by code-only edits (adding a new unsafe
-/// block cannot also add its own classification without editing the
-/// registry, which is reviewable in the same PR).
-#[derive(Debug, Clone)]
-pub struct UserClassification {
-    pub file: String,
-    pub category: String,
-}
-
-/// Load user classifications from `<project_root>/audits/assail-classifications.a2ml`.
-///
-/// Empty vector if the file is absent or unreadable. Errors are swallowed by
-/// design — the classification registry is optional and a missing file must
-/// not break the assail pass.
-///
-/// Format (A2ML S-expression):
-///
-/// ```text
-/// (assail-classifications
-///   (classification
-///     (file "crates/oo7-core/src/zig_bridge.rs")
-///     (category "UnsafeCode")
-///     (audit "audits/audit-ffi-unsafe.md §1"))
-///   ...)
-/// ```
-pub fn load_user_classifications(project_root: &Path) -> Vec<UserClassification> {
-    use std::fs;
-    let candidate_paths = [
-        project_root
-            .join("audits")
-            .join("assail-classifications.a2ml"),
-        project_root.join(".panic-attack-classifications.a2ml"),
-    ];
-    // User-classification a2ml files are hand-edited audit registries. A
-    // legitimate one rarely exceeds a few dozen KiB. Capping at 4 MiB
-    // stops a malicious or accidental input from exhausting memory during
-    // a multi-thousand-repo mass-panic sweep.
-    use std::io::Read;
-    const CLASSIFICATIONS_FILE_READ_LIMIT: u64 = 4 * 1024 * 1024;
-
-    let mut content = String::new();
-    for p in &candidate_paths {
-        if let Ok(mut f) = fs::File::open(p) {
-            let mut buf = String::new();
-            if (&mut f)
-                .take(CLASSIFICATIONS_FILE_READ_LIMIT)
-                .read_to_string(&mut buf)
-                .is_ok()
-            {
-                content = buf;
-                break;
-            }
-        }
-    }
-    if content.is_empty() {
-        return Vec::new();
-    }
-
-    // Strip `;;` line comments.
-    let stripped: String = content
-        .lines()
-        .map(|l| match l.find(";;") {
-            Some(idx) => &l[..idx],
-            None => l,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let mut classifications = Vec::new();
-    let needle = "(classification";
-    let mut rest = stripped.as_str();
-    while let Some(start) = rest.find(needle) {
-        let after_keyword = &rest[start + needle.len()..];
-        // Walk characters tracking paren depth to find the matching ')'.
-        let mut depth: i32 = 1;
-        let mut end_idx: Option<usize> = None;
-        for (i, c) in after_keyword.char_indices() {
-            match c {
-                '(' => depth += 1,
-                ')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end_idx = Some(i);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let Some(end) = end_idx else {
-            break;
-        };
-        let body = &after_keyword[..end];
-        let file = extract_classification_field(body, "file");
-        let category = extract_classification_field(body, "category");
-        if let (Some(f), Some(c)) = (file, category) {
-            classifications.push(UserClassification {
-                file: f,
-                category: c,
-            });
-        }
-        rest = &after_keyword[end + 1..];
-    }
-
-    classifications
-}
-
-fn extract_classification_field(body: &str, field: &str) -> Option<String> {
-    let marker = format!("({} \"", field);
-    let idx = body.find(&marker)?;
-    let after = &body[idx + marker.len()..];
-    let end = after.find('"')?;
-    Some(after[..end].to_string())
-}
-
-/// Apply user classifications to a report in-place. Findings whose file
-/// and category match an entry in the project's
-/// `assail-classifications.a2ml` are marked `suppressed = true` and
-/// counted toward `report.suppressed_count`.
-///
-/// Runs after the kanren-based `apply_suppression` so that the
-/// structural suppression rules get first pass and the classification
-/// registry covers only the genuinely-audited residuals.
-pub fn apply_user_classifications(report: &mut AssailReport, project_root: &Path) {
-    let classifications = load_user_classifications(project_root);
-    if classifications.is_empty() {
-        return;
-    }
-    let mut additional: usize = 0;
-    for wp in &mut report.weak_points {
-        if wp.suppressed {
-            continue;
-        }
-        let cat = format!("{:?}", wp.category);
-        let loc = wp.location.as_deref().unwrap_or("");
-        for cl in &classifications {
-            if cl.category == cat && cl.file == loc {
-                wp.suppressed = true;
-                additional += 1;
-                break;
-            }
-        }
-    }
-    report.suppressed_count += additional;
-}
-
 /// Apply context-aware FP suppression to an assail report in-place.
 ///
 /// Runs the full kanren logic engine, collects every `suppressed(Category, Location)`
@@ -436,6 +289,15 @@ pub fn apply_v255_context_suppression(report: &mut AssailReport) -> usize {
     let mut newly_suppressed = 0usize;
     let mut content_cache: std::collections::HashMap<String, Option<String>> =
         std::collections::HashMap::new();
+    // Finding locations are relative to the scan root, not to the process
+    // working directory, so resolve them against the root. Without this,
+    // `assail <dir>` run from anywhere but <dir> silently ignored every
+    // inline marker.
+    let scan_root: Option<std::path::PathBuf> = if report.program_path.is_dir() {
+        Some(report.program_path.clone())
+    } else {
+        report.program_path.parent().map(Path::to_path_buf)
+    };
 
     for wp in &mut report.weak_points {
         // Determine the file path; prefer the structured `file` field,
@@ -455,7 +317,14 @@ pub fn apply_v255_context_suppression(report: &mut AssailReport) -> usize {
         // None so we don't repeatedly retry.
         let content_opt = content_cache
             .entry(file.clone())
-            .or_insert_with(|| std::fs::read_to_string(&file).ok())
+            .or_insert_with(|| {
+                let rel = Path::new(&file);
+                scan_root
+                    .as_deref()
+                    .filter(|_| rel.is_relative())
+                    .and_then(|root| std::fs::read_to_string(root.join(rel)).ok())
+                    .or_else(|| std::fs::read_to_string(rel).ok())
+            })
             .clone();
 
         // Always set test_context — even when the finding isn't a
@@ -621,7 +490,7 @@ mod classifications_tests {
     #[test]
     fn load_empty_when_no_registry() {
         let tmp = TempDir::new().unwrap();
-        let classifications = load_user_classifications(tmp.path());
+        let classifications = load_user_classifications(tmp.path()).unwrap();
         assert!(
             classifications.is_empty(),
             "Missing registry must yield empty classification list"
@@ -641,7 +510,7 @@ mod classifications_tests {
     (audit "audits/audit-ffi-unsafe.md §1")))
 "#,
         );
-        let classifications = load_user_classifications(tmp.path());
+        let classifications = load_user_classifications(tmp.path()).unwrap();
         assert_eq!(classifications.len(), 1);
         assert_eq!(classifications[0].file, "crates/oo7-core/src/zig_bridge.rs");
         assert_eq!(classifications[0].category, "UnsafeCode");
@@ -663,7 +532,7 @@ mod classifications_tests {
     (audit "doc2")))
 "#,
         );
-        let classifications = load_user_classifications(tmp.path());
+        let classifications = load_user_classifications(tmp.path()).unwrap();
         assert_eq!(classifications.len(), 2);
         assert_eq!(classifications[0].file, "a/b.rs");
         assert_eq!(classifications[1].category, "PanicPath");
@@ -683,32 +552,20 @@ mod classifications_tests {
     (audit "doc")))
 "#,
         );
-        let classifications = load_user_classifications(tmp.path());
+        let classifications = load_user_classifications(tmp.path()).unwrap();
         assert_eq!(classifications.len(), 1);
         assert_eq!(classifications[0].file, "real/path.rs");
     }
 
-    #[test]
-    fn apply_flips_matching_finding_to_suppressed() {
+    /// Two UnsafeCode findings: one at the classified path, one elsewhere.
+    fn sample_report(root: &Path) -> AssailReport {
         use crate::types::{
-            AssailReport, AttackAxis, Language, ProgramStatistics, Severity, WeakPoint,
-            WeakPointCategory,
+            AttackAxis, Language, ProgramStatistics, Severity, WeakPoint, WeakPointCategory,
         };
-        let tmp = TempDir::new().unwrap();
-        write_registry(
-            tmp.path(),
-            r#"(assail-classifications
-  (classification
-    (file "crates/oo7-core/src/zig_bridge.rs")
-    (category "UnsafeCode")
-    (audit "audits/audit-ffi-unsafe.md §1")))
-"#,
-        );
-
-        let mut report = AssailReport {
+        AssailReport {
             coverage: Default::default(),
             schema_version: "2.5".to_string(),
-            program_path: tmp.path().to_path_buf(),
+            program_path: root.to_path_buf(),
             language: Language::Rust,
             frameworks: vec![],
             weak_points: vec![
@@ -751,9 +608,25 @@ mod classifications_tests {
             taint_matrix: Default::default(),
             migration_metrics: None,
             suppressed_count: 0,
-        };
+        }
+    }
 
-        apply_user_classifications(&mut report, tmp.path());
+    #[test]
+    fn apply_flips_matching_finding_to_suppressed() {
+        let tmp = TempDir::new().unwrap();
+        write_registry(
+            tmp.path(),
+            r#"(assail-classifications
+  (classification
+    (file "crates/oo7-core/src/zig_bridge.rs")
+    (category "UnsafeCode")
+    (audit "audits/audit-ffi-unsafe.md §1")))
+"#,
+        );
+
+        let mut report = sample_report(tmp.path());
+
+        apply_user_classifications(&mut report, tmp.path()).unwrap();
 
         assert!(
             report.weak_points[0].suppressed,
@@ -764,6 +637,276 @@ mod classifications_tests {
             "Unclassified finding must stay active"
         );
         assert_eq!(report.suppressed_count, 1);
+    }
+
+    // ---- deed registry (audits/assail-classifications_praxis.deed) ----
+
+    const DEED_HEAD: &str = r#";; SPDX-License-Identifier: MPL-2.0
+(praxis-deed
+  :schema-version "1.0.0"
+  :canonical-name "example-assail-classifications"
+  :beholding-chora #uuid"0889b37b-defb-831f-973c-e119500db00e"
+  :profile assail-classifications
+"#;
+
+    fn write_deed(dir: &Path, content: &str) {
+        let audits = dir.join("audits");
+        fs::create_dir_all(&audits).unwrap();
+        fs::write(dir.join(USER_CLASSIFICATIONS_DEED_PATH), content).unwrap();
+    }
+
+    fn deed_with(entries: &str) -> String {
+        format!("{DEED_HEAD}{entries})\n")
+    }
+
+    const ZIG_BRIDGE_DEED_ENTRY: &str = r#"  ;; FFI boundary, audited
+  (classification
+    :file "crates/oo7-core/src/zig_bridge.rs"
+    :category UnsafeCode
+    :audit "audits/audit-ffi-unsafe.md §1"
+    :rationale "every unsafe block's invariant is documented at source")"#;
+
+    #[test]
+    fn deed_registry_suppresses() {
+        let tmp = TempDir::new().unwrap();
+        write_deed(tmp.path(), &deed_with(ZIG_BRIDGE_DEED_ENTRY));
+        let classifications = load_user_classifications(tmp.path()).unwrap();
+        assert_eq!(classifications.len(), 1);
+        assert_eq!(classifications[0].file, "crates/oo7-core/src/zig_bridge.rs");
+        assert_eq!(classifications[0].category, "UnsafeCode");
+
+        let mut report = sample_report(tmp.path());
+        apply_user_classifications(&mut report, tmp.path()).unwrap();
+        assert!(report.weak_points[0].suppressed);
+        assert!(!report.weak_points[1].suppressed);
+        assert_eq!(report.suppressed_count, 1);
+    }
+
+    #[test]
+    fn empty_deed_registry_suppresses_nothing() {
+        let tmp = TempDir::new().unwrap();
+        write_deed(tmp.path(), &deed_with(""));
+        assert!(load_user_classifications(tmp.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deed_wins_over_a2ml() {
+        let tmp = TempDir::new().unwrap();
+        // The deed classifies other/file.rs; the legacy a2ml (and the root
+        // fallback) classify zig_bridge.rs. Only the deed may be read.
+        write_deed(
+            tmp.path(),
+            &deed_with("  (classification :file \"other/file.rs\" :category UnsafeCode)"),
+        );
+        let legacy = r#"(assail-classifications
+  (classification
+    (file "crates/oo7-core/src/zig_bridge.rs")
+    (category "UnsafeCode")))
+"#;
+        write_registry(tmp.path(), legacy);
+        fs::write(
+            tmp.path().join(".panic-attack-classifications.a2ml"),
+            legacy,
+        )
+        .unwrap();
+
+        let classifications = load_user_classifications(tmp.path()).unwrap();
+        assert_eq!(classifications.len(), 1);
+        assert_eq!(classifications[0].file, "other/file.rs");
+
+        let mut report = sample_report(tmp.path());
+        apply_user_classifications(&mut report, tmp.path()).unwrap();
+        assert!(!report.weak_points[0].suppressed, "a2ml must not be read");
+        assert!(report.weak_points[1].suppressed);
+    }
+
+    #[test]
+    fn root_a2ml_fallback_still_works() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join(".panic-attack-classifications.a2ml"),
+            r#"(assail-classifications
+  (classification (file "a/b.rs") (category "PanicPath")))
+"#,
+        )
+        .unwrap();
+        let classifications = load_user_classifications(tmp.path()).unwrap();
+        assert_eq!(classifications.len(), 1);
+        assert_eq!(classifications[0].category, "PanicPath");
+    }
+
+    #[test]
+    fn malformed_deed_is_an_error_and_does_not_fall_back() {
+        let tmp = TempDir::new().unwrap();
+        // A valid a2ml sits beside every malformed deed: falling back to it
+        // would be a silent pass.
+        write_registry(
+            tmp.path(),
+            r#"(assail-classifications
+  (classification (file "crates/oo7-core/src/zig_bridge.rs") (category "UnsafeCode")))
+"#,
+        );
+        let cases: &[(&str, String)] = &[
+            ("unclosed form", DEED_HEAD.to_string()),
+            (
+                "no SPDX header",
+                deed_with("").replace(";; SPDX-License-Identifier: MPL-2.0\n", ""),
+            ),
+            (
+                "A2ML shape",
+                deed_with("  (classification (file \"a.rs\") (category \"UnsafeCode\"))"),
+            ),
+            (
+                "string category",
+                deed_with("  (classification :file \"a.rs\" :category \"UnsafeCode\")"),
+            ),
+            (
+                "unknown category",
+                deed_with("  (classification :file \"a.rs\" :category UnsafeKode)"),
+            ),
+            (
+                "missing :file",
+                deed_with("  (classification :category UnsafeCode)"),
+            ),
+            (
+                "empty :file",
+                deed_with("  (classification :file \"\" :category UnsafeCode)"),
+            ),
+            (
+                "duplicate :file",
+                deed_with("  (classification :file \"a.rs\" :file \"b.rs\" :category UnsafeCode)"),
+            ),
+            (
+                "unknown member",
+                deed_with("  (classification :file \"a.rs\" :category UnsafeCode :line 3)"),
+            ),
+            (
+                "unknown clause",
+                deed_with("  (exemption :file \"a.rs\" :category UnsafeCode)"),
+            ),
+            (
+                "wrong profile",
+                deed_with("").replace(":profile assail-classifications", ":profile proof-receipt"),
+            ),
+            (
+                "no profile",
+                deed_with("").replace(":profile assail-classifications\n", ""),
+            ),
+            (
+                "no beholding-chora",
+                deed_with("").replace(
+                    ":beholding-chora #uuid\"0889b37b-defb-831f-973c-e119500db00e\"\n",
+                    "",
+                ),
+            ),
+            (
+                "wrong head",
+                deed_with("").replace("(praxis-deed", "(repo-deed"),
+            ),
+            ("key = value", "[assail]\nfile = \"a.rs\"\n".to_string()),
+            ("trailing content", format!("{}(extra)\n", deed_with(""))),
+        ];
+        for (what, text) in cases {
+            write_deed(tmp.path(), text);
+            assert!(
+                load_user_classifications(tmp.path()).is_err(),
+                "{what}: a malformed deed must be an error"
+            );
+            let mut report = sample_report(tmp.path());
+            assert!(
+                apply_user_classifications(&mut report, tmp.path()).is_err(),
+                "{what}: apply must fail"
+            );
+            assert!(
+                report.weak_points.iter().all(|wp| !wp.suppressed),
+                "{what}: nothing may be suppressed"
+            );
+        }
+    }
+
+    /// An `audits/` the reader cannot search must not look like a missing
+    /// deed: that would silently fall back to the root `.a2ml` registry.
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_audits_dir_is_an_error_not_a_fallback() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        write_deed(tmp.path(), &deed_with(ZIG_BRIDGE_DEED_ENTRY));
+        fs::write(
+            tmp.path().join(".panic-attack-classifications.a2ml"),
+            r#"(assail-classifications
+  (classification (file "a/b.rs") (category "PanicPath")))
+"#,
+        )
+        .unwrap();
+        let audits = tmp.path().join("audits");
+        fs::set_permissions(&audits, fs::Permissions::from_mode(0o000)).unwrap();
+        // Root, or any process with CAP_DAC_OVERRIDE/CAP_DAC_READ_SEARCH,
+        // ignores the mode bits, so the deed stays readable and there is
+        // nothing to test. Probe instead of checking the uid: the probe also
+        // covers capabilities granted to a non-root user.
+        let privileged = fs::read_dir(&audits).is_ok();
+        let result = load_user_classifications(tmp.path());
+        // Restore the mode so TempDir can clean up.
+        fs::set_permissions(&audits, fs::Permissions::from_mode(0o755)).unwrap();
+        if privileged {
+            eprintln!(
+                "skipped: running as root (or with DAC override), so a mode-000 directory stays readable"
+            );
+            return;
+        }
+        let err = result.expect_err("an unreadable audits/ must be an error");
+        assert!(
+            format!("{err:#}").contains("assail-classifications_praxis.deed"),
+            "error must name the registry: {err:#}"
+        );
+    }
+
+    #[test]
+    fn audits_as_a_regular_file_means_no_deed() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("audits"), "not a directory\n").unwrap();
+        fs::write(
+            tmp.path().join(".panic-attack-classifications.a2ml"),
+            r#"(assail-classifications
+  (classification (file "a/b.rs") (category "PanicPath")))
+"#,
+        )
+        .unwrap();
+        let classifications = load_user_classifications(tmp.path()).unwrap();
+        assert_eq!(classifications.len(), 1, "falls back to the root registry");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_deed_symlink_is_an_error_not_a_fallback() {
+        let tmp = TempDir::new().unwrap();
+        let audits = tmp.path().join("audits");
+        fs::create_dir_all(&audits).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("nowhere.deed"),
+            tmp.path().join(USER_CLASSIFICATIONS_DEED_PATH),
+        )
+        .unwrap();
+        write_registry(
+            tmp.path(),
+            r#"(assail-classifications
+  (classification (file "a/b.rs") (category "PanicPath")))
+"#,
+        );
+        assert!(load_user_classifications(tmp.path()).is_err());
+    }
+
+    #[test]
+    fn analyze_fails_on_a_malformed_deed() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("main.rs"), "fn main() {}\n").unwrap();
+        write_deed(tmp.path(), "(praxis-deed)\n");
+        let err = analyze(tmp.path()).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("assail-classifications_praxis.deed"),
+            "error must name the registry: {err:#}"
+        );
     }
 }
 
@@ -888,6 +1031,66 @@ mod v255_context_suppression_tests {
         assert_eq!(
             report.weak_points[0].test_context,
             Some(TestContext::TestOnly)
+        );
+    }
+}
+
+#[cfg(test)]
+mod proof_marker_tests {
+    use super::*;
+    use crate::types::WeakPointCategory;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// End to end through `analyze()`: each `sorry` is its own finding on
+    /// its own line, an inline marker suppresses only the occurrence it sits
+    /// above, and markers resolve against the scan root rather than the
+    /// process working directory (the test runs from the crate root).
+    #[test]
+    fn sorry_markers_suppress_only_the_marked_occurrence() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(
+            tmp.path().join("Fix.lean"),
+            "theorem a : True := by\n  -- panic-attack: accepted (detector fixture)\n  sorry\n\n\
+             /- a\n   multi-line\n   comment -/\ntheorem b : True := by\n  sorry\n",
+        )
+        .unwrap();
+        fs::write(
+            tmp.path().join("Fix.thy"),
+            "theory Fix imports Main begin\n(* a\n   multi-line comment *)\n\
+             text \\<open>prose\n  over lines\\<close>\nlemma a: True\n  \
+             (* panic-attack: accepted (detector fixture) *)\n  sorry\nlemma b: True\n  sorry\nend\n",
+        )
+        .unwrap();
+
+        let report = analyze(tmp.path()).unwrap();
+        let mut got: Vec<(String, u32, bool)> = report
+            .weak_points
+            .iter()
+            .filter(|w| matches!(w.category, WeakPointCategory::ProofDrift))
+            .filter(|w| w.description.contains("sorry"))
+            .map(|w| {
+                let loc = w.location.clone().unwrap_or_default();
+                let name = Path::new(&loc)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or(loc);
+                (
+                    name,
+                    w.line.expect("sorry findings are line-anchored"),
+                    w.suppressed,
+                )
+            })
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![
+                ("Fix.lean".to_string(), 3, true),
+                ("Fix.lean".to_string(), 9, false),
+                ("Fix.thy".to_string(), 8, true),
+                ("Fix.thy".to_string(), 10, false),
+            ]
         );
     }
 }

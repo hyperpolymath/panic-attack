@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 [package]
 name = "panic-attack"
-version = "2.5.5"
+version = "2.6.0"
 edition = "2021"
 # MSRV. Set by the highest `rust-version` in the dependency graph, which is
 # tree-sitter 0.27 (1.90); the pin is exact and deliberate, so the baseline

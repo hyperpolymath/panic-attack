@@ -505,3 +505,61 @@ fn kyaml_output_format_refuses_a_directory_at_an_output_path() {
         "the report was written before the copy failed"
     );
 }
+
+/// Root ignores permission bits, so the permission tests below only mean
+/// something when run unprivileged. They return early otherwise.
+#[cfg(unix)]
+fn writes_ignore_permissions(dir: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let probe = dir.join("privilege-probe");
+    std::fs::write(&probe, "").unwrap();
+    std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o444)).unwrap();
+    let privileged = std::fs::OpenOptions::new().write(true).open(&probe).is_ok();
+    std::fs::remove_file(&probe).unwrap();
+    privileged
+}
+
+#[cfg(unix)]
+#[test]
+fn kyaml_output_format_refuses_a_read_only_copy_before_writing() {
+    use std::os::unix::fs::PermissionsExt;
+    let (dir, project) = project_dir();
+    if writes_ignore_permissions(dir.path()) {
+        eprintln!("skipped: running with privileges that ignore permission bits");
+        return;
+    }
+    let out = dir.path().join("report.json");
+    std::fs::write(&out, "old report\n").unwrap();
+    let copy = dir.path().join("report.kyaml");
+    std::fs::write(&copy, "old copy\n").unwrap();
+    std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o444)).unwrap();
+    let output = assail_kyaml(&project, &out);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("nothing was written"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), "old report\n");
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), "old copy\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn kyaml_output_format_refuses_a_directory_it_cannot_create_in() {
+    use std::os::unix::fs::PermissionsExt;
+    let (dir, project) = project_dir();
+    if writes_ignore_permissions(dir.path()) {
+        eprintln!("skipped: running with privileges that ignore permission bits");
+        return;
+    }
+    let reports = dir.path().join("reports");
+    std::fs::create_dir(&reports).unwrap();
+    let out = reports.join("report.json");
+    std::fs::write(&out, "old report\n").unwrap();
+    std::fs::set_permissions(&reports, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let output = assail_kyaml_attested(&project, &out);
+    std::fs::set_permissions(&reports, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("nothing was written"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), "old report\n");
+    assert!(!reports.join("report.kyaml").exists());
+}

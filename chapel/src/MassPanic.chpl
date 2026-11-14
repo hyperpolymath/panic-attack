@@ -181,7 +181,7 @@ module MassPanic {
         // Always build via list to avoid Chapel array-shape mismatch on assignment.
         var filteredList: list(RepoResult);
         for r in resultsArr {
-            if !findingsOnly || r.weakPointCount > 0 || r.error != "" then
+            if !findingsOnly || hasFindings(r) then
                 filteredList.pushBack(r);
         }
         var filteredResults = filteredList.toArray();
@@ -1048,7 +1048,11 @@ module MassPanic {
             }
             sub.wait();
 
-            if sub.exitCode == 0 {
+            // adjudicate exit contract: 0 pass/warn, 1 complete fail (a valid
+            // verdict), 2 incomplete input or error (no verdict is trustworthy).
+            if sub.exitCode == 2 {
+                adjResult.verdict = "error";
+            } else if sub.exitCode == 0 || sub.exitCode == 1 {
                 // Extract crash count from adjudicate JSON
                 adjResult.crashes = extractInt(jsonOutput, "\"crashes\":");
                 if adjResult.crashes == 0 then

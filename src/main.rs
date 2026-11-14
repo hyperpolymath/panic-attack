@@ -623,7 +623,8 @@ enum Commands {
 
     /// Export the AI manifest as Nickel
     Manifest {
-        /// Alternate AI manifest file
+        /// Alternate AI manifest file (default: 0-AI-MANIFEST.deed, else the
+        /// legacy 0-AI-MANIFEST.a2ml or AI.a2ml)
         #[arg(short, long, value_name = "PATH")]
         path: Option<PathBuf>,
 
@@ -709,7 +710,8 @@ enum Commands {
 
     /// Run panic-attack self-diagnostics for Hypatia/gitbot-fleet visibility
     Diagnostics {
-        /// Alternate AI manifest file (default: AI.a2ml)
+        /// Alternate AI manifest file (default: 0-AI-MANIFEST.deed, else the
+        /// legacy 0-AI-MANIFEST.a2ml or AI.a2ml)
         #[arg(long, value_name = "PATH")]
         manifest: Option<PathBuf>,
     },
@@ -1443,6 +1445,31 @@ fn kyaml_copy_path(out: &Path, sidecar: Option<&Path>) -> Result<PathBuf> {
             }
         }
     }
+    // Lookup alone does not show that a path can be written: a read-only
+    // copy or sidecar, or a directory the caller may not create files in,
+    // would fail only after the report had been replaced. Open each output
+    // for writing now, without truncating it; an absent one is created and
+    // removed again. The kernel decides, so ACLs and ownership count too.
+    for (&(role, candidate), &existed) in outputs.iter().zip(&exists) {
+        let probe = if existed {
+            fs::OpenOptions::new().write(true).open(candidate).map(drop)
+        } else {
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(candidate)
+                .and_then(|file| {
+                    drop(file);
+                    fs::remove_file(candidate)
+                })
+        };
+        probe.map_err(|err| {
+            anyhow::anyhow!(
+                "cannot write the {role} {}: {err}; nothing was written",
+                candidate.display()
+            )
+        })?;
+    }
     Ok(path)
 }
 
@@ -2024,6 +2051,19 @@ fn run_main() -> Result<()> {
                 "adjudicate report saved to: {}",
                 report_path.display()
             );
+            for note in &report.notes {
+                eprintln!("adjudicate: {}", note);
+            }
+            if report.is_incomplete() {
+                eprintln!(
+                    "adjudicate: incomplete ({} processed, {} failed); verdict is not a pass",
+                    report.processed_reports, report.failed_reports
+                );
+            }
+            let code = report.exit_code();
+            if code != 0 {
+                std::process::exit(code);
+            }
         }
 
         Commands::Axial {
@@ -2205,13 +2245,7 @@ fn run_main() -> Result<()> {
         }
 
         Commands::Manifest { path, output } => {
-            let target = path.unwrap_or_else(|| {
-                if PathBuf::from("0-AI-MANIFEST.a2ml").exists() {
-                    PathBuf::from("0-AI-MANIFEST.a2ml")
-                } else {
-                    PathBuf::from("AI.a2ml")
-                }
-            });
+            let target = path.unwrap_or_else(Manifest::default_path);
             let manifest = Manifest::load(&target).unwrap_or_default();
             let nickel = manifest.to_nickel();
             if let Some(output_path) = output {

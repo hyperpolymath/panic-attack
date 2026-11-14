@@ -320,6 +320,264 @@ pub struct Analyzer {
     browser_extension: bool,
 }
 
+/// Quote state tracked by [`shell_code_lines`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ShellQuote {
+    None,
+    /// `'...'`: no escapes.
+    Single,
+    /// `"..."`: backslash escapes the next character.
+    Double,
+    /// `$'...'`: backslash escapes the next character, including `\'`.
+    AnsiC,
+}
+
+/// True for the shell operator characters that end a word.
+fn is_shell_operator(c: char) -> bool {
+    matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>')
+}
+
+/// Line-by-line shell scanner behind [`shell_code_lines`]. All state that
+/// survives a line break lives here: the open quote, pending heredoc
+/// delimiters, and whether the next character begins a word.
+struct ShellScanner {
+    quote: ShellQuote,
+    /// Pending heredoc delimiters: `(tag, strip_leading_tabs)`.
+    heredocs: std::collections::VecDeque<(String, bool)>,
+    /// True when the next character begins a shell word. Carried across line
+    /// breaks inside a quote and over a backslash-newline continuation.
+    word_start: bool,
+    /// The previous line ended in an unescaped backslash outside any quote.
+    continued: bool,
+}
+
+impl ShellScanner {
+    fn new() -> Self {
+        Self {
+            quote: ShellQuote::None,
+            heredocs: Default::default(),
+            word_start: true,
+            continued: false,
+        }
+    }
+
+    /// If `line` is part of a heredoc body, consume it (closing the heredoc
+    /// when it is the delimiter) and return true.
+    fn heredoc_body_line(&mut self, line: &str) -> bool {
+        if self.quote != ShellQuote::None {
+            return false;
+        }
+        let Some((tag, strip_tabs)) = self.heredocs.front() else {
+            return false;
+        };
+        let candidate = if *strip_tabs {
+            line.trim_start_matches('\t')
+        } else {
+            line
+        };
+        if candidate == tag.as_str() {
+            self.heredocs.pop_front();
+        }
+        true
+    }
+
+    /// Scan one non-heredoc line, returning it with any comment removed.
+    fn scan_line(&mut self, line: &str) -> String {
+        let chars: Vec<char> = line.chars().collect();
+        let mut code = String::new();
+        // A new line starts a new word, unless we are inside a quote or the
+        // previous line ended in a backslash continuation.
+        if self.quote == ShellQuote::None && !self.continued {
+            self.word_start = true;
+        }
+        self.continued = false;
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            let stop = match self.quote {
+                ShellQuote::Single => {
+                    self.step_single(c, &mut code);
+                    false
+                }
+                ShellQuote::Double | ShellQuote::AnsiC => {
+                    self.step_escaping_quote(&chars, &mut i, &mut code);
+                    false
+                }
+                ShellQuote::None => self.step_unquoted(&chars, &mut i, &mut code),
+            };
+            if stop {
+                break;
+            }
+            i += 1;
+        }
+        code
+    }
+
+    /// Inside `'...'`: no escapes, only the closing quote matters.
+    fn step_single(&mut self, c: char, code: &mut String) {
+        if c == '\'' {
+            self.quote = ShellQuote::None;
+        }
+        code.push(c);
+    }
+
+    /// Inside `"..."` or `$'...'`: a backslash escapes the next character.
+    fn step_escaping_quote(&mut self, chars: &[char], i: &mut usize, code: &mut String) {
+        let c = chars[*i];
+        if c == '\\' && *i + 1 < chars.len() {
+            code.push(c);
+            *i += 1;
+            code.push(chars[*i]);
+            return;
+        }
+        let closer = if self.quote == ShellQuote::Double {
+            '"'
+        } else {
+            '\''
+        };
+        if c == closer {
+            self.quote = ShellQuote::None;
+        }
+        code.push(c);
+    }
+
+    /// Unquoted character at `chars[*i]`. Returns true when a comment starts
+    /// and the rest of the line must be dropped.
+    fn step_unquoted(&mut self, chars: &[char], i: &mut usize, code: &mut String) -> bool {
+        let c = chars[*i];
+        if c == '\\' {
+            self.step_backslash(chars, i, code);
+        } else if c == '$' && chars.get(*i + 1) == Some(&'\'') {
+            self.open_quote(ShellQuote::AnsiC, code);
+            code.push('\'');
+            *i += 1;
+        } else if c == '\'' || c == '"' {
+            let q = if c == '\'' {
+                ShellQuote::Single
+            } else {
+                ShellQuote::Double
+            };
+            self.open_quote(q, code);
+        } else if c == '#' && self.word_start {
+            return true;
+        } else if c == '<' && chars.get(*i + 1) == Some(&'<') {
+            self.step_heredoc_or_here_string(chars, i, code);
+        } else {
+            code.push(c);
+            self.word_start = c.is_whitespace() || is_shell_operator(c);
+        }
+        false
+    }
+
+    /// Open a quote; the opening delimiter itself is pushed by the caller for
+    /// `$'` and here for plain quotes.
+    fn open_quote(&mut self, quote: ShellQuote, code: &mut String) {
+        self.quote = quote;
+        match quote {
+            ShellQuote::Single => code.push('\''),
+            ShellQuote::Double => code.push('"'),
+            ShellQuote::AnsiC => code.push('$'),
+            ShellQuote::None => {}
+        }
+        self.word_start = false;
+    }
+
+    /// Unquoted backslash: escapes the next character, or, at end of line,
+    /// is a line continuation that leaves the word state untouched.
+    fn step_backslash(&mut self, chars: &[char], i: &mut usize, code: &mut String) {
+        code.push('\\');
+        if *i + 1 < chars.len() {
+            *i += 1;
+            code.push(chars[*i]);
+            self.word_start = false;
+        } else {
+            self.continued = true;
+        }
+    }
+
+    /// `<<<` here-string (consumed whole) or `<<[-] WORD` heredoc introducer.
+    fn step_heredoc_or_here_string(&mut self, chars: &[char], i: &mut usize, code: &mut String) {
+        if chars.get(*i + 2) == Some(&'<') {
+            code.push_str("<<<");
+            *i += 2;
+        } else {
+            let (end, tag, strip_tabs) = parse_heredoc_delimiter(chars, *i + 2);
+            if !tag.is_empty() {
+                self.heredocs.push_back((tag, strip_tabs));
+            }
+            // Delimiter text is plain code; resume after it.
+            code.push_str("<<");
+            code.extend(&chars[*i + 2..end]);
+            *i = end.saturating_sub(1).max(*i + 1);
+        }
+        self.word_start = true;
+    }
+}
+
+/// Parse a heredoc delimiter starting just after `<<` at `chars[from]`.
+/// Returns `(end index, tag, strip_tabs)`. Quoted runs contribute their
+/// contents literally; a backslash escapes the next character.
+fn parse_heredoc_delimiter(chars: &[char], from: usize) -> (usize, String, bool) {
+    let mut j = from;
+    let strip_tabs = chars.get(j) == Some(&'-');
+    if strip_tabs {
+        j += 1;
+    }
+    while chars.get(j).is_some_and(|ch| *ch == ' ' || *ch == '\t') {
+        j += 1;
+    }
+    let start = j;
+    let mut tag = String::new();
+    while let Some(&ch) = chars.get(j) {
+        if ch.is_whitespace() || is_shell_operator(ch) {
+            break;
+        }
+        match ch {
+            '\'' | '"' => {
+                let mut k = j + 1;
+                while k < chars.len() && chars[k] != ch {
+                    tag.push(chars[k]);
+                    k += 1;
+                }
+                j = (k + 1).min(chars.len());
+            }
+            '\\' if j + 1 < chars.len() => {
+                tag.push(chars[j + 1]);
+                j += 2;
+            }
+            _ => {
+                tag.push(ch);
+                j += 1;
+            }
+        }
+    }
+    (j.max(start), tag, strip_tabs)
+}
+
+/// Split shell `content` into `(1-based line number, code text)` pairs with
+/// comments removed. A `#` starts a comment only when it is unquoted and
+/// begins a word: at line start, after unescaped whitespace, or after an
+/// operator such as `;`. So `$#`, `${#var}`, `name\ #x` and `#` inside quotes
+/// (including `$'...\'...'`) are kept. Quote and word state carry across
+/// lines (so `"a<newline>b"# x` and `foo\<newline>#x` are not comments).
+/// Heredoc bodies are returned verbatim as code; a here-string `<<<` is
+/// consumed whole and never opens a heredoc. Conservative by design: any
+/// doubt leaves text in place as code so rules still fire.
+fn shell_code_lines(content: &str) -> Vec<(usize, String)> {
+    let mut scanner = ShellScanner::new();
+    content
+        .lines()
+        .enumerate()
+        .map(|(idx, line)| {
+            if scanner.heredoc_body_line(line) {
+                (idx + 1, line.to_string())
+            } else {
+                (idx + 1, scanner.scan_line(line))
+            }
+        })
+        .collect()
+}
+
 impl Analyzer {
     pub fn new(target: &Path) -> Result<Self> {
         Self::build(target, false, false)
@@ -523,8 +781,8 @@ impl Analyzer {
                 acc.record_file(&rel_path, &raw_bytes, &format!("{:?}", file_lang));
             }
 
-            match file_lang {
-                Language::Unknown => {
+            match super::routing::route(file_lang) {
+                super::routing::Route::InputAdapter => {
                     let Some(format) = configuration else {
                         coverage.mark(
                             file,
@@ -566,6 +824,9 @@ impl Analyzer {
                                     &rel_path,
                                 )?;
                                 for finding in &mut file_weak_points[start..] {
+                                    // Lines are relative to the extracted block, not the
+                                    // enclosing file; do not report a misleading one.
+                                    finding.line = None;
                                     finding.description.push_str(&format!(
                                         " (embedded {:?} input at {})",
                                         script.language, script.origin
@@ -589,7 +850,7 @@ impl Analyzer {
                         }
                     }
                 }
-                Language::Php => match super::php::analyze(&content, &rel_path) {
+                super::routing::Route::Php => match super::php::analyze(&content, &rel_path) {
                     Ok(findings) => file_weak_points.extend(findings),
                     Err(error) => {
                         coverage.mark(
@@ -601,10 +862,10 @@ impl Analyzer {
                         continue;
                     }
                 },
-                Language::Rust => {
+                super::routing::Route::Rust => {
                     self.analyze_rust(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::C | Language::Cpp => {
+                super::routing::Route::CCpp => {
                     self.analyze_c_cpp(
                         &content,
                         &mut file_stats,
@@ -612,10 +873,10 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Go => {
+                super::routing::Route::Go => {
                     self.analyze_go(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Python => {
+                super::routing::Route::Python => {
                     self.analyze_python(
                         &content,
                         &mut file_stats,
@@ -623,7 +884,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::JavaScript => {
+                super::routing::Route::JavaScript => {
                     self.analyze_javascript(
                         &content,
                         &mut file_stats,
@@ -631,11 +892,11 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Ruby => {
+                super::routing::Route::Ruby => {
                     self.analyze_ruby(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // BEAM family
-                Language::Elixir => {
+                super::routing::Route::Elixir => {
                     self.analyze_elixir(
                         &content,
                         &mut file_stats,
@@ -643,7 +904,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Erlang => {
+                super::routing::Route::Erlang => {
                     self.analyze_erlang(
                         &content,
                         &mut file_stats,
@@ -651,7 +912,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Gleam => {
+                super::routing::Route::Gleam => {
                     self.analyze_gleam(
                         &content,
                         &mut file_stats,
@@ -660,7 +921,7 @@ impl Analyzer {
                     )?;
                 }
                 // ML family
-                Language::ReScript => {
+                super::routing::Route::ReScript => {
                     record_migration_file(file_stats.total_lines);
                     self.analyze_rescript(
                         &content,
@@ -669,7 +930,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::OCaml => {
+                super::routing::Route::OCaml => {
                     self.analyze_ocaml(
                         &content,
                         &mut file_stats,
@@ -677,15 +938,15 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::StandardML => {
+                super::routing::Route::StandardML => {
                     self.analyze_sml(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // Lisp family
-                Language::Scheme | Language::Racket => {
+                super::routing::Route::Lisp => {
                     self.analyze_lisp(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // Functional
-                Language::Haskell => {
+                super::routing::Route::Haskell => {
                     self.analyze_haskell(
                         &content,
                         &mut file_stats,
@@ -693,7 +954,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::PureScript => {
+                super::routing::Route::PureScript => {
                     self.analyze_purescript(
                         &content,
                         &mut file_stats,
@@ -702,7 +963,7 @@ impl Analyzer {
                     )?;
                 }
                 // Proof assistants
-                Language::Idris => {
+                super::routing::Route::Idris => {
                     self.analyze_idris(
                         &content,
                         &mut file_stats,
@@ -710,13 +971,13 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Lean => {
+                super::routing::Route::Lean => {
                     self.analyze_lean(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Agda => {
+                super::routing::Route::Agda => {
                     self.analyze_agda(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Isabelle => {
+                super::routing::Route::Isabelle => {
                     self.analyze_isabelle(
                         &content,
                         &mut file_stats,
@@ -724,11 +985,11 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Coq => {
+                super::routing::Route::Coq => {
                     self.analyze_coq(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // Logic programming
-                Language::Prolog | Language::Logtalk | Language::Datalog => {
+                super::routing::Route::Logic => {
                     self.analyze_logic(
                         &content,
                         &mut file_stats,
@@ -737,22 +998,22 @@ impl Analyzer {
                     )?;
                 }
                 // Systems languages
-                Language::Zig => {
+                super::routing::Route::Zig => {
                     self.analyze_zig(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Ada => {
+                super::routing::Route::Ada => {
                     self.analyze_ada(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Odin => {
+                super::routing::Route::Odin => {
                     self.analyze_odin(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Nim => {
+                super::routing::Route::Nim => {
                     self.analyze_nim(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::Pony => {
+                super::routing::Route::Pony => {
                     self.analyze_pony(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                Language::DLang => {
+                super::routing::Route::DLang => {
                     self.analyze_dlang(
                         &content,
                         &mut file_stats,
@@ -761,7 +1022,7 @@ impl Analyzer {
                     )?;
                 }
                 // Config languages
-                Language::Nickel | Language::Nix => {
+                super::routing::Route::Config => {
                     self.analyze_config(
                         &content,
                         &mut file_stats,
@@ -770,7 +1031,7 @@ impl Analyzer {
                     )?;
                 }
                 // Scripting
-                Language::Shell => {
+                super::routing::Route::Shell => {
                     self.analyze_shell(
                         &content,
                         &mut file_stats,
@@ -778,7 +1039,7 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Julia => {
+                super::routing::Route::Julia => {
                     self.analyze_julia(
                         &content,
                         &mut file_stats,
@@ -786,22 +1047,11 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Lua => {
+                super::routing::Route::Lua => {
                     self.analyze_lua(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
                 // Nextgen DSLs - shared analyzer
-                Language::WokeLang
-                | Language::Eclexia
-                | Language::MyLang
-                | Language::JuliaTheViper
-                | Language::Oblibeny
-                | Language::Anvomidav
-                | Language::AffineScript
-                | Language::Ephapax
-                | Language::BetLang
-                | Language::ErrorLang
-                | Language::VCL
-                | Language::FBQL => {
+                super::routing::Route::NextgenDsl => {
                     self.analyze_nextgen_dsl(
                         &content,
                         &mut file_stats,
@@ -809,10 +1059,10 @@ impl Analyzer {
                         &rel_path,
                     )?;
                 }
-                Language::Java => {
+                super::routing::Route::Java => {
                     self.analyze_java(&content, &mut file_stats, &mut file_weak_points, &rel_path)?;
                 }
-                _ => {
+                super::routing::Route::Generic => {
                     self.analyze_generic(&content, &mut file_stats, &rel_path)?;
                 }
             }
@@ -820,7 +1070,7 @@ impl Analyzer {
             // Structured configuration uses parsed keys and values; treating
             // comments or schema identifiers as executable source creates false
             // findings. Source-language adapters retain their existing checks.
-            if configuration.is_none() {
+            if super::routing::runs_cross_language(configuration.is_some()) {
                 self.analyze_cross_language(&content, &mut file_weak_points, &rel_path)?;
             }
 
@@ -917,12 +1167,15 @@ impl Analyzer {
         super::apply_suppression(&mut report);
 
         // Apply user classifications from a project-local registry
-        // (`<target>/audits/assail-classifications.a2ml` or
+        // (`<target>/audits/assail-classifications_praxis.deed`, else the
+        // legacy `<target>/audits/assail-classifications.a2ml` or
         // `<target>/.panic-attack-classifications.a2ml`). Entries in the
         // registry flip matching findings to `suppressed = true` after
         // the structural suppression pass, letting repositories record
-        // audited residuals alongside their source audit documents.
-        super::apply_user_classifications(&mut report, &base);
+        // audited residuals alongside their source audit documents. A
+        // malformed deed registry fails the analysis rather than being
+        // read as an empty one.
+        super::apply_user_classifications(&mut report, &base)?;
 
         Ok(report)
     }
@@ -3668,25 +3921,18 @@ impl Analyzer {
         // matching so that doc-comments documenting "no sorry" do not produce
         // false positives.
         let code = strip_proof_comments(content, "--", Some(("/-", "-/")));
-        // sorry — banned proof escape hatch: admits unproven propositions
-        let sorry_count = code.matches("sorry").count();
-        if sorry_count > 0 {
-            stats.unsafe_blocks += sorry_count;
-            weak_points.push(WeakPoint {
-                file: None,
-                line: None,
-                category: WeakPointCategory::ProofDrift,
-                location: Some(file_path.to_string()),
-                severity: Severity::Critical,
-                description: format!(
-                    "{} sorry (banned proof escape hatch — admits unproven proposition) in {}",
-                    sorry_count, file_path
-                ),
-                recommended_attack: vec![AttackAxis::Cpu],
-                suppressed: false,
-                test_context: None,
-            });
-        }
+        // sorry — banned proof escape hatch: admits unproven propositions.
+        // One finding per occurrence, anchored to its line, so an audited
+        // occurrence can carry an inline `panic-attack: accepted` marker
+        // without hiding any other sorry in the same file.
+        push_line_anchored_proof_drift(
+            &code,
+            "sorry",
+            "1 sorry (banned proof escape hatch — admits unproven proposition)",
+            file_path,
+            stats,
+            weak_points,
+        );
 
         // unsafeNativeIO — bypasses IO monad discipline
         let unsafe_io_count =
@@ -3847,25 +4093,16 @@ impl Analyzer {
         // proof-escape hatches. See #43.
         let without_blocks = strip_proof_comments(content, "", Some(("(*", "*)")));
         let code = strip_isabelle_prose(&without_blocks);
-        // sorry — Isabelle's admitted-proof escape hatch (banned estate-wide)
-        let sorry_count = code.matches("sorry").count();
-        if sorry_count > 0 {
-            stats.unsafe_blocks += sorry_count;
-            weak_points.push(WeakPoint {
-                file: None,
-                line: None,
-                category: WeakPointCategory::ProofDrift,
-                location: Some(file_path.to_string()),
-                severity: Severity::Critical,
-                description: format!(
-                    "{} sorry (banned — unfinished Isabelle proof admitted without verification) in {}",
-                    sorry_count, file_path
-                ),
-                recommended_attack: vec![AttackAxis::Cpu],
-                suppressed: false,
-                test_context: None,
-            });
-        }
+        // sorry — Isabelle's admitted-proof escape hatch (banned estate-wide).
+        // One line-anchored finding per occurrence (see analyze_lean).
+        push_line_anchored_proof_drift(
+            &code,
+            "sorry",
+            "1 sorry (banned — unfinished Isabelle proof admitted without verification)",
+            file_path,
+            stats,
+            weak_points,
+        );
 
         // oops — abandons an unfinished proof without even admitting it
         let oops_count = code.matches("oops").count();
@@ -4735,11 +4972,19 @@ impl Analyzer {
             });
         }
 
-        // Unsafe temp files
-        if content.contains("/tmp/") && !content.contains("mktemp") {
+        // Unsafe temp files. Comments are ignored for both the `/tmp/` and the
+        // `mktemp` test (see `shell_code_lines`); the first offending code line
+        // is reported.
+        let code_lines = shell_code_lines(content);
+        let first_tmp_line = code_lines
+            .iter()
+            .find(|(_, code)| code.contains("/tmp/"))
+            .map(|(n, _)| *n);
+        let has_mktemp = code_lines.iter().any(|(_, code)| code.contains("mktemp"));
+        if let (Some(tmp_line), false) = (first_tmp_line, has_mktemp) {
             weak_points.push(WeakPoint {
                 file: None,
-                line: None,
+                line: u32::try_from(tmp_line).ok(),
                 category: WeakPointCategory::PathTraversal,
                 location: Some(file_path.to_string()),
                 severity: Severity::Medium,
@@ -5899,6 +6144,52 @@ fn strip_simple_double_quoted_strings(content: &str) -> String {
     out
 }
 
+/// Append only the newlines of a span that is being removed, so text after
+/// the span keeps its original line number.
+fn push_newlines_of(out: &mut String, removed: &str) {
+    out.extend(removed.chars().filter(|c| *c == '\n'));
+}
+
+/// 1-indexed line of every occurrence of `needle` in `code`. `code` must be
+/// a position-preserving rewrite of the file (every newline kept), as
+/// `strip_proof_comments` and `strip_isabelle_prose` produce.
+fn occurrence_lines(code: &str, needle: &str) -> Vec<u32> {
+    code.match_indices(needle)
+        .map(|(at, _)| code[..at].matches('\n').count() as u32 + 1)
+        .collect()
+}
+
+/// One Critical ProofDrift finding per occurrence of `needle` in `code`, each
+/// anchored to its line so an inline `panic-attack: accepted` marker can
+/// suppress exactly that occurrence. `code` must be position-preserving
+/// (see `occurrence_lines`).
+fn push_line_anchored_proof_drift(
+    code: &str,
+    needle: &str,
+    what: &str,
+    file_path: &str,
+    stats: &mut ProgramStatistics,
+    weak_points: &mut Vec<WeakPoint>,
+) {
+    let lines = occurrence_lines(code, needle);
+    stats.unsafe_blocks += lines.len();
+    for line in lines {
+        weak_points.push(WeakPoint {
+            file: None,
+            line: Some(line),
+            category: WeakPointCategory::ProofDrift,
+            location: Some(file_path.to_string()),
+            severity: Severity::Critical,
+            description: format!("{what} in {file_path}:{line}"),
+            recommended_attack: vec![AttackAxis::Cpu],
+            suppressed: false,
+            test_context: None,
+        });
+    }
+}
+
+/// Remove proof-language comments while keeping every newline, so a line
+/// number taken from the result is a line number in `content`.
 fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &str)>) -> String {
     // First strip block comments greedily, left-to-right.
     let mut without_blocks = String::with_capacity(content.len());
@@ -5908,9 +6199,11 @@ fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &
             without_blocks.push_str(&rest[..start]);
             let after_open = &rest[start + open.len()..];
             if let Some(end) = after_open.find(close) {
+                push_newlines_of(&mut without_blocks, &after_open[..end]);
                 rest = &after_open[end + close.len()..];
             } else {
-                // Unterminated block comment — drop the rest.
+                // Unterminated block comment — drop the rest, keep its lines.
+                push_newlines_of(&mut without_blocks, after_open);
                 rest = "";
                 break;
             }
@@ -5920,12 +6213,13 @@ fn strip_proof_comments(content: &str, line_marker: &str, block: Option<(&str, &
         without_blocks.push_str(content);
     }
 
-    // Then strip line comments.
+    // Then strip line comments. Split on '\n' (not `lines()`) so a trailing
+    // newline survives and the newline count is exactly preserved.
     if line_marker.is_empty() {
         return without_blocks;
     }
     let mut out = String::with_capacity(without_blocks.len());
-    for (i, line) in without_blocks.lines().enumerate() {
+    for (i, line) in without_blocks.split('\n').enumerate() {
         let kept = match line.find(line_marker) {
             Some(idx) => &line[..idx],
             None => line,
@@ -6050,6 +6344,7 @@ fn strip_isabelle_prose(content: &str) -> String {
 
         out.push_str(&rest[..next.0]);
         out.push(' ');
+        push_newlines_of(&mut out, &rest[next.0..next.1]);
         rest = &rest[next.1..];
     }
 }
@@ -6337,6 +6632,162 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    // ---------------------------------------------------------------
+    // Shell /tmp rule is comment-aware
+    // ---------------------------------------------------------------
+
+    fn shell_tmp_findings(content: &str) -> Vec<WeakPoint> {
+        let analyzer = Analyzer::new(std::path::Path::new(".")).expect("analyzer construction");
+        let mut stats = ProgramStatistics::default();
+        let mut wp = Vec::new();
+        analyzer
+            .analyze_shell(content, &mut stats, &mut wp, "fixture.sh")
+            .expect("analyze_shell");
+        wp.into_iter()
+            .filter(|w| matches!(w.category, WeakPointCategory::PathTraversal))
+            .collect()
+    }
+
+    #[test]
+    fn shell_tmp_in_comment_only_is_not_flagged() {
+        let src = "#!/bin/sh\n# In memory, not /tmp/mint-tokens-answers.$$: keep it\necho ok # see /tmp/x\n";
+        assert!(shell_tmp_findings(src).is_empty());
+    }
+
+    #[test]
+    fn shell_tmp_in_code_is_flagged_with_line() {
+        let src = "#!/bin/sh\necho hi\nrm -f /tmp/foo\n";
+        let f = shell_tmp_findings(src);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(3));
+    }
+
+    #[test]
+    fn shell_mktemp_only_in_comment_does_not_silence() {
+        let src = "# use mktemp instead\nrm -f /tmp/foo\n";
+        let f = shell_tmp_findings(src);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+    }
+
+    #[test]
+    fn shell_mktemp_in_code_silences() {
+        assert!(shell_tmp_findings("t=$(mktemp /tmp/x.XXXXXX)\n").is_empty());
+    }
+
+    #[test]
+    fn shell_tmp_in_quoted_string_is_flagged() {
+        let f = shell_tmp_findings("echo \"# not a comment /tmp/x\"\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(1));
+    }
+
+    #[test]
+    fn shell_hash_inside_quotes_arg_does_not_hide_tmp() {
+        let f = shell_tmp_findings("echo \"#\" /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(1));
+    }
+
+    #[test]
+    fn shell_param_length_hash_is_not_a_comment() {
+        let f = shell_tmp_findings("n=${#v}; echo $# /tmp/x\n");
+        assert_eq!(f.len(), 1);
+    }
+
+    #[test]
+    fn shell_heredoc_body_is_kept_as_code() {
+        let src = "cat <<EOF\n# /tmp/x\nEOF\n";
+        let f = shell_tmp_findings(src);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+    }
+
+    #[test]
+    fn shell_ansi_c_escaped_quote_keeps_hash_literal() {
+        let f = shell_tmp_findings("printf '%s\\n' $'it\\' # literal'; rm -f /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(1));
+    }
+
+    #[test]
+    fn shell_escaped_space_does_not_start_comment() {
+        let f = shell_tmp_findings("rm -f name\\ #suffix /tmp/x\n");
+        assert_eq!(f.len(), 1);
+    }
+
+    #[test]
+    fn shell_hash_after_operator_starts_comment() {
+        // `;#` begins a comment, so the `mktemp` inside it must not silence.
+        let f = shell_tmp_findings("rm -f /tmp/x;# mktemp\n");
+        assert_eq!(f.len(), 1);
+        // And a `/tmp/` only inside such a comment is not flagged.
+        assert!(shell_tmp_findings("echo ok;# /tmp/x\n").is_empty());
+    }
+
+    #[test]
+    fn shell_here_string_is_not_a_heredoc() {
+        let f = shell_tmp_findings("cat <<< data\n# mktemp\nrm -f /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(3));
+    }
+
+    #[test]
+    fn shell_heredoc_quoted_punctuation_delimiter() {
+        let f = shell_tmp_findings("cat <<'---'\n# /tmp/x\n---\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+    }
+
+    #[test]
+    fn shell_hash_after_multiline_quote_is_not_a_comment() {
+        // The `#` follows the closing quote with no space, so it is part of
+        // the same word (`end"#`), not a comment: `/tmp/x` must be flagged.
+        let f = shell_tmp_findings("echo \"start\nend\"# /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+    }
+
+    #[test]
+    fn shell_hash_after_backslash_newline_word_is_not_a_comment() {
+        // `foo\<newline>#bar` joins into the single word `foo#bar`.
+        let f = shell_tmp_findings("echo foo\\\n# /tmp/x\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+        // After whitespace the continuation still starts a new word: comment.
+        assert!(shell_tmp_findings("echo foo \\\n# /tmp/x\n").is_empty());
+    }
+    #[test]
+    fn shell_heredoc_hyphenated_delimiter() {
+        let src = "cat <<EOF-TEXT\n# /tmp/x\nEOF-TEXT\n# /tmp/y\n";
+        let f = shell_tmp_findings(src);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].line, Some(2));
+        // After the body ends, comments are comments again.
+        let lines = shell_code_lines(src);
+        assert_eq!(lines[3].1, "");
+    }
+
+    #[test]
+    fn embedded_shell_findings_carry_no_line() {
+        // package.json scripts are analysed as embedded shell; their lines are
+        // relative to the extracted script, so the finding must carry none.
+        let dir = TempDir::new().expect("tempdir");
+        fs::write(
+            dir.path().join("package.json"),
+            "{\"name\":\"x\",\"scripts\":{\"clean\":\"rm -f /tmp/x\"}}\n",
+        )
+        .expect("write package.json");
+        let report = crate::assail::analyze(dir.path()).expect("analyze");
+        let embedded: Vec<_> = report
+            .weak_points
+            .iter()
+            .filter(|w| w.description.contains("embedded") && w.description.contains("/tmp/"))
+            .collect();
+        assert!(!embedded.is_empty(), "expected an embedded /tmp/ finding");
+        assert!(embedded.iter().all(|w| w.line.is_none()));
+    }
 
     // ---------------------------------------------------------------
     // 0b. JSON-LD / JSON-Schema identifier exemption (cross-lang URLs)
@@ -8359,5 +8810,78 @@ pub fn safe_get_x() -> Option<String> {
             0,
             "flake.nix with rev pinning must NOT produce a SupplyChain finding"
         );
+    }
+}
+
+#[cfg(test)]
+mod proof_line_anchor_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Inputs built from the tokens the proof strippers react to, so the
+    /// generator actually reaches unterminated blocks, nested cartouches and
+    /// comments that span lines.
+    fn proof_source() -> impl Strategy<Value = String> {
+        let tokens = [
+            "(*",
+            "*)",
+            "/-",
+            "-/",
+            "--",
+            "//",
+            "text ",
+            "\\<open>",
+            "\\<close>",
+            "@{text ",
+            "}",
+            "{",
+            "\n",
+            "\r\n",
+            "sorry",
+            "a",
+            " ",
+        ];
+        proptest::collection::vec(proptest::sample::select(tokens.to_vec()), 0..60)
+            .prop_map(|parts| parts.concat())
+    }
+
+    proptest! {
+        // The invariant line anchoring rests on: stripping never adds,
+        // drops or reorders a newline, so the line of any surviving
+        // character is its line in the original file.
+        #[test]
+        fn proof_strippers_preserve_every_newline(src in proof_source()) {
+            let newlines = src.matches('\n').count();
+            for (line_marker, block) in [
+                ("--", Some(("/-", "-/"))),
+                ("", Some(("(*", "*)"))),
+                ("//", None),
+            ] {
+                let out = strip_proof_comments(&src, line_marker, block);
+                prop_assert_eq!(out.matches('\n').count(), newlines);
+            }
+            let isabelle = strip_isabelle_prose(&strip_proof_comments(&src, "", Some(("(*", "*)"))));
+            prop_assert_eq!(isabelle.matches('\n').count(), newlines);
+        }
+    }
+
+    #[test]
+    fn occurrence_lines_are_one_indexed_per_occurrence() {
+        assert_eq!(
+            occurrence_lines("sorry\nx\n  sorry sorry\n", "sorry"),
+            vec![1, 3, 3]
+        );
+        assert!(occurrence_lines("no escape here\n", "sorry").is_empty());
+    }
+
+    #[test]
+    fn sorry_after_multiline_comment_keeps_its_line() {
+        let lean = "/- a\n   b -/\ntheorem t : True := by\n  sorry\n";
+        let code = strip_proof_comments(lean, "--", Some(("/-", "-/")));
+        assert_eq!(occurrence_lines(&code, "sorry"), vec![4]);
+
+        let thy = "(* a\n   b *)\ntext \\<open>prose\n  sorry in prose\\<close>\nlemma l: True\n  sorry\n";
+        let code = strip_isabelle_prose(&strip_proof_comments(thy, "", Some(("(*", "*)"))));
+        assert_eq!(occurrence_lines(&code, "sorry"), vec![6]);
     }
 }

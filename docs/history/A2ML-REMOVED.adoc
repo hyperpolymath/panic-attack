@@ -1,0 +1,239 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+// SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= The A2ML files removed from panic-attack on 2026-11-14
+
+The owner approved moving panic-attack off A2ML on 2026-11-14, the way
+hypatia did (hyperpolymath/hypatia#1113). Every `.a2ml` file in panic-attack
+is translated into deed form where a mapping spec says it translates, every
+reader is moved off it, and the file is deleted. The mapping specs are in
+standards `1-formats/deed/mappings/`; a field a spec does not list does not
+translate and was dropped, not re-homed. Files with no mapping spec were
+deleted (A7 section 11, ruling Q7).
+
+This record lists each removed file, what it was, and where its content
+went. The contents are not copied here. Git history keeps them. To read one,
+use its blob id, or read its path at the last commit that held it:
+
+[source,bash]
+----
+git cat-file -p <blob id>
+git show 81eee5400c785f5e633f8983610e57c43295d3ed:<path>
+----
+
+Size is in bytes. The sha256 is of the file as it was tracked.
+
+== Removed
+
+[cols="4,1,3,3,4,5",options="header"]
+|===
+| Path | Size | sha256 | Git blob id | What it was | Where it went
+
+| `.machine_readable/CLADE.a2ml`
+| 1563
+| `7dfc4482e223b13594e508e74ccab93a789a6097ad477bef0a0c06ed0f31dafa`
+| `cf405c23665fd28aeb15ae0d691d0d23b7a4fba8`
+| Clade declaration (gv-clade-index, now chora-registry): identity, clade, forges, lineage, status.
+| `clade-to-repo-deed.adoc` as updated by standards#1579. Identity content to `panic-attack_chora.deed`: `(identity :owner :primary-forge :prefixed-name)`, `(clade :primary sc :secondary (rm) :assigned :rationale)`, `(forges …)`, `(lineage :type standalone)`. The `[status]` section and its one history entry to `(status …)` in `.machine_readable/descriptiles/STATE.deed` (A7 J15). Not carried: the v5 `uuid` (the retired identity; `:repo-uuid` stays the registry's v8 id, never reminted, U1); `[lineage] parent`, a description rather than a repo, where chora-registry records none (the deed keeps `""`); `[lineage] born` `2026-03-16`, the clade backfill date, which the deed's own lineage note (renamed 2026-02-08) contradicts. The chora deed's `(lineage :type)` said `hub` before; CLADE and chora-registry both say `standalone`, which it now says.
+
+| `.machine_readable/6a2/META.a2ml`
+| 6181
+| `b00ab3a5063c81293518cfc52a984527604c48037ca790d403fb7c3f4d11a341`
+| `2373d544ee2f76b1ed23cc142efcb2363fbc10af`
+| META descriptile: metadata, project context, dependencies, six architecture decisions, practices, readiness-test grades.
+| `(meta :version "2.5.5" :last-updated "2026-06-04")` per `meta-ecosystem-to-repo-deed.adoc`. Dropped: everything else. Author and licence sat under `[metadata]`, not the `[project-info]` rows the table lists; the six `[architecture.*]` decisions carry decision, rationale and consequence prose with no id, status or date, so they are not the `(adr …)` row.
+
+| `.machine_readable/6a2/ECOSYSTEM.a2ml`
+| 3686
+| `ea268abfef2c3b0da94a7b529100c182cb8cdf2720f7f61786d5c4fa7db1d4e7`
+| `4b3ac328922bcf7b21c5d6be8d0c1d11e5bc6212`
+| ECOSYSTEM descriptile: project, purpose, position (hospital-model role), eight related projects, integration surface.
+| `(ecosystem :project :ecosystem :position-type "component")` per `meta-ecosystem-to-repo-deed.adoc`. Dropped: `[project]` name, full-name, purpose and role (the purpose row is `[position] purpose`); `[position]` tier and hospital-model-role; `[integration-surface]`; and the eight `[related-projects]` entries, whose relationships (active-integration, active-consumer, core-subsystem, planned-integration, sibling, parent-context) are outside the 16-term closed set of `clauses/ecosystem.abnf` v1.1.0.
+
+| `.machine_readable/6a2/ANCHOR.a2ml`
+| 572
+| `c629f4681d4d80a0fcd7ffad8cae3de490976bfff934a517cb481a0070d3d44f`
+| `20e8a0f7c637a4ac44ff78f9ad810f9c83db5c67`
+| Anchor (YAML-shaped): reverse-DNS id, version 1.0.0, clade "diagnostic", status, SSG config, parents boj-server and ambientops.
+| A7 6.4. The parents to `(ecosystem (related :relationship parent :uuid …))` in `panic-attack_chora.deed` (J26), each written as its chora-registry v8 id: boj-server `6c7f9305-2a47-8f96-a1ed-bd0940e4d4e6`, ambientops `5c1e28a9-d8c0-8bfe-a57d-ae4abe7dc3be` (pre-V9 ids, kept in their gv-clade-index domain). No `(anchor …)` clause: the source has no `authority`, which the clause requires and a translator never invents, so the anchor is incomplete until the owner supplies it; its `version` 1.0.0 waits with it. Dropped under 6.4: the reverse-DNS id, clade and status. Not translated: the SSG config, which belongs to `META.deed` (J29), not adopted here.
+
+| `.machine_readable/anchors/ANCHOR.a2ml`
+| 495
+| `0d579e52c8bcef01207373049522bb99c691cd44c11a5343f51e7e4a92e3966b`
+| `b7a9e018e93c92fdaa58c1d933643c89a4bf8f46`
+| A second anchor: the same shape, clade "unknown", parent boj-server only.
+| As the row above; its one parent is already carried. No authority either.
+
+| `.machine_readable/6a2/AGENTIC.a2ml`
+| 9122
+| `594ac48d1de46f93fd9cdb731ec09ad08432b5ee3900cab1333a343682062331`
+| `92561916de6d6397d4d1a43579d6a310f3bc362b`
+| AGENTIC descriptile: agent roles (panicbot, hypatia, echidnabot), gating policies, entropy budgets, risk thresholds, override paths, decision recording, permissions, constraints.
+| `(agentic :version "0.1.0" :last-updated "2026-06-04" (permissions :source #t :tests #t :docs #t :config #t :create-files #t))` per `agentic-neurosym-playbook-to-repo-deed.adoc`. No `@profile` line and no `[maintenance-integrity]`, so no `(profile)` and no `(integrity)`. Dropped: the three extra permissions (can-run-scans, can-edit-suppression-registry, can-push-verisimdb), `[agent-constraints]` (unknown keys never-use and always-do, which fail closed), and every other section (no table rows).
+
+| `.machine_readable/6a2/NEUROSYM.a2ml`
+| 12138
+| `487349def3b2dfdb0a4744319fec50b6c60bdf575abbcfe86dfdb766783e74a0`
+| `4d5bf16a41be92143c7e1a0b60941deb6ac35c1e`
+| NEUROSYM descriptile: architecture, operation definitions, composition rules, proof obligations, type system, search strategy, Hypatia config.
+| `(neurosym :version "0.1.0" :last-updated "2026-06-04" (hypatia :scan-enabled #t :report-format "JSON (AssailReport)"))`. The source has no scan-depth. Dropped: the other `[hypatia-config]` keys and every other section, which fail closed pending table rows.
+
+| `.machine_readable/6a2/PLAYBOOK.a2ml`
+| 6335
+| `60f7f3b35927a09d59734592a62dabd708f1f5d20a87cced54490daee08bd880`
+| `0cbb30acf47f2f4b32d4bad2ced328dfa33bd1b2`
+| PLAYBOOK descriptile: build, test, install, scan, patch-bridge, verisim-push, deployment modes, incident response, release, rollback, suppression runbook, monitoring.
+| `(playbook :version "1.0.0" :last-updated "2026-06-04" (incident-response) (release-process))`: the two of the five operational sections the source has, kept as positions. Dropped: their contents and every other section (no table rows).
+
+| `.machine_readable/6a2/STATE.a2ml`
+| 11309
+| `5f268324bf86423d9b287f76367860ec1ffa6de85077dc4a296e57134aa3980e`
+| `de374a073fbb171929d976095e10dea84ee5812b`
+| STATE descriptile v1: metadata (status "active"), project context (completion 99%, CRG C phase line), session journal 2026-03-23 to 2026-11-06, next priorities.
+| Option B of `state-v1-decision.adoc`. Nothing translated: the source has no `maturity` field; its status string duplicates the CLADE phase now in `STATE.deed`; completion-percentage is derivable and dies; the session sections and next priorities are journal, archived here by reference.
+
+| `0-AI-MANIFEST.a2ml`
+| 4990
+| `ca5d37998a002e9b4c3aea9bc373eac8e2b90ed4e10fbf359ab4940ed89a5a05`
+| `b4225e63f5ab288cca2fe9088e9db443ce9f50f6`
+| AI manifest (S-expression shape): description, canonical locations, critical invariants, repository structure, lifecycle hooks, tools, reports, quality standards, deployment, integration, metadata.
+| Replaced by the pointer-only `0-AI-MANIFEST.deed` (A7 ruling Q15). Its sections do not match the table of `ai-manifest-decision.adoc`, so nothing was translated. Its `(reports (formats "json" "nickel" "yaml" "sarif") (storage-targets "filesystem" "verisimdb"))` set panic-attack's own report defaults when the binary ran in this directory; a deed manifest carries no report settings, so those runs now get the built-in json and nickel on the filesystem.
+
+| `.machine_readable/agent_instructions/methodology.a2ml`
+| 4650
+| `566a383f83e6955fe207c88cff3fdf1cf029c36cead80ffb61ace786608a9cc6`
+| `754f357105bd63d7e4700a0e881689cfa6850de1`
+| Agent methodology template: mode, ring ceiling, wave cap, priority weights, budgets.
+| Deleted: template boilerplate; no mapping spec. (The AGENTIC `(methodology …)` row reads AGENTIC's own `[methodology]`, which this repo's AGENTIC did not have.)
+
+| `.machine_readable/agent_instructions/coverage.a2ml`
+| 2233
+| `ce9e1e2124e3a7d7dc86e3704d0bb68cf81eae1185fe6e6ddcf98c505ff1975d`
+| `69796642033856ce09e8282f9dc2479500e07747`
+| Agent methodology template: session coverage tracking.
+| Deleted: template boilerplate; no mapping spec.
+
+| `.machine_readable/agent_instructions/debt.a2ml`
+| 1879
+| `ae4680c353b887ddc636d5e0002dd79c94e917c69a33cb24d0a58e53e2178e9f`
+| `c0238c5dfa488ecb12ab9e8f45d9fefac2b71f0e`
+| Agent methodology template: meander debt.
+| Deleted: template boilerplate; no mapping spec. The directory's `README.adoc` (1403 bytes, sha256 `cf8e8e4fa7725aeded093e4498db68bd04b2fc1637426f607ba3c166b870e483`, blob `628249b67bf55099e5d6f5fbfe64ffeaee637c25`), which only described these three files, went with them.
+
+| `.machine_readable/campaigns/2026-05-26.a2ml`
+| 22454
+| `ddee6bb775919ad21f8cd7d3c343532db1a0655bc34306eb2e4206064a6d5e73`
+| `7939924a7dc17ac2f69aac56a29c9c22cf3e85ef`
+| Machine-readable report of the 2026-05-26 estate sweep campaign (schema "panic-attack campaign-report v1.0.0").
+| Deleted: no mapping spec, no reader. The human report `docs/campaigns/2026-05-26.adoc` and the driver scripts in `docs/campaigns/2026-05-26/` stay; `file-ffi-pr-v2.sh`, which wrote `.a2ml` registries, is marked historical and refuses to run.
+
+| `.machine_readable/contractiles/INDEX.a2ml`
+| 4590
+| `9fc8c9bfcac08efbee5e302ae759cdd3a354f3fea36b283274739fcd767559f0`
+| `566da31e1d493f6e43bfaad412acfa031256f61f`
+| Contractile registry over the three pre-consolidation trees (issue #124).
+| Deleted: no mapping spec, no reader. The A7 `(contractiles …)` clause is the successor; not adopted here yet.
+
+| `.machine_readable/contractiles/bust/Bustfile.a2ml`
+| 1580
+| `d23f9a19c7454788df23ca9823ddbd9865e549d5ae54bb2d70dbd111aff25bf8`
+| `176aed5b3b62e8dbe1b874a4944fa2f4ef285387`
+| Bust contractile: meta-repo rollback scenarios (template residue).
+| Deleted: no mapping spec. `bust.ncl` now names `Bustfile.deed` (A7 8.1), not yet written.
+
+| `.machine_readable/contractiles/dust/Dustfile.a2ml`
+| 496
+| `422d7f1fe68b44391e6cebf30ed8c698ff6966305f2ac5b35ae84ef7e093bf51`
+| `0d619ee22b2988df90498da65af4da1c148e7b19`
+| Dust contractile: cleanup and hygiene settings.
+| Deleted: no mapping spec, no reader.
+
+| `.machine_readable/contractiles/trust/Trustfile.a2ml`
+| 454
+| `e8c4e1b37a562007c33feaa42e247280d97b40ddaabbdfc18dbc0c7470a8960d`
+| `0c95e15e2a28a5e1c317b45e08ae5a8c2d96501a`
+| Trust contractile: provenance, integrity and verification settings.
+| Deleted: no mapping spec, no reader.
+
+| `contractiles/intend/Intentfile.a2ml`
+| 521
+| `0a87e0c63b2b2cdc6a97e06bc3dd10cb99d8218fb2570507e8861da84ab3f474`
+| `671bc71811c3233a4d88ff99d9c3a5015dbbe780`
+| Intent contractile (generator source for `contractile gen-just`): purpose stub and anti-purpose.
+| Deleted: no mapping spec. `contractile.just` keeps its generated recipes and says not to regenerate from the retired files.
+
+| `contractiles/must/Mustfile.a2ml`
+| 1090
+| `173b4fbf41245b4a6c858dda06859afc2a7ba12220b33c483ba32f86fb77d7ff`
+| `aad4e3912b2b2c648a86186f2a03a8135eadb57f`
+| Must contractile (generator source): licence, README, hardcoded paths, Dockerfile, Makefile checks.
+| Deleted: no mapping spec. `contractile.just` keeps its generated must recipes.
+
+| `contractiles/trust/Trustfile.a2ml`
+| 777
+| `17e7b71f8f675eeba9a4d9a2deb0b38575a37e2bb5de38527ae9fe103bd95655`
+| `e43f764367420e922f633ff0ecc1387f93950e55`
+| Trust contractile (generator source): trust level and two integrity checks.
+| Deleted: no mapping spec. `contractile.just` keeps its generated trust recipes.
+
+| `.machine_readable/integrations/feedback-o-tron.a2ml`
+| 381
+| `e0befb80a2138f359524d6db4e5fdc598c4a233079990afe6303e382821e1550`
+| `5381604eda94e014b309b62ffa43e41fdbed5e63`
+| Integration note: feedback-o-tron bug reporter config.
+| Deleted: no mapping spec, no reader.
+
+| `.machine_readable/integrations/proven.a2ml`
+| 612
+| `11fabb802ac4a0285caa64c4000436c3e1b386b7a6190d735e10be0fb910dbd9`
+| `9af33ffdc7e9faced46b474f2a07df389c9e1631`
+| Integration note: proven safety-library adoption guidance.
+| Deleted: no mapping spec, no reader.
+
+| `.machine_readable/integrations/verisimdb.a2ml`
+| 387
+| `48f716912dbe895d0f4f59a767c22cea517fcb9bc3637b1540558cd3f647cc51`
+| `164c5229a7e2a507cb9f123ccd681159a3376005`
+| Integration note: VeriSimDB data feed config.
+| Deleted: no mapping spec, no reader.
+
+| `.machine_readable/integrations/vexometer.a2ml`
+| 444
+| `3f85155335da36a216049bc4434f976d19580b6bcd49c020117a5c133e3b9145`
+| `238b3d2cdd3a9c59f5e21dcdadba8aaf81d24214`
+| Integration note: vexometer measurement config.
+| Deleted: no mapping spec, no reader.
+
+|===
+
+`audits/assail-classifications.a2ml` was not here to remove: panic-attack
+carries no classification registry of its own. Its deed form,
+`audits/assail-classifications_praxis.deed`, is what the scanner reads
+first (`src/assail/classifications.rs`).
+
+== Retained, with the reason
+
+[cols="3,5",options="header"]
+|===
+| Path | Why it stays
+
+| `.machine_readable/contractiles/adjust/Adjustfile.a2ml` (2673 bytes, sha256 `a3cf23202801a05e3bd5d040cc9eb90a202f74e4cfdb0d6ff8ef2b71cca43288`, blob `0534a733dea0ec4afe60b4b437aae359747278c6`)
+| `just adjust-check` (`contractile.just`) reads the four calibration thresholds it declares (production-unwrap-threshold, test-unwrap-threshold, test-panic-threshold, active-rules) and compares each with the source, and `adjust.ncl` checks the file is present. No mapping spec covers a contractile, so its values have no deed home to move to; deleting it would turn the drift check into a silent skip. It goes when its edict form (`Adjustfile.deed`, A7 8.1) exists and the recipe reads that.
+|===
+
+== Readers moved
+
+* `src/a2ml/mod.rs`: the AI manifest is read deed first. `0-AI-MANIFEST.deed`
+  (a pointer-only `repo-deed`, parsed with `src/deed.rs`) when it exists;
+  the legacy `0-AI-MANIFEST.a2ml` and `AI.a2ml` only as a fallback for
+  repositories that have not moved. A deed manifest carries no report
+  settings. `panic-attack manifest` and `panic-attack diagnostics` use the
+  same order.
+* `src/diagnostics.rs`: panicbot directives are looked for as the
+  `(bot-directives (bot :name panicbot …))` clause of the repo deed
+  (`agentic-neurosym-playbook-to-repo-deed.adoc` §6), not at the stale
+  `.machine_readable/bot_directives/panicbot.scm`. None declared means the
+  full suite (owner ruling 2026-11-13).
+* `src/assail/classifications.rs` was already deed first (#295); unchanged.
+* `.machine_readable/MUST.contractile`, `contractile.just`, `bust.ncl`,
+  `.claude/CLAUDE.md`, `.github/CONTRIBUTING.md`, `QUICKSTART-DEV.adoc` and
+  the `scan-and-report.yml` comment point at the deeds.
