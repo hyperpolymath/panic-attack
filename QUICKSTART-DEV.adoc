@@ -59,11 +59,11 @@ panic-attack/
 ├── ffi/zig/              # Zig FFI bridge (if applicable)
 ├── tests/                # Test suite
 ├── docs/                 # Documentation
-├── .machine_readable/    # Checkpoint files (STATE, META, ECOSYSTEM)
+├── .machine_readable/    # Descriptile deeds (descriptiles/STATE.deed) and contractiles
 ├── Justfile              # Task runner recipes
 ├── guix.scm              # Guix environment
-├── flake.nix             # Nix environment (fallback)
-└── 0-AI-MANIFEST.a2ml    # AI agent entry point
+├── panic-attack_chora.deed  # Repo deed: identity and repo facts
+└── 0-AI-MANIFEST.deed    # AI agent entry point (pointer-only)
 ----
 
 == Key Recipes
@@ -103,7 +103,8 @@ If using an AI assistant, load the warmup context first:
 just llm-context    # Outputs role-appropriate context
 ----
 
-Or read `0-AI-MANIFEST.a2ml` and `.claude/CLAUDE.md` directly.
+Or read `0-AI-MANIFEST.deed` (it points at `panic-attack_chora.deed`) and
+`.claude/CLAUDE.md` directly.
 
 == Get Help
 

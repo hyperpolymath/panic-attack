@@ -8,7 +8,11 @@ They’re filed alongside the human + machine campaign reports so the
 campaign is reproducible. See
 link:../2026-05-26.md[`+../2026-05-26.md+`] for the report.
 
-=== Scripts
+form was broken under jq operator precedence). *Historical since
+2026-11-14:* it now exits at once, because it writes a retired `+.a2ml+`
+registry; a registry is now `+audits/assail-classifications_praxis.deed+`
+(see `+.claude/CLAUDE.md+`, User-Classification Registry).
+|=== Scripts
 
 [width="100%",cols="50%,50%",options="header",]
 |===
@@ -65,7 +69,8 @@ bash 00-per-repo.sh && bash 00b-nested.sh
 # Phase 1b: triage
 deno run --allow-read --allow-write 01-triage.ts
 
-# Phase 2..N: per-repo PRs (one invocation per repo)
+# Phase 2..N: per-repo PRs (one invocation per repo). Historical: since
+# 2026-11-14 the script refuses to run (it writes a retired .a2ml registry).
 BRANCH=panic-fix/PA001-PA007-ffi-legitimate \
   bash file-ffi-pr-v2.sh \
     <repo-name> \

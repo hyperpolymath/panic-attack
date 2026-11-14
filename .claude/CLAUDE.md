@@ -67,7 +67,8 @@ src/
 │   ├── reachability.rs  # Import scanning for phantom dependency detection
 │   ├── classify.rs      # Three-way classification: Mitigable/Unmitigable/Informational
 │   └── registry.rs      # Mitigation lifecycle registry (JSON persistence)
-├── a2ml/                # AI manifest protocol (TOML-like format support, 0-AI-MANIFEST.a2ml priority lookup)
+├── a2ml/                # AI manifest reader (0-AI-MANIFEST.deed first; legacy .a2ml read-only fallback) + Nickel export + report-bundle codec
+├── deed.rs              # Minimal DEED reader (standards deed.abnf v2.0.0); used by the classification registry, the AI manifest and diagnostics
 ├── panll/               # PanLL event-chain export
 ├── storage/             # Filesystem + VerisimDB persistence
 ├── i18n/                # Multi-language support (ISO 639-1, 10 languages)
@@ -193,24 +194,55 @@ All five detection categories shipped in v2.5.0 (2026-04-12):
 - **InputBoundary (PA024)**: Unchecked CBOR/MessagePack (Rust), JSON.parse without try-catch (JS/Julia)
 - **MutationGap (PA025)**: No cargo-mutants config (Rust), all-type-only assertions (Julia), no property testing (Elixir)
 
-## User-Classification Registry (2026-04-18)
+## User-Classification Registry (2026-04-18; deed-first 2026-11-14)
 
 Optional project-local classification file that flips audited findings
-to `suppressed = true` after the kanren structural-suppression pass:
+to `suppressed = true` after the kanren structural-suppression pass.
+Code: `src/assail/classifications.rs` (registry) and `src/deed.rs`
+(a minimal reader of the standards deed grammar, `deed.abnf` v2.0.0).
 
-- Path: `<project>/audits/assail-classifications.a2ml` (preferred) or
-  `<project>/.panic-attack-classifications.a2ml` (fallback).
-- Format (A2ML S-expression):
+- Read order, new input first:
+  1. `<project>/audits/assail-classifications_praxis.deed` — a DEED
+     `praxis-deed`. When it exists it *is* the registry; the A2ML files
+     below are not read at all.
+  2. `<project>/audits/assail-classifications.a2ml` (legacy fallback).
+  3. `<project>/.panic-attack-classifications.a2ml` (legacy fallback).
+- The deed name ends `_praxis.deed` because the deed grammar dispatches the
+  head on the file name: a bare `assail-classifications.deed` matches no
+  dispatch pattern and is not a conforming deed.
+- Deed form (`bun <standards>/1-formats/deed/tools/deed_lint.js FILE` passes):
   ```
-  (assail-classifications
+  ;; SPDX-License-Identifier: MPL-2.0
+  (praxis-deed
+    :schema-version "1.0.0"
+    :canonical-name "<repo>-assail-classifications"
+    :beholding-chora #uuid"0889b37b-defb-831f-973c-e119500db00e"  ; estate chora
+    :profile assail-classifications
     (classification
-      (file "crates/foo/src/bar.rs")
-      (category "UnsafeCode")
-      (audit "audits/audit-ffi-unsafe.md §1")
-      (rationale "one-line summary")))
+      :file "crates/foo/src/bar.rs"
+      :category UnsafeCode            ; a symbol: a WeakPointCategory variant
+      :audit "audits/audit-ffi-unsafe.md §1"
+      :rationale "one-line summary"))
   ```
-- Public API: `UserClassification`, `load_user_classifications(root)`,
-  `apply_user_classifications(&mut report, root)` in `src/assail/mod.rs`.
+  Top level: `:schema-version`, `:canonical-name`, `:beholding-chora` and
+  `:profile assail-classifications` exactly once each, then any number of
+  `(classification …)` clauses. Per clause: `:file` and `:category` exactly
+  once, `:audit` and `:rationale` at most once, nothing else.
+- **A malformed deed is an error, never a silent pass.** Any grammar or
+  profile violation (unknown field, string category, unknown category,
+  missing `:file`, wrong head, trailing content …) makes
+  `load_user_classifications` / `apply_user_classifications` return `Err`,
+  and `analyze()` / `analyze_verbose()` fail with the file and line. A
+  malformed deed never falls back to the A2ML files.
+- The legacy A2ML reader is unchanged and lenient: an entry without a quoted
+  `file` and `category` is skipped. It stays only until the repositories
+  that still carry an A2ML registry have moved to the deed. Never create a
+  new `.a2ml` registry; write the deed.
+- Public API: `UserClassification`, `load_user_classifications(root) ->
+  Result<Vec<_>>`, `apply_user_classifications(&mut report, root) ->
+  Result<()>`, `parse_classification_deed(text, path)`,
+  `USER_CLASSIFICATIONS_DEED_PATH` in `src/assail/` (re-exported from
+  `assail`).
 - Called automatically by `analyze()` / `analyze_verbose()` after
   `apply_suppression`.
 
@@ -221,13 +253,13 @@ suppressions non-gameable by single-side edits while still letting
 repositories record honest audits of legitimate-FFI and other
 genuinely-sound residuals.
 
-**Reference implementation**: `hyperpolymath/007`
-`audits/assail-classifications.a2ml` (cross-references
-`audits/audit-ffi-unsafe.md §1` for `zig_bridge.rs` UnsafeCode).
+**Worked example**: `hyperpolymath/hypatia`
+`audits/assail-classifications_praxis.deed` (translated entry for entry
+from its former A2ML registry).
 
 ## Integration Points
 
-- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA025). Directives at `.machine_readable/bot_directives/panicbot.scm`
+- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA025). Directives, when a repo has any, are the `(bot-directives (bot :name panicbot …))` clause of its `<repo>_chora.deed` (standards `agentic-neurosym-playbook-to-repo-deed.adoc` §6); with none, panicbot runs the full suite
 - **verisimdb**: Store scan results as hexads (document + semantic modalities). File I/O works, API planned
 - **hypatia**: Neurosymbolic rule engine processes findings. Env var watcher in diagnostics
 - **panll**: Event-chain export for three-panel visualisation. Working via `panll` subcommand. Two dedicated panels: panic-attack (single-repo) and Mass Panic (assemblyline batch GUI)
@@ -253,3 +285,26 @@ Run with `just readiness` or `just readiness-summary`.
 - Use anyhow::Result for error handling
 - Serde derive on public types for JSON serialization
 - Zero compiler warnings policy (release + test builds)
+
+## Machine-Readable Metadata (deed forms; A2ML retired 2026-11-14)
+
+A2ML is retired. Never create, restore or extend a `.a2ml` file here, and do
+not recommend one to a scanned repository. The repo's metadata is in deeds
+(grammar: standards `1-formats/deed/spec/abnf/deed.abnf`; check with
+`bun <standards>/1-formats/deed/tools/deed_lint.js FILE`):
+
+- `panic-attack_chora.deed` — identity, clade, forges, lineage, maturity, and
+  the `(meta)`, `(ecosystem)`, `(agentic)`, `(neurosym)` and `(playbook)`
+  clauses translated from the retired descriptiles.
+- `.machine_readable/descriptiles/STATE.deed` — lifecycle `(status)`
+  (`deed_lint.js --state`).
+- `0-AI-MANIFEST.deed` — pointer-only front door (A7 Q15).
+- `audits/assail-classifications_praxis.deed` — the classification registry
+  form (see above); this repo carries none.
+
+`docs/history/A2ML-REMOVED.adoc` records every removed `.a2ml` file and where
+its content went. One remains, with its reason there:
+`.machine_readable/contractiles/adjust/Adjustfile.a2ml`, which `just
+adjust-check` still reads until its edict form exists. Readers in `src/` keep
+an A2ML fallback only where other repositories still carry the legacy file
+(the classification registry and the AI manifest); they never write one.

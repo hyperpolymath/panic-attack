@@ -1167,12 +1167,15 @@ impl Analyzer {
         super::apply_suppression(&mut report);
 
         // Apply user classifications from a project-local registry
-        // (`<target>/audits/assail-classifications.a2ml` or
+        // (`<target>/audits/assail-classifications_praxis.deed`, else the
+        // legacy `<target>/audits/assail-classifications.a2ml` or
         // `<target>/.panic-attack-classifications.a2ml`). Entries in the
         // registry flip matching findings to `suppressed = true` after
         // the structural suppression pass, letting repositories record
-        // audited residuals alongside their source audit documents.
-        super::apply_user_classifications(&mut report, &base);
+        // audited residuals alongside their source audit documents. A
+        // malformed deed registry fails the analysis rather than being
+        // read as an empty one.
+        super::apply_user_classifications(&mut report, &base)?;
 
         Ok(report)
     }
