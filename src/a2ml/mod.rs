@@ -403,7 +403,7 @@ impl Manifest {
         } else {
             record_to_nickel(&gather_entries(&self.entries))
         };
-        format!("let {} = {};\n{}", self.root_name, body, self.root_name)
+        format!("let {} = {} in\n{}", self.root_name, body, self.root_name)
     }
 
     /// The legacy `(reports …)` section; never read from a deed.
@@ -987,7 +987,7 @@ fn nickel_record(lines: Vec<String>) -> String {
     if lines.is_empty() {
         return "{}".to_string();
     }
-    format!("{{\n    {}\n}}", lines.join(";\n    "))
+    format!("{{\n    {}\n}}", lines.join(",\n    "))
 }
 
 fn values_to_nickel(values: &[Sexpr]) -> String {
@@ -1603,6 +1603,43 @@ mod tests {
             nickel.contains("a39ad6b1-51e0-854d-aa9a-d9ee97ba519b"),
             "{nickel}"
         );
+    }
+
+    #[test]
+    fn manifest_nickel_uses_nickel_record_and_let_syntax() {
+        // Nickel separates record fields with `,` and binds with `let … in`;
+        // `;` separators and a trailing `let x = …;` form do not parse.
+        let dir = TempDir::new().expect("tempdir");
+        let deed = dir.path().join("0-AI-MANIFEST.deed");
+        fs::write(&deed, DEED_MANIFEST).expect("write");
+        // Any name other than `.deed` is read as legacy text.
+        let legacy = dir.path().join("legacy-manifest.txt");
+        fs::write(&legacy, LEGACY_MANIFEST).expect("write");
+        for path in [&deed, &legacy] {
+            let nickel = Manifest::load(path).expect("load").to_nickel();
+            assert!(!nickel.contains(';'), "{nickel}");
+            assert!(nickel.contains(",\n"), "{nickel}");
+            let root = if path == &deed {
+                "repo-deed"
+            } else {
+                "manifest"
+            };
+            assert!(nickel.ends_with(&format!(" in\n{root}")), "{nickel}");
+            // Where the Nickel CLI is installed, it must accept the output.
+            let file = dir.path().join("out.ncl");
+            fs::write(&file, &nickel).expect("write");
+            if let Ok(out) = std::process::Command::new("nickel")
+                .arg("export")
+                .arg(&file)
+                .output()
+            {
+                assert!(
+                    out.status.success(),
+                    "{nickel}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+        }
     }
 
     #[test]
