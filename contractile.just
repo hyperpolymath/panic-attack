@@ -2,6 +2,13 @@
 # Source directory: contractiles
 # Re-generate with: contractile gen-just --dir contractiles
 #
+# The `# Source:` Dustfile, Intentfile, Mustfile and Trustfile named below were
+# legacy .a2ml contractiles, retired 2026-11-14 with no mapping spec to
+# translate them (docs/history/A2ML-REMOVED.adoc). Their recipes stand as
+# generated until the edicts (<Verb>file.deed, A7 8.1) exist; do not regenerate
+# from the retired files. Adjustfile.a2ml remains, because adjust-check below
+# reads its declared thresholds.
+#
 # SPDX-License-Identifier: MPL-2.0
 
 # === DUST (Recovery & Rollback) ===

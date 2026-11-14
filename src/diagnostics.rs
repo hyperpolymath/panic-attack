@@ -9,7 +9,6 @@ use std::path::Path;
 
 const HYPATIA_ENV: &str = "HYPATIA_API_KEY";
 const GITBOT_FLEET_ENV: &str = "GITBOT_FLEET_ENDPOINT";
-const PANICBOT_DIRECTIVE_PATH: &str = ".machine_readable/bot_directives/panicbot.scm";
 
 /// Print readiness checks using `manifest`, paths relative to the current
 /// working directory and the configured integration environment variables.
@@ -28,7 +27,11 @@ pub fn run_self_diagnostics(manifest: &Manifest) -> Result<()> {
     checks.push(Diagnostic::ok(
         "AI manifest",
         format!(
-            "AI.a2ml parsed (formats: {:?}, storage: {:?})",
+            "{} parsed (formats: {:?}, storage: {:?})",
+            manifest
+                .path()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "no manifest file; built-in defaults".to_string()),
             manifest.report_formats(),
             manifest.storage_modes(),
         ),
@@ -197,16 +200,18 @@ fn check_watcher(label: &'static str, env_key: &str) -> Diagnostic {
 /// Check panicbot integration readiness.
 ///
 /// Verifies:
-///   1. Bot directives file exists at `.machine_readable/bot_directives/panicbot.scm`
+///   1. Whether the repo deed (`<repo>_chora.deed` in the current directory)
+///      declares `(bot-directives (bot :name panicbot …))` (standards
+///      `agentic-neurosym-playbook-to-repo-deed.adoc` §6). No declaration is
+///      valid: panicbot then runs the full suite (owner ruling 2026-11-13).
 ///   2. JSON output contract: AssailReport serialises with the fields panicbot expects
 ///      (`program_path`, `weak_points`, `language`)
 ///   3. WeakPointCategory and Severity serialise in PascalCase (no serde rename_all)
 ///
 /// Failed JSON checks, including serialisation errors, yield an error diagnostic;
-/// missing directives alone yield a warning.
+/// a repo deed that does not parse yields a warning.
 fn check_panicbot_readiness() -> Diagnostic {
-    let directive_path = Path::new(PANICBOT_DIRECTIVE_PATH);
-    let has_directives = directive_path.is_file();
+    let directives = panicbot_directives(Path::new("."));
 
     // Verify JSON output contract by serialising a minimal AssailReport
     let test_report = crate::types::AssailReport {
@@ -249,28 +254,73 @@ fn check_panicbot_readiness() -> Diagnostic {
         Err(_) => false,
     };
 
-    match (has_directives, json_ok) {
-        (true, true) => Diagnostic::ok(
-            "panicbot integration",
-            "directives present, JSON contract verified (PA001–PA021)".to_string(),
-        ),
-        (false, true) => Diagnostic::warning(
-            "panicbot integration",
-            format!(
-                "JSON contract OK but {} missing (panicbot will use defaults)",
-                PANICBOT_DIRECTIVE_PATH
-            ),
-        ),
-        (true, false) => Diagnostic::error(
-            "panicbot integration",
-            "directives present but JSON output contract broken — panicbot cannot parse output"
-                .to_string(),
-        ),
-        (false, false) => Diagnostic::error(
+    if !json_ok {
+        return Diagnostic::error(
             "panicbot integration",
             "JSON output contract broken — AssailReport serialisation mismatch".to_string(),
+        );
+    }
+    match directives {
+        Ok(Some(deed)) => Diagnostic::ok(
+            "panicbot integration",
+            format!(
+                "directives declared in {} (bot-directives), JSON contract verified",
+                deed.display()
+            ),
+        ),
+        Ok(None) => Diagnostic::ok(
+            "panicbot integration",
+            "no panicbot directives declared (panicbot runs the full suite), JSON contract verified"
+                .to_string(),
+        ),
+        Err(err) => Diagnostic::warning(
+            "panicbot integration",
+            format!("JSON contract OK but the repo deed could not be read: {err}"),
         ),
     }
+}
+
+/// The repo deed in `root` that declares `(bot-directives (bot :name
+/// panicbot …))`, if any. `Err` when a `*_chora.deed` there does not parse.
+fn panicbot_directives(root: &Path) -> Result<Option<std::path::PathBuf>> {
+    use panic_attack::deed::{Item, Value};
+    let Ok(entries) = fs::read_dir(root) else {
+        return Ok(None);
+    };
+    let mut deeds: Vec<_> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with("_chora.deed"))
+        })
+        .collect();
+    deeds.sort();
+    let names_panicbot = |items: &[Item]| {
+        items.iter().any(|item| {
+            matches!(item, Item::Field { key, value: Value::Symbol(name), .. }
+                if key == "name" && name == "panicbot")
+        })
+    };
+    for path in deeds {
+        let text =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let deed = panic_attack::deed::parse(&text, Some(&path))
+            .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
+        let declared = deed.items.iter().any(|item| match item {
+            Item::Clause { name, items, .. } if name == "bot-directives" => {
+                items.iter().any(|bot| {
+                    matches!(bot, Item::Clause { name, items, .. }
+                        if name == "bot" && names_panicbot(items))
+                })
+            }
+            _ => false,
+        });
+        if declared {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 /// Check attestation readiness: whether signing is available and if a

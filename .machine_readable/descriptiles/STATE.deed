@@ -1,0 +1,37 @@
+;; SPDX-License-Identifier: CC-BY-SA-4.0
+;; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+; The STATE descriptile of panic-attack (A7 7.2, J14, J15; profile
+; clauses/state.abnf, checked by `deed_lint.js --state`).
+;
+; (status …) is CLADE.a2ml's [status] section and its one [[status.history]]
+; entry, translated field for field under standards
+; 1-formats/deed/mappings/clade-to-repo-deed.adoc as updated by standards#1579:
+; lifecycle goes to STATE.deed, not to the chora deed. The values are the
+; source's, including its own note that the history entry is a backfilled
+; default. The (status …) clause the chora deed carried before (phase active,
+; with a description as its note) is replaced by this one.
+;
+; The repo's (maturity …) clause is still in panic-attack_chora.deed: its level,
+; `stable`, is outside the closed set in vocabulary/maturity.adoc, and choosing
+; the level is the owner's call.
+;
+; STATE.a2ml (state-v1-decision.adoc, option B) adds nothing here: it has no
+; maturity field, its status string duplicates the CLADE phase, and the rest
+; is journal, archived by reference in docs/history/A2ML-REMOVED.adoc.
+(descriptile-deed
+  :schema-version "1.0.0"
+  :canonical-name "panic-attack"
+  :of-chora #uuid"a39ad6b1-51e0-854d-aa9a-d9ee97ba519b"
+  :affirmed "2026-11-14"
+  :affirmed-by agent
+  (status
+    :phase active
+    :since "2026-03-16"
+    :present #t
+    :aliases ()
+    :merged-into ""
+    :superseded-by ""
+    :successors ()
+    :ended ""
+    (history
+      (entry :phase active :since "2026-03-16" :note "backfilled default — correct if the true phase differs"))))

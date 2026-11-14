@@ -137,7 +137,7 @@ jobs:
           esac
 
           # Count only findings the scanner did NOT suppress. `suppressed` is
-          # set by the user-classification registry (audits/*.a2ml) and by
+          # set by the user-classification registry (audits/*_praxis.deed) and by
           # test-context detection, and is omitted rather than set false, so
           # test for `!= true`.
           OFFENDING=$(jq --argjson t "$THRESHOLD" '

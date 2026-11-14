@@ -32,6 +32,27 @@ field or clause, a string `+:category+`, an unknown category, a missing
 fail with it instead of reading it as an empty registry or falling back to
 the A2ML files. Library callers must handle the `+Result+`.
 
+==== Changed — the AI manifest reads a deed first; this repo is off A2ML
+
+* `+Manifest::load_default+`, `+panic-attack manifest+` and
+`+panic-attack diagnostics+` read `+0-AI-MANIFEST.deed+` first (a
+pointer-only `+repo-deed+`, parsed with `+panic_attack::deed+`), then the
+legacy `+0-AI-MANIFEST.a2ml+` or `+AI.a2ml+` as a read-only fallback. A
+deed manifest carries no report settings, so it gets the built-in defaults
+(formats json and nickel, storage filesystem); a legacy manifest's
+`+(reports …)+` is still honoured. A malformed or non-`+repo-deed+` deed
+manifest is an error. New: `+MANIFEST_CANDIDATES+`,
+`+Manifest::default_path+`, `+Manifest::path+`, `+Manifest::is_deed+`.
+* `+diagnostics+` looks for panicbot directives as the
+`+(bot-directives (bot :name panicbot …))+` clause of the repo deed, not at
+`+.machine_readable/bot_directives/panicbot.scm+`; none declared is reported
+OK (panicbot runs the full suite) rather than as a warning.
+* The repo's own `+.a2ml+` files are gone (25 of 26), translated where a
+standards mapping spec covers them into `+panic-attack_chora.deed+`,
+`+.machine_readable/descriptiles/STATE.deed+` and `+0-AI-MANIFEST.deed+`.
+`+docs/history/A2ML-REMOVED.adoc+` records each file and what was dropped.
+`+Adjustfile.a2ml+` stays while `+just adjust-check+` reads it.
+
 === [2.6.0] - 2026-11-14
 
 Release of the work merged on `+main+` since 2.5.5 (143 commits), including

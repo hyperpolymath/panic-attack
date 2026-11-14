@@ -67,8 +67,8 @@ src/
 │   ├── reachability.rs  # Import scanning for phantom dependency detection
 │   ├── classify.rs      # Three-way classification: Mitigable/Unmitigable/Informational
 │   └── registry.rs      # Mitigation lifecycle registry (JSON persistence)
-├── a2ml/                # AI manifest protocol (TOML-like format support, 0-AI-MANIFEST.a2ml priority lookup)
-├── deed.rs              # Minimal DEED reader (standards deed.abnf v2.0.0); used by the classification registry
+├── a2ml/                # AI manifest reader (0-AI-MANIFEST.deed first; legacy .a2ml read-only fallback) + Nickel export + report-bundle codec
+├── deed.rs              # Minimal DEED reader (standards deed.abnf v2.0.0); used by the classification registry, the AI manifest and diagnostics
 ├── panll/               # PanLL event-chain export
 ├── storage/             # Filesystem + VerisimDB persistence
 ├── i18n/                # Multi-language support (ISO 639-1, 10 languages)
@@ -259,7 +259,7 @@ from its former A2ML registry).
 
 ## Integration Points
 
-- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA025). Directives at `.machine_readable/bot_directives/panicbot.scm`
+- **panicbot**: gitbot-fleet verifier bot — invokes `panic-attack assail --output-format json`, translates WeakPoints to Findings (PA001-PA025). Directives, when a repo has any, are the `(bot-directives (bot :name panicbot …))` clause of its `<repo>_chora.deed` (standards `agentic-neurosym-playbook-to-repo-deed.adoc` §6); with none, panicbot runs the full suite
 - **verisimdb**: Store scan results as hexads (document + semantic modalities). File I/O works, API planned
 - **hypatia**: Neurosymbolic rule engine processes findings. Env var watcher in diagnostics
 - **panll**: Event-chain export for three-panel visualisation. Working via `panll` subcommand. Two dedicated panels: panic-attack (single-repo) and Mass Panic (assemblyline batch GUI)
@@ -285,3 +285,26 @@ Run with `just readiness` or `just readiness-summary`.
 - Use anyhow::Result for error handling
 - Serde derive on public types for JSON serialization
 - Zero compiler warnings policy (release + test builds)
+
+## Machine-Readable Metadata (deed forms; A2ML retired 2026-11-14)
+
+A2ML is retired. Never create, restore or extend a `.a2ml` file here, and do
+not recommend one to a scanned repository. The repo's metadata is in deeds
+(grammar: standards `1-formats/deed/spec/abnf/deed.abnf`; check with
+`bun <standards>/1-formats/deed/tools/deed_lint.js FILE`):
+
+- `panic-attack_chora.deed` — identity, clade, forges, lineage, maturity, and
+  the `(meta)`, `(ecosystem)`, `(agentic)`, `(neurosym)` and `(playbook)`
+  clauses translated from the retired descriptiles.
+- `.machine_readable/descriptiles/STATE.deed` — lifecycle `(status)`
+  (`deed_lint.js --state`).
+- `0-AI-MANIFEST.deed` — pointer-only front door (A7 Q15).
+- `audits/assail-classifications_praxis.deed` — the classification registry
+  form (see above); this repo carries none.
+
+`docs/history/A2ML-REMOVED.adoc` records every removed `.a2ml` file and where
+its content went. One remains, with its reason there:
+`.machine_readable/contractiles/adjust/Adjustfile.a2ml`, which `just
+adjust-check` still reads until its edict form exists. Readers in `src/` keep
+an A2ML fallback only where other repositories still carry the legacy file
+(the classification registry and the AI manifest); they never write one.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2317  # the body after `exit 1` is the historical record
 # Generate + file a legitimate-FFI classification PR for one repo.
 # v2: fixes broken chained-OR jq precedence by passing prefixes as --argjson array
 # and matching via .file as $f | $prefixes | any(.[]; . as $p | $f | startswith($p)).
@@ -6,7 +7,19 @@
 # Usage: file-ffi-pr-v2.sh REPO_NAME PREFIX_JSON SHORT_RATIONALE [CLASSIFICATION]
 #   PREFIX_JSON: JSON array of path prefixes, e.g. '["ffi/zig/src/","bindings/"]'
 #   CLASSIFICATION: defaults to "legitimate-ffi"
+#
+# HISTORICAL RECORD of the 2026-05-26 estate sweep: kept so the campaign can be
+# read, not re-run. It writes audits/assail-classifications.a2ml, and A2ML is
+# retired (standards CLAUDE.md, Machine-Readable Artefacts; panic-attack
+# docs/history/A2ML-REMOVED.adoc). A classification registry is now a deed,
+# audits/assail-classifications_praxis.deed, in the form .claude/CLAUDE.md
+# (User-Classification Registry) gives; write that by hand, entry by entry.
+# The exit below stops the script before it touches a repository; the body
+# after it is the record of what ran.
 set -euo pipefail
+
+echo "file-ffi-pr-v2.sh is a historical campaign record and writes a retired .a2ml registry; see its header." >&2
+exit 1
 
 REPO_NAME="$1"
 PREFIX_JSON="$2"
