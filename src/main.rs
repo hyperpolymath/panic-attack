@@ -2246,7 +2246,11 @@ fn run_main() -> Result<()> {
 
         Commands::Manifest { path, output } => {
             let target = path.unwrap_or_else(Manifest::default_path);
-            let manifest = Manifest::load(&target).unwrap_or_default();
+            // A missing manifest exports the built-in defaults; one that exists
+            // but does not load is an error, so `-o` never overwrites with empty
+            // Nickel.
+            let manifest = Manifest::load_if_exists(&target)
+                .with_context(|| format!("reading manifest {}", target.display()))?;
             let nickel = manifest.to_nickel();
             if let Some(output_path) = output {
                 fs::write(&output_path, nickel)?;
@@ -2399,11 +2403,16 @@ fn run_main() -> Result<()> {
         Commands::Diagnostics {
             manifest: manifest_path,
         } => {
+            // Re-read rather than reuse the startup manifest: startup falls back
+            // to the defaults on a load error, and diagnostics must not report a
+            // malformed manifest as "no manifest file".
             let diag_manifest = if let Some(path) = manifest_path {
                 Manifest::load(&path)
                     .with_context(|| format!("reading manifest {}", path.display()))?
             } else {
-                manifest.clone()
+                let path = Manifest::default_path();
+                Manifest::load_if_exists(&path)
+                    .with_context(|| format!("reading manifest {}", path.display()))?
             };
             diagnostics::run_self_diagnostics(&diag_manifest)?;
             return Ok(());

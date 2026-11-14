@@ -150,7 +150,11 @@ pub const MANIFEST_CANDIDATES: &[&str] = &["0-AI-MANIFEST.deed", "0-AI-MANIFEST.
 #[derive(Clone, Debug)]
 pub struct Manifest {
     root_name: String,
+    /// The legacy A2ML tree; empty for a deed.
     entries: Vec<Sexpr>,
+    /// The deed's members, kept typed so `to_nickel` renders lists, booleans,
+    /// integers and clauses as what they are; empty for legacy A2ML.
+    deed_items: Vec<crate::deed::Item>,
     /// The file the manifest was read from; `None` for the built-in defaults.
     path: Option<PathBuf>,
     /// True when read from a `0-AI-MANIFEST.deed`.
@@ -162,6 +166,7 @@ impl Default for Manifest {
         Self {
             root_name: "manifest".to_string(),
             entries: Vec::new(),
+            deed_items: Vec::new(),
             path: None,
             from_deed: false,
         }
@@ -182,6 +187,17 @@ impl Manifest {
 
     pub fn load_default() -> Result<Self> {
         Self::load(&Self::default_path())
+    }
+
+    /// Load `path` if it exists, else the built-in defaults. A file that
+    /// exists but does not load (a malformed or misheaded deed, an unreadable
+    /// file) is an error, never the defaults.
+    pub fn load_if_exists(path: &Path) -> Result<Self> {
+        if path.exists() {
+            Self::load(path)
+        } else {
+            Ok(Self::default())
+        }
     }
 
     /// Load a manifest. A `.deed` file is read with the deed grammar
@@ -209,8 +225,8 @@ impl Manifest {
         self.from_deed
     }
 
-    /// Parse a deed manifest. The head becomes the root name and each field
-    /// or clause one entry, so `to_nickel` renders the deed as it stands.
+    /// Parse a deed manifest. The head becomes the root name and the members
+    /// are kept as parsed, so `to_nickel` renders the deed as it stands.
     fn parse_deed(raw: &str, path: &Path) -> Result<Self> {
         let deed = crate::deed::parse(raw, Some(path))
             .map_err(|e| anyhow!("{}: {}", path.display(), e))?;
@@ -221,9 +237,14 @@ impl Manifest {
                 deed.head
             ));
         }
+        if path.file_name().and_then(|n| n.to_str()) == Some(MANIFEST_CANDIDATES[0]) {
+            check_pointer_profile(&deed.items)
+                .map_err(|e| anyhow!("{}: not a pointer-only manifest: {}", path.display(), e))?;
+        }
         Ok(Self {
             root_name: deed.head.clone(),
-            entries: deed.items.iter().map(deed_item_to_sexpr).collect(),
+            entries: Vec::new(),
+            deed_items: deed.items,
             path: None,
             from_deed: true,
         })
@@ -377,9 +398,12 @@ impl Manifest {
     }
 
     pub fn to_nickel(&self) -> String {
-        let entries = gather_entries(&self.entries);
-        let body = record_to_nickel(&entries);
-        format!("let {} = {};\n{}", self.root_name, body, self.root_name)
+        let body = if self.from_deed {
+            deed_items_to_nickel(&self.deed_items)
+        } else {
+            record_to_nickel(&gather_entries(&self.entries))
+        };
+        format!("let {} = {} in\n{}", self.root_name, body, self.root_name)
     }
 
     /// The legacy `(reports …)` section; never read from a deed.
@@ -799,39 +823,124 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// A deed member as a manifest entry: a field `:key value` becomes
-/// `(key value)` (a list value contributes its elements), a clause
-/// `(name …)` becomes `(name …)` with its members converted in turn.
-fn deed_item_to_sexpr(item: &crate::deed::Item) -> Sexpr {
-    match item {
-        crate::deed::Item::Field { key, value, .. } => {
-            let mut list = vec![Sexpr::Atom(key.clone())];
-            match value {
-                crate::deed::Value::List(values) => {
-                    list.extend(values.iter().map(deed_value_to_sexpr));
-                }
-                other => list.push(deed_value_to_sexpr(other)),
+/// The pointer-only profile of `0-AI-MANIFEST.deed` (A7 ruling Q15): exactly
+/// one `(front-doors …)` clause, giving `:machine` and `:human` once each as
+/// non-empty strings. Other members are not refused here: estate manifests
+/// are still being reduced to pointer-only form, and the deed linter is the
+/// gate for that.
+fn check_pointer_profile(items: &[crate::deed::Item]) -> Result<()> {
+    use crate::deed::{Item, Value};
+    let mut doors = items.iter().filter_map(|item| match item {
+        Item::Clause { name, items, line } if name == "front-doors" => Some((items, *line)),
+        _ => None,
+    });
+    let (doors_items, doors_line) = doors
+        .next()
+        .ok_or_else(|| anyhow!("missing the (front-doors :machine … :human …) clause"))?;
+    if let Some((_, line)) = doors.next() {
+        return Err(anyhow!("line {line}: (front-doors) given more than once"));
+    }
+    for key in ["machine", "human"] {
+        let mut values = doors_items.iter().filter_map(|item| match item {
+            Item::Field {
+                key: k,
+                value,
+                line,
+                ..
+            } if k == key => Some((value, *line)),
+            _ => None,
+        });
+        match (values.next(), values.next()) {
+            (None, _) => {
+                return Err(anyhow!(
+                    "line {doors_line}: (front-doors) is missing :{key}"
+                ))
             }
-            Sexpr::List(list)
+            (Some(_), Some((_, line))) => {
+                return Err(anyhow!("line {line}: :{key} given more than once"))
+            }
+            (Some((Value::Str(s), _)), None) if !s.trim().is_empty() => {}
+            (Some((Value::Str(_), line)), None) => {
+                return Err(anyhow!("line {line}: :{key} is empty"))
+            }
+            (Some((value, line)), None) => {
+                return Err(anyhow!(
+                    "line {line}: :{key} must be a string, found {}",
+                    value.kind()
+                ))
+            }
         }
-        crate::deed::Item::Clause { name, items, .. } => {
-            let mut list = vec![Sexpr::Atom(name.clone())];
-            list.extend(items.iter().map(deed_item_to_sexpr));
-            Sexpr::List(list)
+    }
+    Ok(())
+}
+
+/// Deed members as a Nickel record: a field `:key value` becomes
+/// `key = value` and a clause `(name …)` becomes `name = { … }`, however
+/// many members it has. A name given more than once (repeated clauses, such
+/// as several `(bot …)`) becomes an array of its values, in order.
+fn deed_items_to_nickel(items: &[crate::deed::Item]) -> String {
+    use crate::deed::Item;
+    let mut grouped: Vec<(&str, Vec<String>)> = Vec::new();
+    for item in items {
+        let (key, rendered) = match item {
+            Item::Field { key, value, .. } => (key.as_str(), deed_value_to_nickel(value)),
+            Item::Clause { name, items, .. } => (name.as_str(), deed_items_to_nickel(items)),
+        };
+        match grouped.iter_mut().find(|(existing, _)| *existing == key) {
+            Some((_, values)) => values.push(rendered),
+            None => grouped.push((key, vec![rendered])),
         }
+    }
+    nickel_record(
+        grouped
+            .into_iter()
+            .map(|(key, mut values)| {
+                let value = if values.len() == 1 {
+                    values.remove(0)
+                } else {
+                    format!("[{}]", values.join(", "))
+                };
+                format!("{} = {}", key_to_nickel(key), value)
+            })
+            .collect(),
+    )
+}
+
+/// A deed value as Nickel, keeping its type: a list is always an array (an
+/// empty one included), `#t`/`#f` are booleans, an integer is a number, and
+/// strings, symbols and ids are strings.
+fn deed_value_to_nickel(value: &crate::deed::Value) -> String {
+    use crate::deed::Value;
+    match value {
+        Value::Str(s) | Value::Uuid(s) | Value::Symbol(s) => nickel_escape_string(s),
+        Value::Uuid8(s) => nickel_escape_string(&format!("#u8:{s}")),
+        Value::Uuid5(s) => nickel_escape_string(&format!("#u5:{s}")),
+        Value::Integer(s) => nickel_integer(s),
+        Value::Boolean(b) => b.to_string(),
+        Value::Quoted(inner) => deed_value_to_nickel(inner),
+        Value::List(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(deed_value_to_nickel)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 
-fn deed_value_to_sexpr(value: &crate::deed::Value) -> Sexpr {
-    use crate::deed::Value;
-    match value {
-        Value::Str(s) | Value::Uuid(s) => Sexpr::String(s.clone()),
-        Value::Uuid8(s) => Sexpr::String(format!("#u8:{s}")),
-        Value::Uuid5(s) => Sexpr::String(format!("#u5:{s}")),
-        Value::Symbol(s) | Value::Integer(s) => Sexpr::Atom(s.clone()),
-        Value::Boolean(b) => Sexpr::Atom(if *b { "#t" } else { "#f" }.to_string()),
-        Value::Quoted(inner) => deed_value_to_sexpr(inner),
-        Value::List(values) => Sexpr::List(values.iter().map(deed_value_to_sexpr).collect()),
+/// A deed integer (`-?[0-9]+`, kept as written) as a Nickel number literal:
+/// leading zeros are dropped, since a deed integer is never octal.
+fn nickel_integer(written: &str) -> String {
+    let (sign, digits) = match written.strip_prefix('-') {
+        Some(rest) => ("-", rest),
+        None => ("", written),
+    };
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        "0".to_string()
+    } else {
+        format!("{sign}{digits}")
     }
 }
 
@@ -870,7 +979,15 @@ fn record_to_nickel(entries: &[(String, Vec<Vec<Sexpr>>)]) -> String {
             format!("{} = {}", key_to_nickel(key), value)
         })
         .collect();
-    format!("{{\n    {}\n}}", lines.join(";\n    "))
+    nickel_record(lines)
+}
+
+/// Field lines (`key = value`) as a Nickel record body.
+fn nickel_record(lines: Vec<String>) -> String {
+    if lines.is_empty() {
+        return "{}".to_string();
+    }
+    format!("{{\n    {}\n}}", lines.join(",\n    "))
 }
 
 fn values_to_nickel(values: &[Sexpr]) -> String {
@@ -1489,6 +1606,43 @@ mod tests {
     }
 
     #[test]
+    fn manifest_nickel_uses_nickel_record_and_let_syntax() {
+        // Nickel separates record fields with `,` and binds with `let … in`;
+        // `;` separators and a trailing `let x = …;` form do not parse.
+        let dir = TempDir::new().expect("tempdir");
+        let deed = dir.path().join("0-AI-MANIFEST.deed");
+        fs::write(&deed, DEED_MANIFEST).expect("write");
+        // Any name other than `.deed` is read as legacy text.
+        let legacy = dir.path().join("legacy-manifest.txt");
+        fs::write(&legacy, LEGACY_MANIFEST).expect("write");
+        for path in [&deed, &legacy] {
+            let nickel = Manifest::load(path).expect("load").to_nickel();
+            assert!(!nickel.contains(';'), "{nickel}");
+            assert!(nickel.contains(",\n"), "{nickel}");
+            let root = if path == &deed {
+                "repo-deed"
+            } else {
+                "manifest"
+            };
+            assert!(nickel.ends_with(&format!(" in\n{root}")), "{nickel}");
+            // Where the Nickel CLI is installed, it must accept the output.
+            let file = dir.path().join("out.ncl");
+            fs::write(&file, &nickel).expect("write");
+            if let Ok(out) = std::process::Command::new("nickel")
+                .arg("export")
+                .arg(&file)
+                .output()
+            {
+                assert!(
+                    out.status.success(),
+                    "{nickel}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn deed_manifest_carries_no_report_settings() {
         // Pointer-only: even a (reports …) clause is not read from a deed.
         let dir = TempDir::new().expect("tempdir");
@@ -1523,6 +1677,120 @@ mod tests {
         assert!(
             Manifest::load(&path).is_err(),
             "A2ML text in a .deed must be refused"
+        );
+    }
+
+    /// `DEED_MANIFEST` with `clause` added before its front doors, loaded
+    /// and exported to Nickel.
+    fn deed_nickel_with(clause: &str) -> String {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("example_chora.deed");
+        let text = DEED_MANIFEST.replace("(front-doors", &format!("{clause}\n  (front-doors"));
+        fs::write(&path, text).expect("write");
+        Manifest::load(&path).expect("deed should load").to_nickel()
+    }
+
+    #[test]
+    fn deed_lists_stay_arrays_in_nickel() {
+        let nickel = deed_nickel_with("(clade :none () :one (\"panic-attacker\") :secondary (rm))");
+        assert!(nickel.contains("none = []"), "{nickel}");
+        assert!(nickel.contains("one = [\"panic-attacker\"]"), "{nickel}");
+        assert!(nickel.contains("secondary = [\"rm\"]"), "{nickel}");
+    }
+
+    #[test]
+    fn deed_booleans_render_as_nickel_booleans() {
+        let nickel = deed_nickel_with("(permissions :source #t :tests #f)");
+        assert!(nickel.contains("source = true"), "{nickel}");
+        assert!(nickel.contains("tests = false"), "{nickel}");
+        assert!(!nickel.contains("#t") && !nickel.contains("#f"), "{nickel}");
+    }
+
+    #[test]
+    fn deed_single_child_clause_stays_a_record() {
+        let one = deed_nickel_with("(bot-directives (bot :name panicbot :mode full))");
+        assert!(
+            one.contains("\"bot-directives\" = {\n    bot = {\n    name = \"panicbot\""),
+            "{one}"
+        );
+        assert!(!one.contains("[\"bot\""), "{one}");
+        // Repeated clauses are an array of records.
+        let two = deed_nickel_with("(bot-directives (bot :name panicbot) (bot :name rhodibot))");
+        assert!(
+            two.contains("bot = [{\n    name = \"panicbot\"\n}, {\n    name = \"rhodibot\"\n}]"),
+            "{two}"
+        );
+    }
+
+    #[test]
+    fn deed_integers_render_as_nickel_numbers() {
+        let nickel = deed_nickel_with("(limits :retries 3 :offset -2 :padded 007 :zero -0)");
+        assert!(nickel.contains("retries = 3"), "{nickel}");
+        assert!(nickel.contains("offset = -2"), "{nickel}");
+        assert!(nickel.contains("padded = 7"), "{nickel}");
+        assert!(nickel.contains("zero = 0"), "{nickel}");
+        assert!(!nickel.contains("\"3\""), "{nickel}");
+    }
+
+    #[test]
+    fn pointer_manifest_requires_its_front_doors() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.deed");
+        let front_doors = "(front-doors :machine \"example_chora.deed\" :human \"README.adoc\")";
+        let refused = [
+            (
+                "no front-doors clause",
+                DEED_MANIFEST.replace(front_doors, ""),
+            ),
+            (
+                "no :machine",
+                DEED_MANIFEST.replace(front_doors, "(front-doors :human \"README.adoc\")"),
+            ),
+            (
+                "no :human",
+                DEED_MANIFEST.replace(front_doors, "(front-doors :machine \"x_chora.deed\")"),
+            ),
+            (
+                "symbol :machine",
+                DEED_MANIFEST.replace("\"example_chora.deed\"", "example"),
+            ),
+            (
+                "empty :human",
+                DEED_MANIFEST.replace("\"README.adoc\"", "\"\""),
+            ),
+            (
+                "two front-doors clauses",
+                DEED_MANIFEST.replace(front_doors, &format!("{front_doors}\n  {front_doors}")),
+            ),
+        ];
+        for (why, text) in refused {
+            fs::write(&path, text).expect("write");
+            assert!(Manifest::load(&path).is_err(), "{why} must be refused");
+        }
+        // A pointer manifest with an extra front door is still accepted.
+        fs::write(
+            &path,
+            DEED_MANIFEST.replace(":human", ":agent \".claude/CLAUDE.md\" :human"),
+        )
+        .expect("write");
+        Manifest::load(&path).expect("extra front door is accepted");
+        // The profile is the manifest's: a repo deed under another name is not
+        // held to it.
+        let other = dir.path().join("example_chora.deed");
+        fs::write(&other, DEED_MANIFEST.replace(front_doors, "")).expect("write");
+        Manifest::load(&other).expect("a chora deed needs no front-doors clause");
+    }
+
+    #[test]
+    fn load_if_exists_defaults_only_when_the_file_is_missing() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.deed");
+        let missing = Manifest::load_if_exists(&path).expect("missing file is the defaults");
+        assert!(missing.path().is_none());
+        fs::write(&path, "(manifest (project \"x\"))\n").expect("write");
+        assert!(
+            Manifest::load_if_exists(&path).is_err(),
+            "a malformed manifest that exists must be an error, not the defaults"
         );
     }
 
