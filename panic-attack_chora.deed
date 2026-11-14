@@ -101,12 +101,12 @@
     (related
       :name "boj-server"
       :relationship parent
-      :notes "Parent named by ANCHOR.a2ml."
+      :notes "Parent edge (A7 6.4, J26): named here, in this (ecosystem) clause; panic-attack has no (anchor) clause. Retired source: docs/history/A2ML-REMOVED.adoc."
       :uuid #uuid"6c7f9305-2a47-8f96-a1ed-bd0940e4d4e6")
     (related
       :name "ambientops"
       :relationship parent
-      :notes "Parent named by .machine_readable/6a2/ANCHOR.a2ml."
+      :notes "Parent edge (A7 6.4, J26): named here, in this (ecosystem) clause; panic-attack has no (anchor) clause. Retired source: docs/history/A2ML-REMOVED.adoc."
       :uuid #uuid"5c1e28a9-d8c0-8bfe-a57d-ae4abe7dc3be"))
   ; AGENTIC.a2ml: [metadata] version and last-updated, and the five
   ; [agent-permissions] booleans the table lists. The source has no @profile

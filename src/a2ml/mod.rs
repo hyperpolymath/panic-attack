@@ -16,6 +16,7 @@ use crate::types::{AssailReport, AssaultReport, AttackResult};
 use crate::{abduct, adjudicate, amuck, axial};
 use anyhow::{anyhow, Context, Result};
 use serde::de::DeserializeOwned;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -206,7 +207,7 @@ impl Manifest {
     pub fn load(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("reading AI manifest {}", path.display()))?;
-        let mut manifest = if path.extension().and_then(|e| e.to_str()) == Some("deed") {
+        let mut manifest = if path.extension().and_then(OsStr::to_str) == Some("deed") {
             Self::parse_deed(&raw, path)?
         } else {
             Self::parse_a2ml(&raw)?
@@ -237,7 +238,7 @@ impl Manifest {
                 deed.head
             ));
         }
-        if path.file_name().and_then(|n| n.to_str()) == Some(MANIFEST_CANDIDATES[0]) {
+        if path.file_name().and_then(OsStr::to_str) == Some(MANIFEST_CANDIDATES[0]) {
             check_pointer_profile(&deed.items)
                 .map_err(|e| anyhow!("{}: not a pointer-only manifest: {}", path.display(), e))?;
         }
@@ -403,7 +404,7 @@ impl Manifest {
         } else {
             record_to_nickel(&gather_entries(&self.entries))
         };
-        format!("let {} = {} in\n{}", self.root_name, body, self.root_name)
+        nickel_let(&self.root_name, &body)
     }
 
     /// The legacy `(reports …)` section; never read from a deed.
@@ -502,7 +503,7 @@ fn load_payload_for_kind(kind: ReportBundleKind, input: &Path) -> Result<ReportB
 
 fn load_json_or_yaml<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    match path.extension().and_then(|e| e.to_str()) {
+    match path.extension().and_then(OsStr::to_str) {
         Some(ext) if crate::yaml::is_extension(ext) => crate::yaml::from_report_str::<T>(&raw)
             .with_context(|| format!("parsing {}", path.display())),
         _ => serde_json::from_str::<T>(&raw).with_context(|| format!("parsing {}", path.display())),
@@ -982,8 +983,10 @@ fn record_to_nickel(entries: &[(String, Vec<Vec<Sexpr>>)]) -> String {
     nickel_record(lines)
 }
 
-/// Field lines (`key = value`) as a Nickel record body.
-fn nickel_record(lines: Vec<String>) -> String {
+/// Field lines (`key = value`) as a Nickel record body: fields separated by
+/// `,`, as Nickel requires. Shared with the assault-report writer in
+/// `crate::report::output`.
+pub(crate) fn nickel_record(lines: Vec<String>) -> String {
     if lines.is_empty() {
         return "{}".to_string();
     }
@@ -1034,6 +1037,13 @@ fn value_to_nickel(value: &Sexpr) -> String {
     }
 }
 
+/// A Nickel program that binds `body` to `name` and evaluates to it:
+/// `let name = body in\nname`. Nickel has no `let name = body;` statement form.
+pub(crate) fn nickel_let(name: &str, body: &str) -> String {
+    format!("let {name} = {body} in\n{name}")
+}
+
+/// A record key as Nickel: bare when it is an identifier, quoted otherwise.
 fn key_to_nickel(key: &str) -> String {
     if key
         .chars()

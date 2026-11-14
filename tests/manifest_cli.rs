@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 
-//! CLI contract for `panic-attack manifest` and `panic-attack diagnostics`:
-//! a manifest that exists but does not load is an error, never the built-in
-//! defaults.
+//! CLI contract for `panic-attack manifest`, `panic-attack diagnostics` and
+//! the start-up manifest load. A missing manifest means the built-in defaults,
+//! silently. A manifest that exists but does not load is an error (at start-up,
+//! a warning), never silently the defaults.
 
 use std::fs;
 use std::path::Path;
@@ -79,5 +80,43 @@ fn diagnostics_fails_on_a_malformed_default_deed() {
     assert!(
         String::from_utf8_lossy(&o.stderr).contains("reading manifest 0-AI-MANIFEST.deed"),
         "{o:?}"
+    );
+}
+
+/// stderr of `panic-attack completions bash`, a command that reads no
+/// manifest itself, so only the start-up manifest load can speak.
+fn startup_stderr(dir: &Path) -> String {
+    let o = run(dir, &["completions", "bash"]);
+    assert!(o.status.success(), "{o:?}");
+    String::from_utf8_lossy(&o.stderr).into_owned()
+}
+
+#[test]
+fn no_manifest_is_not_a_warning() {
+    let dir = TempDir::new().unwrap();
+    let stderr = startup_stderr(dir.path());
+    assert!(!stderr.contains("failed to read AI manifest"), "{stderr}");
+}
+
+#[test]
+fn a_valid_pointer_deed_is_not_a_warning() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("0-AI-MANIFEST.deed"), POINTER_MANIFEST).unwrap();
+    let stderr = startup_stderr(dir.path());
+    assert!(!stderr.contains("failed to read AI manifest"), "{stderr}");
+}
+
+#[test]
+fn a_malformed_manifest_still_warns() {
+    let dir = TempDir::new().unwrap();
+    fs::write(
+        dir.path().join("0-AI-MANIFEST.deed"),
+        "(manifest (project \"x\"))\n",
+    )
+    .unwrap();
+    let stderr = startup_stderr(dir.path());
+    assert!(
+        stderr.contains("failed to read AI manifest") && stderr.contains("0-AI-MANIFEST.deed"),
+        "{stderr}"
     );
 }
