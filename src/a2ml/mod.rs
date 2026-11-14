@@ -184,6 +184,17 @@ impl Manifest {
         Self::load(&Self::default_path())
     }
 
+    /// Load `path` if it exists, else the built-in defaults. A file that
+    /// exists but does not load (a malformed or misheaded deed, an unreadable
+    /// file) is an error, never the defaults.
+    pub fn load_if_exists(path: &Path) -> Result<Self> {
+        if path.exists() {
+            Self::load(path)
+        } else {
+            Ok(Self::default())
+        }
+    }
+
     /// Load a manifest. A `.deed` file is read with the deed grammar
     /// (`crate::deed`) and must be a `repo-deed`; anything else is read as
     /// legacy A2ML.
@@ -1523,6 +1534,19 @@ mod tests {
         assert!(
             Manifest::load(&path).is_err(),
             "A2ML text in a .deed must be refused"
+        );
+    }
+
+    #[test]
+    fn load_if_exists_defaults_only_when_the_file_is_missing() {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("0-AI-MANIFEST.deed");
+        let missing = Manifest::load_if_exists(&path).expect("missing file is the defaults");
+        assert!(missing.path().is_none());
+        fs::write(&path, "(manifest (project \"x\"))\n").expect("write");
+        assert!(
+            Manifest::load_if_exists(&path).is_err(),
+            "a malformed manifest that exists must be an error, not the defaults"
         );
     }
 
