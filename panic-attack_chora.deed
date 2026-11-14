@@ -11,8 +11,12 @@
 (repo-deed
   :schema-version "1.0.0"
   :canonical-name "panic-attack"
-  :repo-uuid #u5"hyperpolymath/panic-attack"
-  :beholding-chora #u5"estate/chora"
+  ; The v8 id chora-registry holds for this repo under its birth name,
+  ; panic-attacker (minted in gv-clade-index, pre-V9). Renaming never remints
+  ; it (U1); it is carried opaque (U4, Q2). The estate chora id is the one every
+  ; repo deed names, e.g. hypatia_chora.deed.
+  :repo-uuid #uuid"a39ad6b1-51e0-854d-aa9a-d9ee97ba519b"
+  :beholding-chora #uuid"0889b37b-defb-831f-973c-e119500db00e"
   (status
     :phase active
     :note "static analysis, stress testing and logic-based bug signature detection")
@@ -29,4 +33,4 @@
     :note "T0 syntax heuristics are labelled T0. A finding is never dressed up as a parser or dataflow proof; see docs/RECON-AND-EVIDENCE.adoc")
   (obligation
     :name "no-self-suppression"
-    :note "suppressions live in a separate registry file (audits/assail-classifications.a2ml) so one hand cannot both add a defect and hide it"))
+    :note "suppressions live in a separate registry file (audits/assail-classifications_praxis.deed) so one hand cannot both add a defect and hide it"))
