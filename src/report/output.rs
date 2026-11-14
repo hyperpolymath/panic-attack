@@ -3,6 +3,7 @@
 
 //! Serialization helpers for printed/exported reports
 
+use crate::a2ml::{nickel_let, nickel_record};
 use crate::report::formatter::nickel_escape_string;
 use crate::types::AssaultReport;
 use anyhow::Result;
@@ -57,26 +58,26 @@ impl ReportOutputFormat {
 fn format_report_as_nickel(report: &AssaultReport) -> String {
     // The Nickel representation intentionally samples large collections to stay readable.
     let assail = &report.assail_report;
+    // Fields are `key = value` lines; `nickel_record` joins them with `,`.
     let mut lines = Vec::new();
-    lines.push("let assault_report = {".to_string());
     lines.push(format!(
-        "  program = {};",
+        "program = {}",
         nickel_escape_string(&assail.program_path.to_string_lossy())
     ));
     lines.push(format!(
-        "  language = {};",
+        "language = {}",
         nickel_escape_string(&format!("{:?}", assail.language))
     ));
-    lines.push(format!("  framework_count = {};", assail.frameworks.len()));
-    lines.push(format!("  weak_points = {};", assail.weak_points.len()));
-    lines.push(format!("  total_crashes = {};", report.total_crashes));
-    lines.push(format!("  total_signatures = {};", report.total_signatures));
+    lines.push(format!("framework_count = {}", assail.frameworks.len()));
+    lines.push(format!("weak_points = {}", assail.weak_points.len()));
+    lines.push(format!("total_crashes = {}", report.total_crashes));
+    lines.push(format!("total_signatures = {}", report.total_signatures));
     let axes: Vec<String> = report
         .attack_results
         .iter()
         .map(|r| nickel_escape_string(&format!("{:?}", r.axis)))
         .collect();
-    lines.push(format!("  attack_axes = [{}];", axes.join(", ")));
+    lines.push(format!("attack_axes = [{}]", axes.join(", ")));
 
     if !assail.weak_points.is_empty() {
         let weak_summary: Vec<String> = assail
@@ -92,7 +93,7 @@ fn format_report_as_nickel(report: &AssaultReport) -> String {
             })
             .collect();
         lines.push(format!(
-            "  weak_point_samples = [{}];",
+            "weak_point_samples = [{}]",
             weak_summary.join(", ")
         ));
     }
@@ -104,49 +105,46 @@ fn format_report_as_nickel(report: &AssaultReport) -> String {
         .take(3)
         .map(|row| {
             format!(
-                "{{ source = {}, sink = {}, severity = {:.1} }}",
+                "{{ source = {}, sink = {}, severity = {} }}",
                 nickel_escape_string(&format!("{:?}", row.source_category)),
                 nickel_escape_string(&format!("{:?}", row.sink_axis)),
-                row.severity_value
+                nickel_number(row.severity_value, Some(1))
             )
         })
         .collect();
     if !pivot_rows.is_empty() {
-        lines.push(format!("  pivot_samples = [{}];", pivot_rows.join(", ")));
+        lines.push(format!("pivot_samples = [{}]", pivot_rows.join(", ")));
     }
 
     if let Some(timeline) = &report.timeline {
         lines.push(format!(
-            "  timeline_duration = {};",
-            timeline.duration.as_secs_f64()
+            "timeline_duration = {}",
+            nickel_number(timeline.duration.as_secs_f64(), None)
         ));
-        lines.push(format!("  timeline_events = {};", timeline.events.len()));
+        lines.push(format!("timeline_events = {}", timeline.events.len()));
         let event_samples: Vec<String> = timeline
             .events
             .iter()
             .take(3)
             .map(|event| {
                 format!(
-                    "{{ id = {}, axis = {}, start = {:.2}, duration = {:.2}, intensity = {} }}",
+                    "{{ id = {}, axis = {}, start = {}, duration = {}, intensity = {} }}",
                     nickel_escape_string(&event.id),
                     nickel_escape_string(&format!("{:?}", event.axis)),
-                    event.start_offset.as_secs_f64(),
-                    event.duration.as_secs_f64(),
+                    nickel_number(event.start_offset.as_secs_f64(), Some(2)),
+                    nickel_number(event.duration.as_secs_f64(), Some(2)),
                     nickel_escape_string(&format!("{:?}", event.intensity))
                 )
             })
             .collect();
         if !event_samples.is_empty() {
-            lines.push(format!(
-                "  timeline_samples = [{}];",
-                event_samples.join(", ")
-            ));
+            lines.push(format!("timeline_samples = [{}]", event_samples.join(", ")));
         }
     }
 
     lines.push(format!(
-        "  robustness_score = {:.1};",
-        report.overall_assessment.robustness_score
+        "robustness_score = {}",
+        nickel_number(report.overall_assessment.robustness_score, Some(1))
     ));
 
     if !report.overall_assessment.critical_issues.is_empty() {
@@ -156,7 +154,7 @@ fn format_report_as_nickel(report: &AssaultReport) -> String {
             .iter()
             .map(|issue| nickel_escape_string(issue))
             .collect();
-        lines.push(format!("  critical_issues = [{}];", issue_list.join(", ")));
+        lines.push(format!("critical_issues = [{}]", issue_list.join(", ")));
     }
 
     if !report.overall_assessment.recommendations.is_empty() {
@@ -166,10 +164,128 @@ fn format_report_as_nickel(report: &AssaultReport) -> String {
             .iter()
             .map(|rec| nickel_escape_string(rec))
             .collect();
-        lines.push(format!("  recommendations = [{}];", rec_list.join(", ")));
+        lines.push(format!("recommendations = [{}]", rec_list.join(", ")));
     }
 
-    lines.push("};".to_string());
-    lines.push("assault_report".to_string());
-    lines.join("\n")
+    nickel_let("assault_report", &nickel_record(lines))
+}
+
+/// An `f64` as a Nickel number with `decimals` places (or Rust's shortest
+/// form for `None`). NaN and the infinities have no Nickel literal, so they
+/// become `null` rather than an unparseable token.
+fn nickel_number(value: f64, decimals: Option<usize>) -> String {
+    if !value.is_finite() {
+        return "null".to_string();
+    }
+    match decimals {
+        Some(places) => format!("{value:.places$}"),
+        None => format!("{value}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{
+        AttackAxis, IntensityLevel, OverallAssessment, TaintMatrixRow, TimelineEventReport,
+        TimelineReport, WeakPoint, WeakPointCategory,
+    };
+    use std::fs;
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    /// An assault report with every section the Nickel writer emits: weak
+    /// points, a taint row, a timeline, issues and recommendations.
+    fn full_report(dir: &TempDir) -> AssaultReport {
+        fs::write(dir.path().join("main.rs"), "fn main() {}\n").expect("write");
+        let mut assail = crate::assail::analyze(dir.path()).expect("analyze");
+        let weak: WeakPoint = serde_json::from_value(serde_json::json!({
+            "category": "PanicPath",
+            "location": "main.rs:1",
+            "severity": "High",
+            "description": "unwrap on a None",
+            "recommended_attack": ["cpu"],
+        }))
+        .expect("weak point");
+        assail.weak_points.push(weak);
+        assail.taint_matrix.rows.push(TaintMatrixRow {
+            source_category: WeakPointCategory::PanicPath,
+            sink_axis: AttackAxis::Cpu,
+            severity_value: 3.25,
+            files: vec!["main.rs".to_string()],
+            frameworks: Vec::new(),
+            relation: "direct".to_string(),
+        });
+        AssaultReport {
+            schema_version: "2.5".to_string(),
+            assail_report: assail,
+            attack_results: Vec::new(),
+            total_crashes: 1,
+            total_signatures: 0,
+            overall_assessment: OverallAssessment {
+                robustness_score: 42.0,
+                critical_issues: vec!["crash".to_string()],
+                recommendations: vec!["fix it".to_string()],
+            },
+            timeline: Some(TimelineReport {
+                duration: Duration::from_millis(1500),
+                events: vec![TimelineEventReport {
+                    id: "evt-1".to_string(),
+                    axis: AttackAxis::Memory,
+                    start_offset: Duration::from_secs(5),
+                    duration: Duration::from_secs(10),
+                    intensity: IntensityLevel::Medium,
+                    args: Vec::new(),
+                    peak_memory: None,
+                    ran: true,
+                }],
+            }),
+        }
+    }
+
+    #[test]
+    fn assault_report_nickel_uses_nickel_record_and_let_syntax() {
+        // Nickel separates record fields with `,` and binds with `let … in`;
+        // the old `field = value;` lines and `};\nassault_report` tail did not
+        // parse (`nickel export` 1.18.0: "unexpected token").
+        let dir = TempDir::new().expect("tempdir");
+        let nickel = format_report_as_nickel(&full_report(&dir));
+        assert!(nickel.starts_with("let assault_report = {\n"), "{nickel}");
+        assert!(nickel.ends_with("\n} in\nassault_report"), "{nickel}");
+        assert!(nickel.contains(",\n    weak_points = 1,\n"), "{nickel}");
+        assert!(!nickel.contains(';'), "{nickel}");
+
+        // Where the Nickel CLI is installed, it must accept the output and
+        // keep the types: counts and scores are numbers, not strings.
+        let file = dir.path().join("report.ncl");
+        fs::write(&file, &nickel).expect("write");
+        if let Ok(out) = std::process::Command::new("nickel")
+            .args(["export", "--format", "json"])
+            .arg(&file)
+            .output()
+        {
+            assert!(
+                out.status.success(),
+                "{nickel}\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let json: serde_json::Value =
+                serde_json::from_slice(&out.stdout).expect("nickel export emits JSON");
+            assert_eq!(json["weak_points"], 1);
+            assert_eq!(json["robustness_score"], 42.0);
+            assert_eq!(json["timeline_duration"], 1.5);
+            assert_eq!(json["timeline_samples"][0]["start"], 5.0);
+            assert_eq!(json["pivot_samples"][0]["severity"], 3.2);
+            assert_eq!(json["weak_point_samples"][0]["category"], "PanicPath");
+            assert_eq!(json["critical_issues"][0], "crash");
+        }
+    }
+
+    #[test]
+    fn non_finite_numbers_become_null() {
+        assert_eq!(nickel_number(f64::NAN, Some(1)), "null");
+        assert_eq!(nickel_number(f64::INFINITY, None), "null");
+        assert_eq!(nickel_number(2.0, Some(1)), "2.0");
+        assert_eq!(nickel_number(1.5, None), "1.5");
+    }
 }
