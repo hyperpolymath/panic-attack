@@ -8,11 +8,7 @@ They’re filed alongside the human + machine campaign reports so the
 campaign is reproducible. See
 link:../2026-05-26.md[`+../2026-05-26.md+`] for the report.
 
-form was broken under jq operator precedence). *Historical since
-2026-11-14:* it now exits at once, because it writes a retired `+.a2ml+`
-registry; a registry is now `+audits/assail-classifications_praxis.deed+`
-(see `+.claude/CLAUDE.md+`, User-Classification Registry).
-|=== Scripts
+=== Scripts
 
 [width="100%",cols="50%,50%",options="header",]
 |===
@@ -38,7 +34,10 @@ into autofix / issue / proof-draft / skip buckets. Writes
 `+legitimate-ffi+`). Builds the `+audits/assail-classifications.a2ml+` +
 audit doc, commits with the GPG override flags, pushes, opens a PR. *v2*
 uses `+--argjson+` + `+any()+` for the prefix filter (the v1 chained-OR
-form was broken under jq operator precedence).
+form was broken under jq operator precedence). *Historical since
+2026-11-14:* it now exits at once, because it writes a retired `+.a2ml+`
+registry; a registry is now `+audits/assail-classifications_praxis.deed+`
+(see `+.claude/CLAUDE.md+`, User-Classification Registry).
 |===
 
 === Known gotchas
