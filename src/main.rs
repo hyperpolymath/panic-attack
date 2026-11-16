@@ -1539,7 +1539,8 @@ fn main() -> Result<()> {
 }
 
 /// Parse process arguments and execute the selected command, including its output
-/// and requested persistence. Default manifest settings are used if loading fails.
+/// and requested persistence. Default manifest settings are used when no manifest
+/// exists (silently) or when one exists but does not load (with a warning).
 /// Argument parsing exits the process for help or invalid CLI syntax.
 /// For assail with `--fail-on-incomplete`, exits with status 2 when coverage is
 /// not `complete`, after report output and any requested attestation are written.
@@ -1549,7 +1550,10 @@ fn main() -> Result<()> {
 /// operation errors that are not handled by a command-specific fallback.
 fn run_main() -> Result<()> {
     let cli = Cli::parse();
-    let manifest = match Manifest::load_default() {
+    // A missing manifest is the normal case for most directories: use the
+    // defaults without a word. Warn only when a manifest exists but cannot be
+    // read or parsed.
+    let manifest = match Manifest::load_if_exists(&Manifest::default_path()) {
         Ok(manifest) => manifest,
         Err(err) => {
             eprintln!("warning: failed to read AI manifest: {}", err);
@@ -2246,7 +2250,11 @@ fn run_main() -> Result<()> {
 
         Commands::Manifest { path, output } => {
             let target = path.unwrap_or_else(Manifest::default_path);
-            let manifest = Manifest::load(&target).unwrap_or_default();
+            // A missing manifest exports the built-in defaults; one that exists
+            // but does not load is an error, so `-o` never overwrites with empty
+            // Nickel.
+            let manifest = Manifest::load_if_exists(&target)
+                .with_context(|| format!("reading manifest {}", target.display()))?;
             let nickel = manifest.to_nickel();
             if let Some(output_path) = output {
                 fs::write(&output_path, nickel)?;
@@ -2399,11 +2407,16 @@ fn run_main() -> Result<()> {
         Commands::Diagnostics {
             manifest: manifest_path,
         } => {
+            // Re-read rather than reuse the startup manifest: startup falls back
+            // to the defaults on a load error, and diagnostics must not report a
+            // malformed manifest as "no manifest file".
             let diag_manifest = if let Some(path) = manifest_path {
                 Manifest::load(&path)
                     .with_context(|| format!("reading manifest {}", path.display()))?
             } else {
-                manifest.clone()
+                let path = Manifest::default_path();
+                Manifest::load_if_exists(&path)
+                    .with_context(|| format!("reading manifest {}", path.display()))?
             };
             diagnostics::run_self_diagnostics(&diag_manifest)?;
             return Ok(());

@@ -107,12 +107,43 @@ definitions. A mutant that blanks with `+/+` instead of a space is rejected.
 Nine closed sanity theorems, including two comments on different lines and
 `+///+`.
 
-The model does *not* match `strip_proof_comments`, so it is evidence about
-the model only. It replaces comment characters with spaces and keeps every
-newline. The Rust function deletes comment text and drops a trailing
-newline: on `//x` the model gives three spaces and Rust gives the empty
-string. The model also covers line comments only; block comments and string
-literals are not modelled.
+The model now agrees with `strip_proof_comments(s, "//", None)`, the slice
+it models. The compiled model and the Rust function give the same output on
+every string of length at most 9 over `/`, newline, `x` and space (349,525
+inputs, local run). In CI,
+`the_line_comment_slice_matches_the_idris_model` re-checks a Rust
+transcription of the model's equations up to length 8. Correspondence on
+that slice is therefore `TESTED`, with those bounds, not `ASSUMED`. Block
+comments, nesting and string literals are not modelled. Before the
+single-pass rewrite they disagreed: on `//x` the model gave three spaces and
+Rust gave the empty string.
+
+|`strip_proof_comments` blanks comments in place. The output has the input's
+byte length; every byte outside a comment, and every newline, is unchanged;
+other comment bytes become spaces. Stripping is idempotent. Whichever
+comment opens first wins, and block comments nest.
+|`src/assail/analyzer.rs`, module `strip_proof_comments_tests`
+|`TESTED`
+|Exhaustive over bounded inputs, for the marker sets the analyzers pass:
+`//` with `/* */`, `--` with `/- -/`, `--` with `{- -}`, `(* *)` alone, and
+`//` alone. Each runs every string over a 4-letter alphabet up to length 8
+(87,381 inputs) or a 5-letter alphabet up to length 7 (97,656 inputs). Each
+alphabet spells the markers, plus a newline and an ordinary character.
+The three counterexamples in the open obligations are regression tests, as
+are nesting, unterminated blocks and multibyte text.
+
+Planted faults, all caught:
+
+* the previous two-phase function;
+* deleting comment text instead of blanking it;
+* blanking that drops a newline;
+* one space per character instead of per byte;
+* no nesting;
+* an unterminated block that keeps code.
+
+One mutant, a line comment that also consumes its newline, is equivalent:
+the newline is kept and the scan resumes after it, so no test can tell
+them apart.
 
 |Attestation chain: integrity, authenticity, non-repudiation
 |`src/abi/AttestationUnforgeability.idr`
@@ -153,6 +184,15 @@ and every route explicit. The tests run over all 52 `Language` variants
 scans a Justfile and a Lua file end to end. Each test was seen to fail on
 a planted fault: an unrouted analyzer, Java sent to the generic analyzer,
 cross-language checks forced on, and the README's stale count of 49.
+
+The cross-language checks blank `//` comments only in languages where `//`
+is a comment (`slash_line_comments`, an exhaustive table beside `route`).
+Blanking every file used to cut unquoted URLs in shell scripts and Justfile
+recipes, a recall gap found while testing (c). (c)'s test now uses an
+unquoted URL, and `slash_comment_tests` checks a shell script and a Rust doc
+comment. Blanking every language, and blanking none, were each seen to fail
+those tests. Languages whose comment syntax the table does not record keep
+the earlier blanking.
 
 Routing is not coverage: `Language::Unknown` goes to `InputAdapter`, and a
 file there with no configuration adapter is marked `unsupported` in the
@@ -223,30 +263,32 @@ generation, and keep the `keep` newest older ones
 |*OPEN*. The model check above covers the protocol, not the Rust code;
 these contracts tie the implementation to P1 and P2.
 
-|`strip_proof_comments` is idempotent and preserves positions outside
-comments and strings
-|Fix the implementation first; then Creusot/Pearlite and Verus
-|Neither property holds of the current Rust function, so neither can be
-proved until it changes. All three cases below were run against the
-function as it is on `main`:
+|Prove the `strip_proof_comments` properties in the ledger for all inputs
+|Creusot/Pearlite and Verus
+|The single-pass rewrite makes both properties true of the implementation;
+the ledger row has them `TESTED` within bounds. Pearlite contracts can
+state them directly: equal length, the per-byte relation, and
+idempotence. Three counterexamples held of the previous two-phase function
+and are now regression tests:
 
-* Not idempotent: `a//*x*/*b*/c` gives `a/*b*/c`, and a second pass gives
+* Not idempotent: `a//*x*/*b*/c` gave `a/*b*/c`, and a second pass gave
   `ac`.
-* Positions move: `a/*x*/b` gives `ab`, moving `b` from offset 6 to 1.
-* Ordering bug: block comments are stripped before line comments, so a
-  block opener inside a line comment swallows the code after it.
-  `code // see /* note`, then `hidden();`, then `*/ tail`, gives `code `.
-  The callers that pass both a line and a block marker are affected:
+* Positions moved: `a/*x*/b` gave `ab`, moving `b` from offset 6 to 1.
+* Ordering bug: block comments were stripped before line comments, so a
+  block opener inside a line comment swallowed the code after it.
+  `code // see /* note`, then `hidden();`, then `*/ tail`, gave `code `.
+  The callers that pass both a line and a block marker were affected:
   `analyze_rust`, `is_rust_ffi_safe_wrapper`, `analyze_idris`,
   `analyze_lean` and `analyze_agda`. In the Idris, Lean and Agda ProofDrift
-  detectors such a comment can hide a later `sorry`, `believe_me` or
-  postulate. `analyze_isabelle` and `analyze_coq` pass no line marker and
-  are not affected.
+  detectors such a comment could hide a later `sorry`, `believe_me` or
+  postulate.
 
-The Idris2 model above can guide the contracts once the function is
-fixed; it does not discharge them. The model's own remaining slices
-(block comments, strings, composition, position preservation; issue #114)
-are optional once the implementation proof exists.
+The function does not know about string literals. The Rust and Zig callers
+blank strings first; the Lean, Agda, Idris, Coq and Isabelle callers do
+not, so a comment marker inside a string literal there still starts a
+comment. The Idris2 model's remaining slices (block comments, strings,
+composition; issue #114) are optional once the implementation proof
+exists.
 
 |Patch Bridge reachability is sound: no reachable dependency is classified
 as phantom
@@ -267,11 +309,4 @@ tests above are exhaustive over a finite enum, but they are tests, and (a)
 reads the source with a pattern match. (d) is a documentation check and
 stays a test.
 
-|Unquoted `http://` URLs are missed by the cross-language check
-|Fix first, then test
-|`analyze_cross_language` strips C-style `//` comments from every file
-before matching, which also cuts `curl http://host` in shell. A quoted
-URL is found; an unquoted one in a `.sh` file or a Justfile recipe is not.
-This is a recall gap in the InsecureProtocol detector, found while testing
-PA1 (c).
 |===

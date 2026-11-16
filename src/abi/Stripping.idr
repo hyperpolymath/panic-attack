@@ -15,6 +15,14 @@
 ||| The model strips ALL `//` comments: `stripLineCommentBody` hands back
 ||| to `stripLineComments` after each preserved newline (issue #113).
 |||
+||| Correspondence: the model is `strip_proof_comments(s, "//", None)`, the
+||| line-comment slice only. Block comments, their nesting and string
+||| literals are not modelled, so the theorem is about that slice. On it the
+||| compiled model and the Rust function agree on every string of length at
+||| most 9 over `/`, newline, `x` and space, and a Rust test
+||| (`the_line_comment_slice_matches_the_idris_model`) re-checks these
+||| equations up to length 8. See PROOF-NEEDS.adoc.
+|||
 ||| Re-proved 2026-11-09. The previous proof (PR #111, issue #113) never
 ||| type-checked: its `//` case relied on reductions that do not hold for a
 ||| variable character, and it used `decEq` without importing it. The proof
