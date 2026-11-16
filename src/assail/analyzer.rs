@@ -9009,16 +9009,93 @@ mod strip_proof_comments_tests {
         assert_eq!(strip("a /* b */", ("", Some(("", "*/")))), "a /* b */");
     }
 
+    /// An independent statement of what `strip_proof_comments` should give:
+    /// the comment grammar written as mutually recursive rules (code, line
+    /// comment, block comment at depth `d`) over a char slice, sharing no
+    /// code with the index-and-match scanner under test. Block markers are
+    /// checked before the line marker in code, and a close before an open
+    /// inside a block; every comment character but `'\n'` becomes one space
+    /// per UTF-8 byte.
+    fn oracle(s: &[char], (line, block): Markers) -> String {
+        fn starts(s: &[char], marker: &str) -> bool {
+            let m: Vec<char> = marker.chars().collect();
+            !m.is_empty() && s.starts_with(&m)
+        }
+        fn blank(c: char, out: &mut String) {
+            if c == '\n' {
+                out.push('\n');
+            } else {
+                out.push_str(&" ".repeat(c.len_utf8()));
+            }
+        }
+        fn blank_marker(marker: &str, out: &mut String) {
+            marker.chars().for_each(|c| blank(c, out));
+        }
+        fn code(s: &[char], m: Markers, out: &mut String) {
+            let (line, block) = m;
+            match (s, block) {
+                ([], _) => {}
+                (_, Some((open, close))) if !close.is_empty() && starts(s, open) => {
+                    blank_marker(open, out);
+                    in_block(&s[open.chars().count()..], 1, m, out);
+                }
+                _ if starts(s, line) => line_comment(s, m, out),
+                ([c, rest @ ..], _) => {
+                    out.push(*c);
+                    code(rest, m, out);
+                }
+            }
+        }
+        fn line_comment(s: &[char], m: Markers, out: &mut String) {
+            match s {
+                [] => {}
+                ['\n', ..] => code(s, m, out),
+                [c, rest @ ..] => {
+                    blank(*c, out);
+                    line_comment(rest, m, out);
+                }
+            }
+        }
+        fn in_block(s: &[char], d: usize, m: Markers, out: &mut String) {
+            let Some((open, close)) = m.1 else { return };
+            match s {
+                [] => {}
+                _ if starts(s, close) => {
+                    blank_marker(close, out);
+                    let rest = &s[close.chars().count()..];
+                    if d == 1 {
+                        code(rest, m, out);
+                    } else {
+                        in_block(rest, d - 1, m, out);
+                    }
+                }
+                _ if starts(s, open) => {
+                    blank_marker(open, out);
+                    in_block(&s[open.chars().count()..], d + 1, m, out);
+                }
+                [c, rest @ ..] => {
+                    blank(*c, out);
+                    in_block(rest, d, m, out);
+                }
+            }
+        }
+        let mut out = String::new();
+        code(s, (line, block), &mut out);
+        out
+    }
+
     /// Exhaustive over every string up to the bound, for every marker set the
-    /// analyzers use: the result has the input's length, keeps every byte
-    /// outside a comment and every newline, blanks the rest with spaces, and
-    /// is a fixed point.
+    /// analyzers use: the result equals the independent `oracle`, has the
+    /// input's length, keeps every byte outside a comment and every newline,
+    /// blanks the rest with spaces, and is a fixed point.
     #[test]
     fn stripping_preserves_positions_and_is_idempotent_exhaustively() {
         for (markers, alphabet) in CONFIGS {
             let max_len = if alphabet.len() > 4 { 7 } else { 8 };
             for src in all_strings(alphabet, max_len) {
                 let out = strip(&src, markers);
+                let chars: Vec<char> = src.chars().collect();
+                assert_eq!(out, oracle(&chars, markers), "{markers:?} {src:?}");
                 assert_eq!(out.len(), src.len(), "{markers:?} {src:?}");
                 for (a, b) in src.bytes().zip(out.bytes()) {
                     assert!(

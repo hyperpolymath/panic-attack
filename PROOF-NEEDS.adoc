@@ -124,7 +124,9 @@ other comment bytes become spaces. Stripping is idempotent. Whichever
 comment opens first wins, and block comments nest.
 |`src/assail/analyzer.rs`, module `strip_proof_comments_tests`
 |`TESTED`
-|Exhaustive over bounded inputs, for the marker sets the analyzers pass:
+|Exhaustive over bounded inputs, against an independent recursive oracle
+(the comment grammar as mutually recursive rules, sharing no code with the
+scanner), for the marker sets the analyzers pass:
 `//` with `/* */`, `--` with `/- -/`, `--` with `{- -}`, `(* *)` alone, and
 `//` alone. Each runs every string over a 4-letter alphabet up to length 8
 (87,381 inputs) or a 5-letter alphabet up to length 7 (97,656 inputs). Each
@@ -135,6 +137,7 @@ are nesting, unterminated blocks and multibyte text.
 Planted faults, all caught:
 
 * the previous two-phase function;
+* blanking code outside comments (caught by the oracle alone);
 * deleting comment text instead of blanking it;
 * blanking that drops a newline;
 * one space per character instead of per byte;
