@@ -72,7 +72,7 @@ permissions:
 jobs:
   gate:
     if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.name != 'CI gate')
-    uses: hyperpolymath/proven-cicd-and-workflows/.github/workflows/ci-gate.yml@a0760cea695a815a96b3944f3d03ee015da856d0 # cicd-suite ci-gate
+    uses: hyperpolymath/proven-cicd-and-workflows/.github/workflows/ci-gate.yml@d28d73ef10c623b507e98ffddb040268e29b5443 # cicd-suite ci-gate
     with:
       context: "CI/gate"
       # timeout_minutes: 180   # how long a missing check keeps the gate pending
@@ -87,6 +87,6 @@ jobs:
   # the default branch) fails a pull request that touches gate files unless the owner has approved it.
   gate-pr:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    uses: hyperpolymath/proven-cicd-and-workflows/.github/workflows/ci-gate.yml@a0760cea695a815a96b3944f3d03ee015da856d0 # cicd-suite ci-gate
+    uses: hyperpolymath/proven-cicd-and-workflows/.github/workflows/ci-gate.yml@d28d73ef10c623b507e98ffddb040268e29b5443 # cicd-suite ci-gate
     with:
       context: "CI/gate"
