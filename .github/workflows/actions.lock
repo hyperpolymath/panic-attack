@@ -25,8 +25,7 @@ workflows:
         - 'actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333'
         - 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
         - 'dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8'
-    '.github/workflows/ci-gate.yml':
-        - 'hyperpolymath/proven-cicd-and-workflows@a0760cea695a815a96b3944f3d03ee015da856d0'
+    '.github/workflows/ci-gate.yml': []
     '.github/workflows/ci-integrity.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
         - 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
@@ -191,11 +190,6 @@ dependencies:
         commit: 'sha1-0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d'
         owner_id: 75048950
         repo_id: 623796603
-    'hyperpolymath/proven-cicd-and-workflows@a0760cea695a815a96b3944f3d03ee015da856d0':
-        ref: 'main'
-        commit: 'sha1-a0760cea695a815a96b3944f3d03ee015da856d0'
-        owner_id: 6759885
-        repo_id: 1326697643
     'hyperpolymath/smtp-notify-action@e384daf6167a7a7567642d6a62060106244d2413':
         ref: 'v0.5.1'
         commit: 'sha1-e384daf6167a7a7567642d6a62060106244d2413'
