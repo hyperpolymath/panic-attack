@@ -30,7 +30,7 @@ workflows:
         - 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
     '.github/workflows/codeql.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
-        - 'github/codeql-action@33d7b85da1a04171e211befe2c739303b9a4c066'
+        - 'github/codeql-action@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea'
     '.github/workflows/coverage.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
         - 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
@@ -38,7 +38,7 @@ workflows:
         - 'swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0'
     '.github/workflows/dependency-review.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
-        - 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294'
+        - 'actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec'
     '.github/workflows/dogfood-gate.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
     '.github/workflows/e2e.yml':
@@ -72,7 +72,7 @@ workflows:
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
         - 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
         - 'dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8'
-        - 'github/codeql-action@33d7b85da1a04171e211befe2c739303b9a4c066'
+        - 'github/codeql-action@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea'
         - 'swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0'
     '.github/workflows/release.yml':
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
@@ -117,9 +117,9 @@ dependencies:
         commit: 'sha1-45bfe0192ca1faeb007ade9deae92b16b8254a0d'
         owner_id: 44036562
         repo_id: 513659658
-    'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294':
-        ref: 'v5.0.0'
-        commit: 'sha1-a1d282b36b6f3519aa1f3fc636f609c47dddb294'
+    'actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec':
+        ref: 'v5.0.1'
+        commit: 'sha1-bbc44d14a204704ccc493733616cd1e93a0321ec'
         owner_id: 44036562
         repo_id: 476372928
     'actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346':
@@ -169,9 +169,9 @@ dependencies:
         commit: 'sha1-54075bcc5e249e4758d363f27d099f55d843f124'
         owner_id: 47606891
         repo_id: 331103973
-    'github/codeql-action@33d7b85da1a04171e211befe2c739303b9a4c066':
-        ref: 'v4.39.3'
-        commit: 'sha1-33d7b85da1a04171e211befe2c739303b9a4c066'
+    'github/codeql-action@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea':
+        ref: 'v4.39.4'
+        commit: 'sha1-1bd86f2fdb4b86187fa4059f16f31a3202acc9ea'
         owner_id: 9919
         repo_id: 259445878
     'github/codeql-action@b96794f015dfd88f77b49b1c93e0fa7110f94c63':
