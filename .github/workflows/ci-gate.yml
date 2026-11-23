@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: MPL-2.0
+# CI gate — thin caller of the estate's interim gate, which lives in
+# hyperpolymath/proven-cicd-and-workflows as a reusable workflow. Do not copy
+# its jobs in here: a copy freezes at one cicd-suite commit and never receives
+# a fix.
+#
+# It emits the commit status `CI/gate`, which the Branch-Floor ruleset
+# requires. It is a COMMIT STATUS, not a check run, because a job inside a
+# reusable workflow gets the check-run name `<caller job> / <called job>`
+# (see rust-ci-caller.yml: `rust-ci / Cargo test`), which always contains
+# " / " and can never equal `CI/gate`.
+#
+# It triggers on workflow_run, schedule and workflow_dispatch, all of which GitHub runs from the
+# DEFAULT branch: a pull request cannot alter this file, its pin or its list. The consequence:
+# the pull request that adds this caller can never receive `CI/gate` itself, and
+# would be merged past the gate once (owner action) without the gate-pr job at the end. There is no
+# pull_request start here except the gate-pr job at the end (docs/CI-GATE.adoc, "The pull_request start"),
+# whose shape tests/ci-gate.sh asserts.
+#
+# `schedule` and `workflow_dispatch` run a SWEEP: the reusable lists the open pull requests and the
+# default branch head and re-evaluates each distinct head SHA with the same guarded publisher. A stale state
+# then normally lasts until the next sweep. It is still last-writer-wins, a sweep is itself an evaluator,
+# and GitHub may delay or skip scheduled runs (docs/CI-GATE.adoc, "Residual limit"). The cron below runs at minutes
+# 7, 22, 37 and 52 of every hour; keep the minutes off :00 and :30, where scheduled load is highest.
+# The sweep reads open pull requests, so the caller must grant `pull-requests: read`.
+#
+# It also fires when a workflow run STARTS (`in_progress`, which GitHub also sends for a rerun):
+# any active run makes the verdict pending, so a rerun replaces a stale success with pending,
+# approximating a native required check. `completed` then re-evaluates it (last-writer-wins; see docs/CI-GATE.adoc, "Residual limit").
+#
+# The required-check list is NOT in this repository: it lives in
+# proven-cicd-and-workflows/profiles/ci-gate/<owner>/<repo>.json at the pinned
+# SHA below, selected by github.repository. A repository with no profile there
+# fails the gate closed until one is added to the suite.
+#
+# The job id MUST stay `gate`. The pin is a full SHA, never `@main` or a tag:
+# the account enforces sha_pinning_required. An A3 `estate-gate` replaces this
+# interim gate by changing ONE pin and ONE context (`with: context`) here.
+#
+# ⚠ DE-ONBOARDED from actions.lock, deliberately, like the estate-audit and
+# Rust CI callers: an onboarded cross-repo reusable startup-fails with zero
+# jobs under sha_pinning_required. cicd-suite/scripts/deonboard-workflow.sh
+# reverses a re-onboarding.
+#
+# There is deliberately NO `concurrency:` block here: serialising per SHA would delay the
+# in_progress caller behind a running evaluation that then writes a stale success. The reusable's
+# own job cancels a running evaluation of the same SHA instead, and re-reads the runs just before it
+# writes (scripts/ci-gate-publish.sh; tests/ci-gate.sh asserts the template has no concurrency).
+#
+# API budget: "**" starts the gate for every workflow. If the profile's required checks come from a
+# few workflows, naming them (workflows: ["CI", "Lint"]) cuts the events; keep that list in step with
+# the profile (docs/CI-GATE.adoc, "API budget").
+#
+# No `secrets:` line: the reusable consumes none.
+name: CI gate
+
+on:
+  pull_request:
+  workflow_run:
+    workflows: ["**", "!CI gate"]
+    types: [completed, in_progress]
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  statuses: write
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  gate:
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || github.event.workflow_run.name != 'CI gate')
+    uses: hyperpolymath/proven-cicd-and-workflows/.github/workflows/ci-gate.yml@a0760cea695a815a96b3944f3d03ee015da856d0 # cicd-suite ci-gate
+    with:
+      context: "CI/gate"
+      # timeout_minutes: 180   # how long a missing check keeps the gate pending
+
+  # The pull_request start. workflow_run, schedule and workflow_dispatch run only from the default
+  # branch, so without this job the pull request that adds or changes the gate never gets the status
+  # and a ruleset requiring it blocks that very pull request. This job runs from the pull request's own
+  # branch and posts the same verdict, waiting (bounded) for the checks named in the profile to report.
+  # Same-repository branches only: a fork's or Dependabot's pull_request token cannot write statuses,
+  # and those are covered by the workflow_run job. No trust decision uses github.actor.
+  # Because a pull request can edit this file, the Gate tamper guard (ci-gate-tamper-guard.yml, run from
+  # the default branch) fails a pull request that touches gate files unless the owner has approved it.
+  gate-pr:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    uses: hyperpolymath/proven-cicd-and-workflows/.github/workflows/ci-gate.yml@a0760cea695a815a96b3944f3d03ee015da856d0 # cicd-suite ci-gate
+    with:
+      context: "CI/gate"

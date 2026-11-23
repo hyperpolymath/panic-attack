@@ -2,6 +2,13 @@
 
 === [Unreleased]
 
+==== Added — `CI/gate` caller workflow
+
+* `.github/workflows/ci-gate.yml`: the thin caller of the suite's reusable
+`ci-gate.yml`, which publishes the `CI/gate` status the ruleset requires.
+The suite pin is a placeholder commit: the repository's profile is not yet on
+the suite's main branch, so the gate fails closed until it is.
+
 ==== Added — the classification registry reads a deed first
 
 * `+load_user_classifications+` now reads
