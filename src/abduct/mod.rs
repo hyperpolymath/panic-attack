@@ -5,13 +5,12 @@
 
 use crate::assail;
 use anyhow::{anyhow, Context, Result};
-use filetime::FileTime;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
-use std::fs;
+use std::fs::{self, File, FileTimes};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DependencyScope {
@@ -434,11 +433,25 @@ fn apply_mtime_offset(files: &mut [AbductFileRecord], days: i64) -> Result<usize
     let now = chrono::Utc::now();
     let shifted = now + chrono::Duration::days(days);
     let timestamp = shifted.timestamp();
-    let ft = FileTime::from_unix_time(timestamp, 0);
+    let when = if timestamp >= 0 {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(timestamp.unsigned_abs())
+    } else {
+        SystemTime::UNIX_EPOCH - Duration::from_secs(timestamp.unsigned_abs())
+    };
+    let times = FileTimes::new().set_accessed(when).set_modified(when);
 
     let mut shifted_count = 0usize;
     for file in files {
-        filetime::set_file_times(&file.destination, ft, ft)
+        // Write access is the portable requirement for `File::set_times`; a
+        // read-only copy falls back to a read handle, which Unix accepts for
+        // the file's owner.
+        let handle = File::options()
+            .write(true)
+            .open(&file.destination)
+            .or_else(|_| File::open(&file.destination))
+            .with_context(|| format!("opening {} to set mtime", file.destination.display()))?;
+        handle
+            .set_times(times)
             .with_context(|| format!("setting mtime for {}", file.destination.display()))?;
         file.mtime_shifted = true;
         shifted_count += 1;
